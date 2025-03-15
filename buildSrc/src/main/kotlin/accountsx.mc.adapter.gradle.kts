@@ -25,52 +25,58 @@ repositories {
 }
 
 dependencies {
+    "modRuntimeOnly"("io.github.llamalad7:mixinextras-fabric:0.3.5")
+    "implementation"(rootProject)
+
     mapOf<String, () -> Any>(
         "minecraft" to { "com.mojang:minecraft:${adapter.minecraft}" },
         "mappings" to { "net.fabricmc:yarn:${adapter.minecraft}+build.${adapter.yarn}:v2" },
-        "modImplementation" to { "net.fabricmc:fabric-loader:${adapter.loader}" }
+        "modImplementation" to { "net.fabricmc:fabric-loader:${adapter.loader}" },
+        "modRuntimeOnly" to {
+            // Gradle restricts access Loom classes from other plugins.
+            // As configuration 'modRuntimeOnly' is resolved by Loom, StackWalker can access a Loom class instance (and its class loader).
+
+            val clazz = Class.forName(
+                "net.fabricmc.loom.configuration.fabricapi.FabricApiVersions", true,
+                StackWalker.getInstance(setOf(StackWalker.Option.RETAIN_CLASS_REFERENCE)).walk { stream ->
+                    stream.filter { frame -> frame.className.startsWith("net.fabricmc.loom.") }.findFirst()
+                }.orElseThrow().declaringClass.classLoader
+            )
+
+            MethodHandles.lookup().findVirtual(
+                clazz, "module", MethodType.methodType(
+                    Dependency::class.java, Class.forName("java.lang.String"), Class.forName("java.lang.String")
+                )
+            ).invokeWithArguments(
+                serviceOf<ObjectFactory>().newInstance(clazz),
+                "fabric-resource-loader-v0",
+                "${adapter.api}+${adapter.minecraft}"
+            )
+        },
+        "implementation" to { project(":adapters:authlib:${adapter.authlib}") }
     ).forEach { (key, p) ->
         addProvider(key, provider(p))
     }
-
-    "modRuntimeOnly"("io.github.llamalad7:mixinextras-fabric:0.3.5")
-
-    addProvider("modRuntimeOnly", provider {
-        /// listOf(
-        ///     "net.fabricmc.loom.configuration.FabricApiExtension",
-        ///     "net.fabricmc.loom.configuration.fabricapi.FabricApiVersions"
-        /// )
-
-        val clazz = Class.forName(
-            "net.fabricmc.loom.configuration.fabricapi.FabricApiVersions", true,
-            StackWalker.getInstance(setOf(StackWalker.Option.RETAIN_CLASS_REFERENCE)).walk { stream ->
-                stream.filter { frame -> frame.className.startsWith("net.fabricmc.loom.") }.findFirst()
-            }.orElseThrow().declaringClass.classLoader
-        )
-
-         MethodHandles.lookup().findVirtual(clazz, "module" , MethodType.methodType(
-             Dependency::class.java, Class.forName("java.lang.String"), Class.forName("java.lang.String"))
-         ).invokeWithArguments(
-             serviceOf<ObjectFactory>().newInstance(clazz), "fabric-resource-loader-v0", "${adapter.api}+${adapter.minecraft}"
-         )
-    })
-    addProvider("implementation", provider {
-        project(":adapters:authlib:${adapter.authlib}")
-    })
-
-    "implementation"(rootProject)
 }
 
 java.withSourcesJar()
 
 tasks.withType<ProcessResources> {
+    inputs.properties(
+        mapOf(
+            "version" to project.version
+        )
+    )
+
     filesMatching("fabric.mod.json") {
-        expand(mapOf(
-            "version" to project.version,
-            "loader" to adapter.loader,
-            "minecraft" to adapter.minecraft,
-            "authlib" to adapter.authlib
-        ))
+        expand(
+            mapOf(
+                "version" to project.version,
+                "loader" to adapter.loader,
+                "minecraft" to adapter.minecraft,
+                "authlib" to adapter.authlib
+            )
+        )
     }
 }
 

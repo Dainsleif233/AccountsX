@@ -18,10 +18,7 @@
   ],
   "depends": {
     "fabricloader": ">=${loader}",
-    "minecraft": [
-      "${minecraft}",
-      "${minecraft}.1"
-    ],
+    "minecraft": "${minecraft}",
     "java": ">=21",
     "accountsx-adapter-authlib": "${version}-${authlib}"
   },
