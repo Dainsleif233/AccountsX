@@ -4,9 +4,9 @@ plugins {
 }
 
 adapter {
-    minecraft = "1.20.4"
-    yarn = 3
+    minecraft = "1.21.4"
+    yarn = 8
     loader = "0.16.10"
-    api = "0.97.2"
-    authlib = "6.0.52"
+    api = "0.118.5"
+    authlib = "6.0.54"
 }

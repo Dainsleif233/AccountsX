@@ -19,7 +19,7 @@ buildscript {
     }
 }
 
-rootProject.version = "1.1.3"
+rootProject.version = properties["version"]!!
 
 repositories {
     maven(url = "https://maven.fabricmc.net/")
@@ -27,7 +27,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("net.fabricmc:fabric-loader:0.15.11")
+    compileOnly("net.fabricmc:fabric-loader:0.16.10")
     compileOnly("com.google.code.gson:gson:2.10.1")
     compileOnly("com.google.guava:guava:31.1-jre")
     compileOnly("org.apache.httpcomponents:httpclient:4.5.13")
@@ -47,24 +47,18 @@ tasks.processResources {
 
 data class Adapter(val project: String, val builder: String, val prefix: String)
 
-val universal = tasks.create("universal") {
+val universal = tasks.register("universal") {
     group = "build"
 
-    val adapters = mapOf(
-        listOf(
-            "adapters:authlib:4.0.43",
-            "adapters:authlib:6.0.52",
-            "adapters:authlib:6.0.54"
-        ) to Pair("jar", "authlib"),
-        listOf(
-            "adapters:mc:1.20.1",
-            "adapters:mc:1.20.4",
-            "adapters:mc:1.20.6",
-            "adapters:mc:1.21"
-        ) to Pair("remapJar", "mc")
-    ).flatMap { (projects, value) ->
-        projects.map { project ->
-            Adapter(project, value.first, value.second)
+    val adapters = projectDir.resolve("adapters").let { adapters ->
+        listOf("authlib", "mc").flatMap { type ->
+            adapters.resolve(type).list()!!.asIterable().map { version ->
+                when (type) {
+                    "authlib" -> Adapter("adapters:$type:$version", "jar", "authlib")
+                    "mc" -> Adapter("adapters:$type:$version", "remapJar", "mc")
+                    else -> throw IllegalArgumentException("Unknown type: $type");
+                }
+            }
         }
     }
 

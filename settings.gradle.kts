@@ -7,14 +7,8 @@ pluginManagement {
 
 rootProject.name = "AccountsX"
 
-val adapters = listOf(
-    "adapters:authlib:4.0.43",
-    "adapters:authlib:6.0.52",
-    "adapters:authlib:6.0.54",
-    "adapters:mc:1.20.1",
-    "adapters:mc:1.20.4",
-    "adapters:mc:1.20.6",
-    "adapters:mc:1.21"
-)
-
-include(adapters)
+include(rootProject.projectDir.resolve("adapters").let { adapters ->
+    listOf("authlib", "mc").flatMap { type ->
+        adapters.resolve(type).list()!!.asIterable().map { version -> "adapters:$type:$version" }
+    }
+})
