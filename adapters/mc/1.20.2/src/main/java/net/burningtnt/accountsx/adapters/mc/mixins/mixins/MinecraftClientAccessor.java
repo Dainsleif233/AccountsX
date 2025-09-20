@@ -40,10 +40,6 @@ public interface MinecraftClientAccessor {
     void setUserAPIService(UserApiService service);
 
     @Mutable
-    @Accessor("userPropertiesFuture")
-    void setUserPropertiesFuture(CompletableFuture<UserApiService.UserProperties> properties);
-
-    @Mutable
     @Accessor("socialInteractionsManager")
     void setSocialInteractionManager(SocialInteractionsManager manager);
 

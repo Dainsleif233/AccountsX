@@ -1,7 +1,7 @@
 package net.burningtnt.accountsx.adapters.mc.ui;
 
-import net.burningtnt.accountsx.core.accounts.model.AccountType;
 import net.burningtnt.accountsx.core.accounts.BaseAccount;
+import net.burningtnt.accountsx.core.accounts.model.AccountType;
 import net.burningtnt.accountsx.core.adapters.api.AccountSession;
 import net.burningtnt.accountsx.core.manager.AccountManager;
 import net.burningtnt.accountsx.core.manager.AccountWorker;
@@ -13,17 +13,18 @@ import org.jetbrains.annotations.Nullable;
 
 public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountListWidget.AccountEntry> {
     public AccountListWidget(MinecraftClient client, int left, int right, int top, int bottom, int entryHeight) {
-        super(client, right - left, bottom - top, top, entryHeight);
+        super(client, right - left, bottom - top, top, bottom, entryHeight);
         this.updateSize(left, right, top, bottom);
 
         syncAccounts();
     }
 
+    @Override
     public void updateSize(int left, int right, int top, int bottom) {
-        this.setX(left);
-        this.setY(top);
-        this.setWidth(right - left);
-        this.setHeight(bottom - top);
+        this.left = left;
+        this.right = right;
+        this.top = top;
+        this.bottom = bottom;
     }
 
     public void syncAccounts() {
@@ -64,8 +65,8 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
     }
 
     @Override
-    protected int getScrollbarX() {
-        return this.getRight();
+    protected int getScrollbarPositionX() {
+        return this.right;
     }
 
     @Override

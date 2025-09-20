@@ -1,7 +1,7 @@
 package net.burningtnt.accountsx.adapters.mc.ui;
 
-import net.burningtnt.accountsx.core.accounts.model.AccountType;
 import net.burningtnt.accountsx.core.accounts.BaseAccount;
+import net.burningtnt.accountsx.core.accounts.model.AccountType;
 import net.burningtnt.accountsx.core.adapters.api.AccountSession;
 import net.burningtnt.accountsx.core.manager.AccountManager;
 import net.burningtnt.accountsx.core.manager.AccountWorker;

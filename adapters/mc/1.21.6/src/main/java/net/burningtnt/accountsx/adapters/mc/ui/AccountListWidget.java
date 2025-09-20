@@ -75,11 +75,11 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
     }
 
     public class AccountEntry extends Entry<AccountEntry> {
-        private static final String ACTION_UP = "\u2191";
+        private static final String ACTION_UP = "↑";
 
         private static final String ACTION_DELETE = "x";
 
-        private static final String ACTION_DOWN = "\u2193";
+        private static final String ACTION_DOWN = "↓";
 
         private final BaseAccount account;
 

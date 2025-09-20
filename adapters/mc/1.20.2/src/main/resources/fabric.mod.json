@@ -19,7 +19,7 @@
   "depends": {
     "fabricloader": ">=${loader}",
     "minecraft": ">=${minecraft}",
-    "java": ">=21",
+    "java": ">=17",
     "accountsx-adapter-authlib": "${version}-${authlib}"
   },
   "custom": {

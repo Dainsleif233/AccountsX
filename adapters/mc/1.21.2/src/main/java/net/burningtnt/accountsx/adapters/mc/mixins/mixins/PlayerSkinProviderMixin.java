@@ -3,6 +3,7 @@ package net.burningtnt.accountsx.adapters.mc.mixins.mixins;
 import com.mojang.authlib.minecraft.MinecraftSessionService;
 import net.burningtnt.accountsx.adapters.mc.mixins.PlayerSkinProviderAccessor;
 import net.minecraft.client.texture.PlayerSkinProvider;
+import net.minecraft.client.texture.TextureManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -24,7 +25,7 @@ public class PlayerSkinProviderMixin implements PlayerSkinProviderAccessor {
             method = "<init>",
             at = @At("TAIL")
     )
-    private void accountsx$init(Path directory, MinecraftSessionService sessionService, Executor executor, CallbackInfo ci) {
+    private void accountsx$init(TextureManager textureManager, Path directory, final MinecraftSessionService sessionService, final Executor executor, CallbackInfo ci) {
         accountsx$directory = directory;
         accountsx$executor = executor;
     }
