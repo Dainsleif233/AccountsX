@@ -22,7 +22,8 @@
     "fabricloader": ">=0.16.10",
     "java": ">=17",
     "accountsx-adapter-mc": "*",
-    "accountsx-adapter-authlib": "*"
+    "accountsx-adapter-authlib": "*",
+    "accountsx-adapter-modmenu": "*"
   },
   "custom": {
     "accountsx:impl-lookup-accessor": [
