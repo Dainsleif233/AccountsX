@@ -51,12 +51,13 @@ val universal = tasks.register("universal") {
     group = "build"
 
     val adapters = projectDir.resolve("adapters").let { adapters ->
-        listOf("authlib", "mc").flatMap { type ->
+        listOf("authlib", "mc", "modmenu").flatMap { type ->
             adapters.resolve(type).list()!!.asIterable().map { version ->
                 when (type) {
                     "authlib" -> Adapter("adapters:$type:$version", "jar", "authlib")
                     "mc" -> Adapter("adapters:$type:$version", "remapJar", "mc")
-                    else -> throw IllegalArgumentException("Unknown type: $type");
+                    "modmenu" -> Adapter("adapters:$type:$version", "remapJar", "modmenu")
+                    else -> throw IllegalArgumentException("Unknown type: $type")
                 }
             }
         }
@@ -68,7 +69,7 @@ val universal = tasks.register("universal") {
         adapters.all { adapter -> project(adapter.project).tasks.getByName(adapter.builder).state.upToDate }
     }
 
-    val output = project.layout.buildDirectory.file("libs/${project.name}-${project.version}-universal.jar");
+    val output = project.layout.buildDirectory.file("libs/${project.name}-${project.version}-universal.jar")
     outputs.file(output)
 
     doLast {

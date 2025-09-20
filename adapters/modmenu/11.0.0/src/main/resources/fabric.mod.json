@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "accountsx-adapter-modmenu",
+  "version": "${version}-${modmenu}",
+  "name": "Accounts X Mod Menu Entry",
+  "description": "",
+  "authors": [
+    "Dainsleif"
+  ],
+  "license": "GPL-3.0",
+  "icon": "assets/accountsx-adapter-modmenu/account.png",
+  "environment": "client",
+  "entrypoints": {
+    "modmenu": [
+      "top.syshub.accountsx.adapters.modmenu.ModMenuApiImpl"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader}",
+    "java": ">=17"
+  },
+  "custom": {
+    "modmenu": {
+      "parent": {
+        "id": "accountsx"
+      }
+    }
+  }
+}
