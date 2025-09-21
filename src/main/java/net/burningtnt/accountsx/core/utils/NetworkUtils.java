@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.UUID;
 
 public class NetworkUtils {
@@ -26,7 +27,7 @@ public class NetworkUtils {
             .setPrettyPrinting()
             .create();
 
-    private static final HttpClientBuilder BUILDER = HttpClientBuilder.create().setRedirectStrategy(new DefaultRedirectStrategy());;
+    private static final HttpClientBuilder BUILDER = HttpClientBuilder.create().setRedirectStrategy(new DefaultRedirectStrategy());
 
     public static JsonObject postRequest(HttpUriRequest request) throws IOException {
         return postRequest(request, false);
@@ -45,6 +46,18 @@ public class NetworkUtils {
                 .addHeader("Content-Type", "application/json")
                 .setEntity(new StringEntity(NetworkUtils.GSON.toJson(json)))
                 .build());
+    }
+
+    public static JsonObject postRequest(String url, Map<String, String> formData, boolean ignoreHttpStatus) throws IOException {
+        RequestBuilder requestBuilder = RequestBuilder.post(url)
+                .addHeader("Content-Type", "application/x-www-form-urlencoded");
+        for (java.util.Map.Entry<String, String> entry : formData.entrySet())
+            requestBuilder.addParameter(entry.getKey(), entry.getValue());
+        return postRequest(requestBuilder.build(), ignoreHttpStatus);
+    }
+
+    public static JsonObject postRequest(String url, Map<String, String> formData) throws IOException {
+        return postRequest(url, formData, false);
     }
 
     public static Reader readResponse(HttpResponse response, boolean ignoreHttpStatus) throws IOException {

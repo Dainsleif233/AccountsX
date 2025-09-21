@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public final class UnitedInjectorAccountProvider extends AbstractInjectorAccountProvider<UnitedInjectorAccountProvider.UnitedInjectorAccount> {
     public UnitedInjectorAccountProvider() {
-        super("as.account.objects.server_id", "United-Injector");
+        super("as.account.objects.server_id", "as.account.objects.user_name", "United-Injector");
     }
 
     private static final BitSet SAFE_SERVER_ID = new BitSet(128);
