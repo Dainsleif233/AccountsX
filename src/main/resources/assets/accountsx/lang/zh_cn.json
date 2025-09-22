@@ -14,6 +14,7 @@
   "as.account.objects.player_uuid": "玩家 UUID",
   "as.account.objects.server_domain": "认证服务器（仅根域名）",
   "as.account.objects.server_id": "服务器 ID",
+  "as.account.objects.user_id": "用户 ID（OAuth留空）",
   "as.account.objects.user_name": "用户 ID",
   "as.account.objects.user_password": "用户密码",
   "as.account.state.authorized.name": "正常可用",

@@ -8,7 +8,7 @@ import java.util.UUID;
 
 public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccountProvider<AuthlibInjectorAccountProvider.AuthlibInjectorAccount> {
     public AuthlibInjectorAccountProvider() {
-        super("as.account.objects.server_domain", "Authlib-Injector");
+        super("as.account.objects.server_domain", "as.account.objects.user_id", "Authlib-Injector");
     }
 
     @Override

@@ -1,17 +1,16 @@
 package net.burningtnt.accountsx.core.accounts.impl.injector;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
+import com.google.gson.*;
 import net.burningtnt.accountsx.core.accounts.AccountProvider;
 import net.burningtnt.accountsx.core.accounts.AccountUUID;
 import net.burningtnt.accountsx.core.accounts.model.PlayerNoLongerExistedException;
 import net.burningtnt.accountsx.core.accounts.model.context.*;
+import net.burningtnt.accountsx.core.adapters.Adapters;
 import net.burningtnt.accountsx.core.ui.Memory;
 import net.burningtnt.accountsx.core.ui.UIScreen;
 import net.burningtnt.accountsx.core.utils.NetworkUtils;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.RequestBuilder;
 
 import java.io.IOException;
 import java.security.KeyFactory;
@@ -19,10 +18,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 public abstract class AbstractInjectorAccountProvider<T extends AbstractInjectorAccount> implements AccountProvider<T> {
     private static final String GUID_SERVER_BASE = "guid:as.login.injector.widgets.server_url";
@@ -32,11 +28,14 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     private final String serverBaseTranslationKey;
 
+    private final String userBaseTranslationKey;
+
     private final String accountContextName;
 
-    protected AbstractInjectorAccountProvider(String serverBaseTranslationKey, String accountContextName) {
+    protected AbstractInjectorAccountProvider(String serverBaseTranslationKey, String userBaseTranslationKey, String accountContextName) {
         this.serverBaseTranslationKey = serverBaseTranslationKey;
         this.accountContextName = accountContextName;
+        this.userBaseTranslationKey = userBaseTranslationKey;
     }
 
     protected void validateServerBaseURL(String server) throws IllegalArgumentException {
@@ -103,7 +102,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
     public final void configure(UIScreen screen) {
         screen.setTitle("as.account.general.login");
         screen.putTextInput(GUID_SERVER_BASE, serverBaseTranslationKey);
-        screen.putTextInput(GUID_USER_NAME, "as.account.objects.user_name");
+        screen.putTextInput(GUID_USER_NAME, userBaseTranslationKey);
         screen.putTextInput(GUID_PASSWORD, "as.account.objects.user_password");
         screen.putTextInput(GUID_PLAYER_NAME, "as.account.objects.player_name");
     }
@@ -122,6 +121,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     @Override
     public final T login(Memory memory) throws IOException {
+        if (memory.get(GUID_USER_NAME, String.class).isEmpty()) return loginOAuth(memory.get(GUID_SERVER_BASE, String.class));
         String url = transformServerBaseURL(memory.get(GUID_SERVER_BASE, String.class)) + "authserver/authenticate";
 
         JsonObject agent = new JsonObject();
@@ -171,6 +171,10 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     @Override
     public final void refresh(T account) throws IOException {
+        if (account.getLoginToken().startsWith("OAuth ")) {
+            refreshOAuth(account);
+            return;
+        }
         String url = transformServerBaseURL(account.getServer()) + "authserver/refresh";
 
         JsonObject root = new JsonObject();
@@ -227,5 +231,123 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
             return results;
         }
+    }
+
+    private T loginOAuth(String host) throws IOException {
+        String yggUrl = transformServerBaseURL(host);
+
+        String openidConfigurationUrl;
+        JsonObject ygg = NetworkUtils.postRequest(new HttpGet(yggUrl));
+        if (ygg.get("meta") instanceof JsonObject meta &&
+                meta.get("feature.openid_configuration_url") instanceof JsonPrimitive jp1 &&
+                jp1.isString()) openidConfigurationUrl = jp1.getAsString();
+        else throw new IOException("Invalid openid configuration url!");
+
+        JsonObject config = NetworkUtils.postRequest(new HttpGet(openidConfigurationUrl));
+        String deviceAuthorizationEndpoint = config.get("device_authorization_endpoint").getAsString();
+        String tokenEndpoint = config.get("token_endpoint").getAsString();
+        String userInfoEndpoint = config.get("userinfo_endpoint").getAsString();
+        String clientId;
+        if (OAuthConstants.list.containsKey(host)) clientId = OAuthConstants.list.get(host);
+        else if (config.get("shared_client_id") instanceof JsonPrimitive jp2 &&
+                jp2.isString()) clientId = jp2.getAsString();
+        else throw new IOException("Invalid client id!");
+
+        Adapters.getMinecraftAdapter().showToast("as.account.oauth2.code.generating", null);
+
+        Map<String, String> form1 = Map.of(
+                "client_id", clientId,
+                "scope", "openid offline_access Yggdrasil.PlayerProfiles.Select Yggdrasil.Server.Join"
+        );
+        JsonObject device = NetworkUtils.postRequest(deviceAuthorizationEndpoint, form1);
+        String deviceCode = device.get("device_code").getAsString();
+        String userCode = device.get("user_code").getAsString();
+        int interval;
+        if (device.get("interval") instanceof JsonPrimitive jp &&
+                jp.isNumber()) interval = jp.getAsInt();
+        else interval = 5;
+        if (device.get("verification_uri_complete") instanceof JsonPrimitive jp &&
+                jp.isString()) Adapters.getMinecraftAdapter().openBrowser(jp.getAsString());
+        else {
+            Adapters.getMinecraftAdapter().copyText(userCode);
+            device.get("verification_uri").getAsString();
+        }
+        Adapters.getMinecraftAdapter().showToast("as.account.oauth2.code.title", "as.account.oauth2.code.desc", userCode);
+
+        String accessToken, refreshToken;
+        while(true) {
+            try {
+                Thread.sleep(Math.max(interval, 1));
+            } catch (InterruptedException e) {
+                throw new IOException("Interrupted.", e);
+            }
+
+            Map<String, String> form2 = Map.of(
+                    "client_id", clientId,
+                    "grant_type", "urn:ietf:params:oauth:grant-type:device_code",
+                    "device_code", deviceCode
+            );
+            JsonObject token = NetworkUtils.postRequest(tokenEndpoint, form2, true);
+
+            JsonElement err = token.get("error");
+            if (err == null) {
+                accessToken = token.get("access_token").getAsString();
+                refreshToken = token.get("refresh_token").getAsString();
+                break;
+            }
+
+            String error = err.getAsString();
+            if (error.equals("authorization_pending")) continue;
+            if (error.equals("expired_token")) throw new IOException("No character detected.");
+            throw new IOException("Unknown error: " + error);
+        }
+
+        JsonObject userinfo = NetworkUtils.postRequest(RequestBuilder.get(userInfoEndpoint)
+                .addHeader("Authorization", "Bearer " + accessToken)
+                .build());
+        Profile profile = readProfiles(userinfo).getFirst();
+
+        JsonObject OAuth = new JsonObject();
+        OAuth.addProperty("token_endpoint", tokenEndpoint);
+        OAuth.addProperty("refresh_token", refreshToken);
+        OAuth.addProperty("client_id", clientId);
+        OAuth.addProperty("userinfo_endpoint", userInfoEndpoint);
+
+        T account = createAccount(
+                accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID),
+                host, profile.playerUUID
+        );
+        account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
+        return account;
+    }
+
+    private void refreshOAuth(T account) throws IOException {
+        String OAuthStr = account.getLoginToken().substring(6);
+        JsonObject OAuth = JsonParser.parseString(OAuthStr).getAsJsonObject();
+
+        String tokenEndpoint = OAuth.get("token_endpoint").getAsString();
+        String refreshToken = OAuth.get("refresh_token").getAsString();
+        String clientId = OAuth.get("client_id").getAsString();
+        String userInfoEndpoint = OAuth.get("userinfo_endpoint").getAsString();
+
+        Map<String, String> form = Map.of(
+                "client_id", clientId,
+                "grant_type", "refresh_token",
+                "refresh_token", refreshToken
+        );
+        JsonObject token = NetworkUtils.postRequest(tokenEndpoint, form);
+
+        JsonElement err = token.get("error");
+        if (err !=null) throw new IOException("Unknown error: " + err.getAsString());
+        String accessToken = token.get("access_token").getAsString();
+        refreshToken = token.get("refresh_token").getAsString();
+        OAuth.addProperty("refresh_token", refreshToken);
+
+        JsonObject userinfo = NetworkUtils.postRequest(RequestBuilder.get(userInfoEndpoint)
+                .addHeader("Authorization", "Bearer " + accessToken)
+                .build());
+        Profile profile = readProfiles(userinfo).getFirst();
+        account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
+        account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
     }
 }
