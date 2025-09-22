@@ -304,7 +304,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
         JsonObject userinfo = NetworkUtils.postRequest(RequestBuilder.get(userInfoEndpoint)
                 .addHeader("Authorization", "Bearer " + accessToken)
-                .build(), true);
+                .build());
         Profile profile = readProfiles(userinfo).getFirst();
 
         JsonObject OAuth = new JsonObject();
@@ -335,7 +335,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 "grant_type", "refresh_token",
                 "refresh_token", refreshToken
         );
-        JsonObject token = NetworkUtils.postRequest(tokenEndpoint, form, true);
+        JsonObject token = NetworkUtils.postRequest(tokenEndpoint, form);
 
         JsonElement err = token.get("error");
         if (err !=null) throw new IOException("Unknown error: " + err.getAsString());
@@ -345,7 +345,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
         JsonObject userinfo = NetworkUtils.postRequest(RequestBuilder.get(userInfoEndpoint)
                 .addHeader("Authorization", "Bearer " + accessToken)
-                .build(), true);
+                .build());
         Profile profile = readProfiles(userinfo).getFirst();
         account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
