@@ -103,9 +103,9 @@ public final class UIScreenImpl implements UIScreen {
             int widgetsLeft = this.width / 2 - 50;
 
             for (ValuedWidget<TextFieldWidget> widget : UIScreenImpl.this.inputs.values()) {
-                widget.widget = this.addField(
-                        new TextFieldWidget(this.client.textRenderer, widgetsLeft, widgetsTop, 200, 20, Text.empty())
-                );
+                TextFieldWidget tf = new TextFieldWidget(this.client.textRenderer, widgetsLeft, widgetsTop, 200, 20, Text.empty());
+                tf.setMaxLength(128);
+                widget.widget = this.addField(tf);
 
                 widgetsTop += 25;
             }
