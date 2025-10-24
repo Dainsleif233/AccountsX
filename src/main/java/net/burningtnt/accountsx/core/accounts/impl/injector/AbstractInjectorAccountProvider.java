@@ -305,7 +305,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         JsonObject userinfo = NetworkUtils.postRequest(RequestBuilder.get(userInfoEndpoint)
                 .addHeader("Authorization", "Bearer " + accessToken)
                 .build());
-        Profile profile = readProfiles(userinfo).getFirst();
+        Profile profile = readProfiles(userinfo).get(0);
 
         JsonObject OAuth = new JsonObject();
         OAuth.addProperty("token_endpoint", tokenEndpoint);
@@ -346,7 +346,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         JsonObject userinfo = NetworkUtils.postRequest(RequestBuilder.get(userInfoEndpoint)
                 .addHeader("Authorization", "Bearer " + accessToken)
                 .build());
-        Profile profile = readProfiles(userinfo).getFirst();
+        Profile profile = readProfiles(userinfo).get(0);
         account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
     }
