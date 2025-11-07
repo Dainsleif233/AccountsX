@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.7",
+  "package": "net.burningtnt.accountsx.adapters.mc.mixins.mixins",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "MinecraftClientAccessor",
+    "PlayerSkinProviderMixin",
+    "SplashTextResourceSupplierAccessor",
+    "TitleScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
