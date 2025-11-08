@@ -7,7 +7,8 @@
     "MinecraftClientAccessor",
     "PlayerSkinProviderMixin",
     "SplashTextResourceSupplierAccessor",
-    "TitleScreenMixin"
+    "TitleScreenMixin",
+    "YggdrasilUserApiServiceMixin"
   ],
   "injectors": {
     "defaultRequire": 1
