@@ -266,9 +266,10 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         if (device.get("interval") instanceof JsonPrimitive jp &&
                 jp.isNumber()) interval = jp.getAsInt();
         else interval = 5;
-        if (device.get("verification_uri_complete") instanceof JsonPrimitive jp &&
-                jp.isString()) Adapters.getMinecraftAdapter().openBrowser(jp.getAsString());
-        else {
+        if (device.get("verification_uri_complete") instanceof JsonPrimitive jp && jp.isString()) {
+            Adapters.getMinecraftAdapter().openBrowser(jp.getAsString());
+            Adapters.getMinecraftAdapter().copyText(jp.getAsString());
+        } else {
             Adapters.getMinecraftAdapter().copyText(userCode);
             device.get("verification_uri").getAsString();
         }
