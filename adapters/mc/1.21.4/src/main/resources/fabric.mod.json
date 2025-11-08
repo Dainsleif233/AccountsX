@@ -17,7 +17,6 @@
     "accountsx-adapter-mc.mixins.json"
   ],
   "depends": {
-    "fabricloader": ">=${loader}",
     "minecraft": ">=${minecraft}",
     "java": ">=21",
     "accountsx-adapter-authlib": "${version}-${authlib}"

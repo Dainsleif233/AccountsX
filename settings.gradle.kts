@@ -3,6 +3,10 @@ pluginManagement {
         maven(url = "https://maven.fabricmc.net/")
         gradlePluginPortal()
     }
+    val loomVersion: String = providers.gradleProperty("loomVersion").get()
+    plugins {
+        id("fabric-loom") version loomVersion
+    }
 }
 
 rootProject.name = "AccountsX"

@@ -6,7 +6,8 @@
   "client": [
     "MinecraftClientAccessor",
     "PlayerSkinProviderAccessor",
-    "TitleScreenMixin"
+    "TitleScreenMixin",
+    "YggdrasilUserApiServiceMixin"
   ],
   "injectors": {
     "defaultRequire": 1
