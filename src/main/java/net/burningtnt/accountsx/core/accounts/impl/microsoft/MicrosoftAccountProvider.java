@@ -19,7 +19,7 @@ import java.util.concurrent.CancellationException;
 public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccount> {
     private static final String SCOPE = "XboxLive.signin offline_access";
 
-    private static final String CLIENT_ID = "6a3728d6-27a3-4180-99bb-479895b8f88e";
+    private static final String CLIENT_ID = "bcc75d9d-4d01-408a-ba7b-131e955e70f1";
 
     private static final String DEVICE_CODE_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 
