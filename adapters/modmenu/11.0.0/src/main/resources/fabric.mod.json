@@ -16,7 +16,6 @@
     ]
   },
   "depends": {
-    "fabricloader": ">=${loader}",
     "java": ">=17"
   },
   "custom": {
