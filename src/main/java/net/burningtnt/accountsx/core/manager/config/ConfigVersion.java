@@ -1,9 +1,9 @@
 package net.burningtnt.accountsx.core.manager.config;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
+import com.google.gson.*;
+import net.burningtnt.accountsx.core.utils.NetworkUtils;
+
+import java.util.UUID;
 
 public enum ConfigVersion {
     BASE(0) {
@@ -40,6 +40,17 @@ public enum ConfigVersion {
                     }
                 }
             }
+        }
+    }, SECURITY_STORAGE(3) {
+        @Override
+        protected void upgrade(JsonObject config) {
+            String id = UUID.randomUUID().toString();
+            config.addProperty("id", id);
+
+            if (config.get("accounts") instanceof JsonArray accounts)
+                ConfigHandle.writeAccounts(id, NetworkUtils.GSON.toJson(accounts));
+
+            config.remove("accounts");
         }
     };
 

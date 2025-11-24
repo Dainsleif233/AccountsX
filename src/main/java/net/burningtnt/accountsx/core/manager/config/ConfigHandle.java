@@ -3,6 +3,7 @@ package net.burningtnt.accountsx.core.manager.config;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import com.google.gson.reflect.TypeToken;
 import net.burningtnt.accountsx.core.AccountsX;
 import net.burningtnt.accountsx.core.accounts.BaseAccount;
 import net.burningtnt.accountsx.core.accounts.model.AccountType;
@@ -18,10 +19,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public final class ConfigHandle {
-    private ConfigHandle() {
-    }
+    private ConfigHandle() {}
+
+    private static String id;
 
     private static final String CONFIG_LOCATION = "accountsx/accounts.json";
 
@@ -30,11 +33,15 @@ public final class ConfigHandle {
 
         private final int version;
 
-        private final List<BaseAccount> accounts;
+        private final String id;
 
         private Config(List<BaseAccount> accounts) {
             this.version = CURRENT_VERSION;
-            this.accounts = accounts;
+            if (ConfigHandle.id == null)
+                ConfigHandle.id = UUID.randomUUID().toString();
+
+            id = ConfigHandle.id;
+            writeAccounts(id, NetworkUtils.GSON.toJson(accounts));
         }
     }
 
@@ -69,7 +76,13 @@ public final class ConfigHandle {
                         }
                     }
 
-                    return NetworkUtils.GSON.fromJson(data, Config.class).accounts;
+                    id = jo.get("id").getAsString();
+                    try {
+                        UUID.fromString(id);
+                    } catch (Exception e) {
+                        id = UUID.randomUUID().toString();
+                    }
+                    return getAccounts();
                 }
             }
 
@@ -93,6 +106,35 @@ public final class ConfigHandle {
 
         try (Writer writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
             NetworkUtils.GSON.toJson(new Config(accounts), writer);
+        }
+    }
+
+    private static List<? extends BaseAccount> getAccounts() {
+        String userHome = System.getProperty("user.home");
+        Path accountsFile = Path.of(userHome, ".accountsx", id + ".json");
+
+        try {
+            if (!Files.exists(accountsFile) || !Files.isRegularFile(accountsFile))
+                return List.of();
+
+            return NetworkUtils.GSON.fromJson(
+                    Files.newBufferedReader(accountsFile, StandardCharsets.UTF_8),
+                    new TypeToken<List<? extends BaseAccount>>() {}.getType()
+            );
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load accounts file", e);
+        }
+    }
+
+    static void writeAccounts(String id, String accountString) {
+        String userHome = System.getProperty("user.home");
+        Path accountsFile = Path.of(userHome, ".accountsx", id + ".json");
+
+        try {
+            Files.createDirectories(accountsFile.getParent());
+            Files.writeString(accountsFile, accountString);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to write accounts file", e);
         }
     }
 }
