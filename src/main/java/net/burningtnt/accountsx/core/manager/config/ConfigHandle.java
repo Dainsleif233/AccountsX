@@ -117,10 +117,12 @@ public final class ConfigHandle {
             if (!Files.exists(accountsFile) || !Files.isRegularFile(accountsFile))
                 return List.of();
 
-            return NetworkUtils.GSON.fromJson(
-                    Files.newBufferedReader(accountsFile, StandardCharsets.UTF_8),
-                    new TypeToken<List<? extends BaseAccount>>() {}.getType()
-            );
+            try (Reader reader = Files.newBufferedReader(accountsFile, StandardCharsets.UTF_8)) {
+                return NetworkUtils.GSON.fromJson(
+                        reader,
+                        new TypeToken<List<? extends BaseAccount>>() {}.getType()
+                );
+            }
         } catch (IOException e) {
             throw new RuntimeException("Failed to load accounts file", e);
         }
