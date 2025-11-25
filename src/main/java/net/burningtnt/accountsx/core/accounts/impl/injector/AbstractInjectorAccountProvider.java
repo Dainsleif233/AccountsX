@@ -8,6 +8,7 @@ import net.burningtnt.accountsx.core.accounts.model.context.*;
 import net.burningtnt.accountsx.core.adapters.Adapters;
 import net.burningtnt.accountsx.core.ui.Memory;
 import net.burningtnt.accountsx.core.ui.UIScreen;
+import net.burningtnt.accountsx.core.utils.AvatarUtils;
 import net.burningtnt.accountsx.core.utils.NetworkUtils;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.RequestBuilder;
@@ -43,7 +44,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     protected abstract String transformServerBaseURL(String server);
 
-    protected abstract T createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID);
+    protected abstract T createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String accountName, String avatar);
 
     @Override
     public final AccountContext createAccountContext(T account) throws IOException {
@@ -122,7 +123,9 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
     @Override
     public final T login(Memory memory) throws IOException {
         if (memory.get(GUID_USER_NAME, String.class).isEmpty()) return loginOAuth(memory.get(GUID_SERVER_BASE, String.class));
-        String url = transformServerBaseURL(memory.get(GUID_SERVER_BASE, String.class)) + "authserver/authenticate";
+        String baseUrl = transformServerBaseURL(memory.get(GUID_SERVER_BASE, String.class));
+        String loginUrl = baseUrl + "authserver/authenticate";
+        String profileUrl = baseUrl + "sessionserver/session/minecraft/profile/";
 
         JsonObject agent = new JsonObject();
         agent.addProperty("name", "Minecraft");
@@ -133,7 +136,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         root.addProperty("username", memory.get(GUID_USER_NAME, String.class));
         root.addProperty("password", memory.get(GUID_PASSWORD, String.class));
 
-        JsonObject json = NetworkUtils.postRequest(url, root);
+        JsonObject json = NetworkUtils.postRequest(loginUrl, root);
         if (json.has("error")) {
             throw new IOException("Cannot auth this injector: " + json.get("errorMessage").getAsString());
         }
@@ -152,15 +155,24 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             }
 
             return createAccount(
-                    accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID),
-                    memory.get(GUID_SERVER_BASE, String.class), profile.playerUUID
+                    accessToken, profile.playerName,
+                    AccountUUID.parse(profile.playerUUID),
+                    memory.get(GUID_SERVER_BASE, String.class),
+                    profile.playerUUID,
+                    getAccountName(baseUrl),
+                    AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
             );
         } else {
             for (Profile profile : profiles) {
                 if (playerName.equals(profile.playerName)) {
                     return createAccount(
-                            accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID),
-                            memory.get(GUID_SERVER_BASE, String.class), profile.playerUUID
+                            accessToken,
+                            profile.playerName,
+                            AccountUUID.parse(profile.playerUUID),
+                            memory.get(GUID_SERVER_BASE, String.class),
+                            profile.playerUUID,
+                            getAccountName(baseUrl),
+                            AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
                     );
                 }
             }
@@ -175,12 +187,14 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             refreshOAuth(account);
             return;
         }
-        String url = transformServerBaseURL(account.getServer()) + "authserver/refresh";
+        String baseUrl = transformServerBaseURL(account.getServer());
+        String refreshUrl = baseUrl + "authserver/refresh";
+        String profileUrl = baseUrl + "sessionserver/session/minecraft/profile/";
 
         JsonObject root = new JsonObject();
         root.addProperty("accessToken", account.getLoginToken());
 
-        JsonObject json = NetworkUtils.postRequest(url, root);
+        JsonObject json = NetworkUtils.postRequest(refreshUrl, root);
         if (json.has("error")) {
             throw new IOException("Cannot auth this injector: " + json.get("errorMessage").getAsString());
         }
@@ -199,6 +213,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 if (profile.playerUUID.equals(preferredPlayerUUID)) {
                     account.setLoginProfile(accessToken, profile.playerUUID);
                     account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
+                    account.setAvatar(AvatarUtils.getAvatar(profileUrl, profile.playerUUID));
                     return;
                 }
             }
@@ -207,8 +222,16 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         }
     }
 
-    private record Profile(String playerName, String playerUUID) {
+    private String getAccountName(String baseUrl) {
+        try {
+            JsonObject ygg = NetworkUtils.postRequest(new HttpGet(baseUrl));
+            return ygg.get("meta").getAsJsonObject().get("serverName").getAsString();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
+
+    private record Profile(String playerName, String playerUUID) {}
 
     private static List<Profile> readProfiles(JsonObject json) {
         JsonElement selectedProfile = json.get("selectedProfile");
@@ -235,6 +258,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     private T loginOAuth(String host) throws IOException {
         String yggUrl = transformServerBaseURL(host);
+        String profileUrl = yggUrl + "sessionserver/session/minecraft/profile/";
 
         String openidConfigurationUrl;
         JsonObject ygg = NetworkUtils.postRequest(new HttpGet(yggUrl));
@@ -315,8 +339,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         OAuth.addProperty("userinfo_endpoint", userInfoEndpoint);
 
         T account = createAccount(
-                accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID),
-                host, profile.playerUUID
+                accessToken,
+                profile.playerName,
+                AccountUUID.parse(profile.playerUUID),
+                host,
+                profile.playerUUID,
+                getAccountName(yggUrl),
+                AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
         );
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
         return account;
@@ -348,7 +377,10 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 .addHeader("Authorization", "Bearer " + accessToken)
                 .build());
         Profile profile = readProfiles(userinfo).get(0);
+        String profileUrl = transformServerBaseURL(account.getServer()) + "sessionserver/session/minecraft/profile/";
+
         account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
+        account.setAvatar(AvatarUtils.getAvatar(profileUrl, profile.playerUUID));
     }
 }

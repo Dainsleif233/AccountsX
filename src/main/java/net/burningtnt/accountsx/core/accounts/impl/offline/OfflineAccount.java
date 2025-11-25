@@ -7,6 +7,6 @@ import java.util.UUID;
 
 public final class OfflineAccount extends BaseAccount {
     public OfflineAccount(String accessToken, String playerName, UUID playerUUID) {
-        super(accessToken, playerName, playerUUID, AccountType.OFFLINE);
+        super(accessToken, playerName, playerUUID, AccountType.OFFLINE, null, null);
     }
 }

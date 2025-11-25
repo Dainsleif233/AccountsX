@@ -40,13 +40,13 @@ public final class UnitedInjectorAccountProvider extends AbstractInjectorAccount
     }
 
     @Override
-    protected UnitedInjectorAccount createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID) {
-        return new UnitedInjectorAccount(accessToken, playerName, playerUUID, server, preferredPlayerUUID);
+    protected UnitedInjectorAccount createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID,String accountName, String avatar) {
+        return new UnitedInjectorAccount(accessToken, playerName, playerUUID, server, preferredPlayerUUID, avatar);
     }
 
     public static class UnitedInjectorAccount extends AbstractInjectorAccount {
-        public UnitedInjectorAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID) {
-            super(accessToken, playerName, playerUUID, server, preferredPlayerUUID, AccountType.UNITED_INJECTOR);
+        public UnitedInjectorAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String avatar) {
+            super(accessToken, playerName, playerUUID, server, preferredPlayerUUID, AccountType.UNITED_INJECTOR, null, avatar);
         }
     }
 }

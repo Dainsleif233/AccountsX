@@ -16,6 +16,9 @@ import org.apache.http.client.methods.RequestBuilder;
 import java.io.IOException;
 import java.util.concurrent.CancellationException;
 
+import static net.burningtnt.accountsx.core.utils.AvatarUtils.getAvatar;
+import static net.burningtnt.accountsx.core.accounts.impl.microsoft.MicrosoftConstants.SESSION;
+
 public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccount> {
     private static final String SCOPE = "XboxLive.signin offline_access";
 
@@ -168,7 +171,14 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             playerUUID = json.get("id").getAsString();
         }
 
-        return new MicrosoftAccount(accessToken, playerName, AccountUUID.parse(playerUUID), microsoftAccessToken, microsoftRefreshToken);
+        return new MicrosoftAccount(
+                accessToken,
+                playerName,
+                AccountUUID.parse(playerUUID),
+                microsoftAccessToken,
+                microsoftRefreshToken,
+                getAvatar(SESSION + "/session/minecraft/profile/", playerUUID)
+        );
     }
 
     @Override
@@ -243,5 +253,6 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
         }
 
         account.setProfile(accessToken, playerName, AccountUUID.parse(playerUUID));
+        account.setAvatar(getAvatar(SESSION + "/session/minecraft/profile/", playerUUID));
     }
 }

@@ -95,9 +95,15 @@ public abstract class BaseAccount {
 
     private final AccountType type;
 
-    protected BaseAccount(String accessToken, String playerName, UUID playerUUID, AccountType type) {
+    private final String accountName;
+
+    private String avatar;
+
+    protected BaseAccount(String accessToken, String playerName, UUID playerUUID, AccountType type, String accountName, String avatar) {
         this.storage = new AccountStorage(accessToken, playerName, playerUUID, AccountState.AUTHORIZED);
         this.type = type;
+        this.accountName = accountName;
+        this.avatar = avatar;
     }
 
     public AccountStorage getAccountStorage() {
@@ -106,6 +112,18 @@ public abstract class BaseAccount {
 
     public final AccountType getAccountType() {
         return type;
+    }
+
+    public String getAccountName() {
+        return this.accountName;
+    }
+
+    public String getAvatar() {
+        return this.avatar;
+    }
+
+    public void setAvatar(String avatar) {
+        this.avatar = avatar;
     }
 
     @Threading.Thread(Threading.WORKER)
