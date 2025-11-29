@@ -8,8 +8,17 @@ import net.burningtnt.accountsx.core.manager.AccountWorker;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.widget.AlwaysSelectedEntryListWidget;
+import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.Base64;
+
+import static com.mojang.text2speech.Narrator.LOGGER;
 
 public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountListWidget.AccountEntry> {
     public AccountListWidget(MinecraftClient client, int left, int right, int top, int bottom, int entryHeight) {
@@ -83,15 +92,22 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
 
         private final BaseAccount account;
 
+        private Identifier avatarTextureId;
+
+        private static final String ALEX_AVATAR = "iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAAFHklEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a/e+RWvZf4T7Nx4Pf9ZVrt3859hfvx6/rPs3Xk3/xn6Tf7TzI9fz3+GvTvv5j8Jlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qP0m/+sMh/wnuZv/bYZD/hPdzX+GnRuv5z8Jlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8dVP6T7N15N/9Z+k3+UwyH/KcZXun9+F/nT76D/xx385+EylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8d6Ow3v5b5X2Y45D9F/3ofw3+WunGM/wzT0SX+txl+46v4T0Llqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8dVK666v8OKldd9X8Hlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVV/4Y/jOcfqm34j/Lw9/vEfxn+PO3OMb/Nq/8tR/Pf5anfMeT+c9wjv80VK666v8OKldd9X8Hlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7vQBef9Fvmqqv+b6By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8dVK666v8OKldd9X8Hlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVc/2jD3+13nQDv/bTEeX+E9C5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8dVK666v8O6nR0if8MdeMY/+s8aIernm06usR/hoODPf6TULnqqv87qFx11f8dVK666v8OKldd9X8Hlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fwT8C13lAqg0KKHQAAAAASUVORK5CYII=";
+
         public AccountEntry(BaseAccount account) {
             this.account = account;
+            this.avatarTextureId = loadAvatar(account.getAvatar());
+            if (this.avatarTextureId == null) this.avatarTextureId = loadAvatar(ALEX_AVATAR);
         }
 
         @Override
         public void render(DrawContext context, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float tickDelta) {
             context.drawText(client.textRenderer, this.account.getAccountStorage().getPlayerName(), x + 32 + 3, y + 1, 0xFFFFFF, false);
-            context.drawText(client.textRenderer, I18N.TRANSLATOR.translate(this.account.getAccountType()), x + 32 + 3, y + 1 + 9, 0xFFFFFF, false);
+            context.drawText(client.textRenderer, this.account.getAccountName() == null ? I18N.TRANSLATOR.translate(this.account.getAccountType()) : Text.of(this.account.getAccountName()), x + 32 + 3, y + 1 + 9, 0xFFFFFF, false);
             context.drawText(client.textRenderer, I18N.TRANSLATOR.translate(this.account.getAccountStorage().getState()), x + 32 + 3, y + 1 + 18, 0xFFFFFF, false);
+            context.drawTexture(avatarTextureId, x, y, 1, 1, 30, 30, 32, 32);
 
             if (this.account.getAccountType() != AccountType.ENV_DEFAULT) {
                 if (index > 1) {
@@ -149,6 +165,29 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
         @Override
         public Text getNarration() {
             return Text.of("");
+        }
+
+        private Identifier loadAvatar(String avatarBase64) {
+            try {
+                if (avatarBase64 == null || avatarBase64.isEmpty())
+                    return null;
+
+                byte[] imageBytes = Base64.getDecoder().decode(avatarBase64);
+                NativeImage nativeImage = NativeImage.read(new ByteArrayInputStream(imageBytes));
+                NativeImageBackedTexture texture = new NativeImageBackedTexture(nativeImage);
+
+                String safeName = account.getAccountStorage().getPlayerName()
+                        .toLowerCase()
+                        .replaceAll("[^a-z0-9._-]", "-");
+
+                return client.getTextureManager().registerDynamicTexture(
+                        "accountsx_avatar_" + safeName,
+                        texture
+                );
+            } catch (IOException e) {
+                LOGGER.error("Failed to load avatar for {}: {}", account.getAccountStorage().getPlayerName(), e.getMessage());
+                return null;
+            }
         }
     }
 }
