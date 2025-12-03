@@ -5,7 +5,6 @@ import net.burningtnt.accountsx.core.AccountsX;
 import net.burningtnt.accountsx.core.accounts.model.context.AuthSecurityContext;
 import net.burningtnt.accountsx.core.accounts.model.context.AuthServerContext;
 import net.burningtnt.accountsx.core.utils.NetworkUtils;
-import org.apache.http.client.methods.RequestBuilder;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -54,7 +53,7 @@ public final class MicrosoftConstants {
 
     public static AuthSecurityContext computeMicrosoftPublicKeys() throws IOException {
         KeySetResponse response = NetworkUtils.GSON.fromJson(
-                NetworkUtils.postRequest(RequestBuilder.get(SERVICES + "/publickeys").build(), false),
+                NetworkUtils.postRequest(NetworkUtils.buildGet(SERVICES + "/publickeys"), false),
                 KeySetResponse.class
         );
 

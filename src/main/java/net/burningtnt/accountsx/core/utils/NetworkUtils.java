@@ -5,20 +5,20 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.burningtnt.accountsx.core.accounts.AccountUUID;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.client.methods.RequestBuilder;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.DefaultRedirectStrategy;
-import org.apache.http.impl.client.HttpClientBuilder;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 public class NetworkUtils {
@@ -27,52 +27,96 @@ public class NetworkUtils {
             .setPrettyPrinting()
             .create();
 
-    private static final HttpClientBuilder BUILDER = HttpClientBuilder.create().setRedirectStrategy(new DefaultRedirectStrategy());
+    private static final HttpClient CLIENT = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
 
-    public static JsonObject postRequest(HttpUriRequest request) throws IOException {
+    public static HttpRequest buildGet(String url) {
+        return HttpRequest.newBuilder(URI.create(url))
+                .GET()
+                .build();
+    }
+
+    public static HttpRequest buildGet(String url, Map<String, String> headers) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+        for (Map.Entry<String, String> e : headers.entrySet()) {
+            builder.header(e.getKey(), e.getValue());
+        }
+        return builder.build();
+    }
+
+    public static JsonObject postRequest(HttpRequest request) throws IOException {
         return postRequest(request, false);
     }
 
-    public static JsonObject postRequest(HttpUriRequest request, boolean ignoreHttpStatus) throws IOException {
-        try (CloseableHttpClient httpClient = BUILDER.build()) {
-            try (Reader reader = NetworkUtils.readResponse(httpClient.execute(request), ignoreHttpStatus)) {
+    public static JsonObject postRequest(HttpRequest request, boolean ignoreHttpStatus) throws IOException {
+        try {
+            HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            try (Reader reader = NetworkUtils.readResponse(response, ignoreHttpStatus)) {
                 return NetworkUtils.GSON.fromJson(reader, JsonObject.class);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted.", e);
         }
     }
 
     public static JsonObject postRequest(String url, JsonElement json) throws IOException {
-        return postRequest(RequestBuilder.post(url)
-                .addHeader("Content-Type", "application/json")
-                .setEntity(new StringEntity(NetworkUtils.GSON.toJson(json)))
-                .build());
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(NetworkUtils.GSON.toJson(json)))
+                .build();
+        return postRequest(request);
     }
 
     public static JsonObject postRequest(String url, Map<String, String> formData, boolean ignoreHttpStatus) throws IOException {
-        RequestBuilder requestBuilder = RequestBuilder.post(url)
-                .addHeader("Content-Type", "application/x-www-form-urlencoded");
-        for (java.util.Map.Entry<String, String> entry : formData.entrySet())
-            requestBuilder.addParameter(entry.getKey(), entry.getValue());
-        return postRequest(requestBuilder.build(), ignoreHttpStatus);
+        String body = encodeForm(formData);
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        return postRequest(request, ignoreHttpStatus);
     }
 
     public static JsonObject postRequest(String url, Map<String, String> formData) throws IOException {
         return postRequest(url, formData, false);
     }
 
-    public static Reader readResponse(HttpResponse response, boolean ignoreHttpStatus) throws IOException {
+    private static String encodeForm(Map<String, String> formData) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> entry : formData.entrySet()) {
+            if (!sb.isEmpty()) sb.append('&');
+            sb.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
+            sb.append('=');
+            sb.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+        }
+        return sb.toString();
+    }
+
+    public static Reader readResponse(HttpResponse<byte[]> response, boolean ignoreHttpStatus) throws IOException {
         if (!ignoreHttpStatus) {
-            int statusCode = response.getStatusLine().getStatusCode();
+            int statusCode = response.statusCode();
             if (statusCode / 100 != 2) {
-                throw new IOException("HTTP " + statusCode + ": " + response.getStatusLine().getReasonPhrase());
+                throw new IOException("HTTP " + statusCode);
             }
         }
 
-        Header encoding = response.getEntity().getContentEncoding();
-        if (encoding == null) {
-            return new InputStreamReader(response.getEntity().getContent(), StandardCharsets.UTF_8);
+        Charset charset = StandardCharsets.UTF_8;
+        Optional<String> contentType = response.headers().firstValue("Content-Type");
+        if (contentType.isPresent()) {
+            String ct = contentType.get().toLowerCase(Locale.ROOT);
+            int idx = ct.indexOf("charset=");
+            if (idx != -1) {
+                String cs = ct.substring(idx + 8).trim();
+                int semi = cs.indexOf(';');
+                if (semi != -1) cs = cs.substring(0, semi);
+                try {
+                    charset = Charset.forName(cs);
+                } catch (Exception ignored) {
+                }
+            }
         }
 
-        return new InputStreamReader(response.getEntity().getContent(), encoding.getValue());
+        return new InputStreamReader(new java.io.ByteArrayInputStream(response.body()), charset);
     }
 }

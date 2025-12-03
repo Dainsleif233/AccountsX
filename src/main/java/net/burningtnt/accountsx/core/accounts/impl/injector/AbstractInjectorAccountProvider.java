@@ -10,8 +10,6 @@ import net.burningtnt.accountsx.core.ui.Memory;
 import net.burningtnt.accountsx.core.ui.UIScreen;
 import net.burningtnt.accountsx.core.utils.AvatarUtils;
 import net.burningtnt.accountsx.core.utils.NetworkUtils;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.RequestBuilder;
 
 import java.io.IOException;
 import java.security.KeyFactory;
@@ -53,7 +51,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         List<PublicKey> publicKeys;
         List<String> skinDomains = new ArrayList<>();
 
-        JsonObject response = NetworkUtils.postRequest(new HttpGet(url));
+        JsonObject response = NetworkUtils.postRequest(NetworkUtils.buildGet(url));
         if (response.get("signaturePublickey") instanceof JsonPrimitive jp && jp.isString()) {
             try {
                 publicKeys = List.of(parseSignaturePublicKey(jp.getAsString()));
@@ -224,7 +222,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     private String getAccountName(String baseUrl) {
         try {
-            JsonObject ygg = NetworkUtils.postRequest(new HttpGet(baseUrl));
+            JsonObject ygg = NetworkUtils.postRequest(NetworkUtils.buildGet(baseUrl));
             return ygg.get("meta").getAsJsonObject().get("serverName").getAsString();
         } catch (Exception ignored) {
             return null;
@@ -261,13 +259,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         String profileUrl = yggUrl + "sessionserver/session/minecraft/profile/";
 
         String openidConfigurationUrl;
-        JsonObject ygg = NetworkUtils.postRequest(new HttpGet(yggUrl));
+        JsonObject ygg = NetworkUtils.postRequest(NetworkUtils.buildGet(yggUrl));
         if (ygg.get("meta") instanceof JsonObject meta &&
                 meta.get("feature.openid_configuration_url") instanceof JsonPrimitive jp1 &&
                 jp1.isString()) openidConfigurationUrl = jp1.getAsString();
         else throw new IOException("Invalid openid configuration url!");
 
-        JsonObject config = NetworkUtils.postRequest(new HttpGet(openidConfigurationUrl));
+        JsonObject config = NetworkUtils.postRequest(NetworkUtils.buildGet(openidConfigurationUrl));
         String deviceAuthorizationEndpoint = config.get("device_authorization_endpoint").getAsString();
         String tokenEndpoint = config.get("token_endpoint").getAsString();
         String userInfoEndpoint = config.get("userinfo_endpoint").getAsString();
@@ -327,9 +325,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             throw new IOException("Unknown error: " + error);
         }
 
-        JsonObject userinfo = NetworkUtils.postRequest(RequestBuilder.get(userInfoEndpoint)
-                .addHeader("Authorization", "Bearer " + accessToken)
-                .build());
+        JsonObject userinfo = NetworkUtils.postRequest(NetworkUtils.buildGet(userInfoEndpoint, Map.of("Authorization", "Bearer " + accessToken)));
         Profile profile = readProfiles(userinfo).get(0);
 
         JsonObject OAuth = new JsonObject();
@@ -373,9 +369,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         refreshToken = token.get("refresh_token").getAsString();
         OAuth.addProperty("refresh_token", refreshToken);
 
-        JsonObject userinfo = NetworkUtils.postRequest(RequestBuilder.get(userInfoEndpoint)
-                .addHeader("Authorization", "Bearer " + accessToken)
-                .build());
+        JsonObject userinfo = NetworkUtils.postRequest(NetworkUtils.buildGet(userInfoEndpoint, Map.of("Authorization", "Bearer " + accessToken)));
         Profile profile = readProfiles(userinfo).get(0);
         String profileUrl = transformServerBaseURL(account.getServer()) + "sessionserver/session/minecraft/profile/";
 
