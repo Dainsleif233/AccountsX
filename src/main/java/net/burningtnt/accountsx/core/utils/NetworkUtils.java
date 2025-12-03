@@ -110,6 +110,7 @@ public class NetworkUtils {
                 String cs = ct.substring(idx + 8).trim();
                 int semi = cs.indexOf(';');
                 if (semi != -1) cs = cs.substring(0, semi);
+                cs = cs.replace("\"", "").trim();
                 try {
                     charset = Charset.forName(cs);
                 } catch (Exception ignored) {
