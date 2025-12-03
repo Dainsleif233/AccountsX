@@ -30,7 +30,6 @@ dependencies {
     compileOnly("net.fabricmc:fabric-loader:0.16.10")
     compileOnly("com.google.code.gson:gson:2.10.1")
     compileOnly("com.google.guava:guava:31.1-jre")
-    compileOnly("org.apache.httpcomponents:httpclient:4.5.13")
     compileOnly("org.apache.logging.log4j:log4j-api:2.22.1")
     compileOnly("org.ow2.asm:asm:9.6")
 }

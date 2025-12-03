@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import org.apache.http.client.methods.HttpGet;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -70,7 +69,7 @@ public class AvatarUtils {
 
     private static String getSkinUrl(String profileUrl) {
         try {
-            JsonObject skinJson = NetworkUtils.postRequest(new HttpGet(profileUrl));
+            JsonObject skinJson = NetworkUtils.postRequest(NetworkUtils.buildGet(profileUrl));
             JsonArray properties = skinJson.getAsJsonArray("properties");
 
             Optional<JsonObject> textureProperty = properties.asList().stream()

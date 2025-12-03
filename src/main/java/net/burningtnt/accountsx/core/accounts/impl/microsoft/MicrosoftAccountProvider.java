@@ -11,9 +11,9 @@ import net.burningtnt.accountsx.core.accounts.model.context.AuthPolicy;
 import net.burningtnt.accountsx.core.ui.Memory;
 import net.burningtnt.accountsx.core.ui.UIScreen;
 import net.burningtnt.accountsx.core.utils.NetworkUtils;
-import org.apache.http.client.methods.RequestBuilder;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.CancellationException;
 
 import static net.burningtnt.accountsx.core.utils.AvatarUtils.getAvatar;
@@ -54,10 +54,10 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
         Adapters.getMinecraftAdapter().showToast("as.account.oauth2.code.generating", null);
 
-        JsonObject device = NetworkUtils.postRequest(RequestBuilder.post(DEVICE_CODE_URL)
-                .addParameter("client_id", CLIENT_ID)
-                .addParameter("scope", SCOPE)
-                .build());
+        JsonObject device = NetworkUtils.postRequest(DEVICE_CODE_URL, Map.of(
+                "client_id", CLIENT_ID,
+                "scope", SCOPE
+        ));
 
         if (memory.isScreenClosed()) {
             throw new CancellationException("Screen has been closed.");
@@ -83,11 +83,11 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             Adapters.getMinecraftAdapter().showToast("as.account.oauth2.code.title", "as.account.oauth2.code.desc", device.get("user_code").getAsString());
 
             JsonObject token;
-            token = NetworkUtils.postRequest(RequestBuilder.post(TOKEN_URL)
-                    .addParameter("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
-                    .addParameter("code", device.get("device_code").getAsString())
-                    .addParameter("client_id", CLIENT_ID)
-                    .build(), true);
+            token = NetworkUtils.postRequest(TOKEN_URL, Map.of(
+                    "grant_type", "urn:ietf:params:oauth:grant-type:device_code",
+                    "code", device.get("device_code").getAsString(),
+                    "client_id", CLIENT_ID
+            ), true);
 
             JsonElement err = token.get("error");
             if (err == null) {
@@ -160,9 +160,9 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
         String playerName, playerUUID;
         {
-            JsonObject json = NetworkUtils.postRequest(RequestBuilder.get(MicrosoftConstants.MS_GAME_PROFILE)
-                    .addHeader("Authorization", "Bearer " + accessToken)
-                    .build());
+            JsonObject json = NetworkUtils.postRequest(NetworkUtils.buildGet(MicrosoftConstants.MS_GAME_PROFILE, Map.of(
+                    "Authorization", "Bearer " + accessToken
+            )));
 
             if (json.has("error"))
                 throw new IOException("Failed to get UUID");
@@ -184,11 +184,11 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
     @Override
     public void refresh(MicrosoftAccount account) throws IOException {
         {
-            JsonObject token = NetworkUtils.postRequest(RequestBuilder.post(TOKEN_URL)
-                    .addParameter("client_id", CLIENT_ID)
-                    .addParameter("refresh_token", account.getMicrosoftAccountRefreshToken())
-                    .addParameter("grant_type", "refresh_token")
-                    .build());
+            JsonObject token = NetworkUtils.postRequest(TOKEN_URL, Map.of(
+                    "client_id", CLIENT_ID,
+                    "refresh_token", account.getMicrosoftAccountRefreshToken(),
+                    "grant_type", "refresh_token"
+            ));
 
             account.setMicrosoftAccountToken(
                     token.get("access_token").getAsString(),
@@ -241,9 +241,9 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
         String playerName, playerUUID;
         {
-            JsonObject json = NetworkUtils.postRequest(RequestBuilder.get(MicrosoftConstants.MS_GAME_PROFILE)
-                    .addHeader("Authorization", "Bearer " + accessToken)
-                    .build());
+            JsonObject json = NetworkUtils.postRequest(NetworkUtils.buildGet(MicrosoftConstants.MS_GAME_PROFILE, Map.of(
+                    "Authorization", "Bearer " + accessToken
+            )));
 
             if (json.has("error"))
                 throw new IOException("Failed to get UUID");
