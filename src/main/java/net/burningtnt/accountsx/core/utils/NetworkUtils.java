@@ -68,7 +68,7 @@ public class NetworkUtils {
                         }
                         redirects++;
                         if (redirects > 10)
-                            throw new IOException("Too many redirects");
+                            throw new IOException("Too many redirects (" + redirects + ") while following HEAD request, last URL: " + uri);
                         uri = next;
                         continue;
                     } else
