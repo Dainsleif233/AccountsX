@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 
 public final class AccountManager {
     private static final List<BaseAccount> accounts = new CopyOnWriteArrayList<>();
@@ -136,25 +137,27 @@ public final class AccountManager {
 
     @Threading.Thread(Threading.WORKER)
     private static void refreshAccountsParallel(List<BaseAccount> toRefresh) {
+        CountDownLatch latch = new CountDownLatch(toRefresh.size());
         List<Thread> threads = new ArrayList<>(toRefresh.size());
         for (BaseAccount account : toRefresh) {
-            final Thread t = getThread(account);
+            final Thread t = getThread(account, latch);
             threads.add(t);
             t.start();
         }
 
-        for (Thread t : threads) {
+        while (latch.getCount() > 0) {
             try {
-                t.join();
+                latch.await();
             } catch (InterruptedException e) {
+                for (Thread t : threads) {
+                    t.interrupt();
+                }
                 Thread.currentThread().interrupt();
-                for (Thread worker : threads) worker.interrupt();
-                break;
             }
         }
     }
 
-    private static Thread getThread(BaseAccount account) {
+    private static Thread getThread(BaseAccount account, CountDownLatch latch) {
         Thread t = new Thread(null, () -> {
             AccountWorker.registerWorkerThread(Thread.currentThread());
             try {
@@ -166,6 +169,7 @@ public final class AccountManager {
                 }
             } finally {
                 AccountWorker.unregisterWorkerThread(Thread.currentThread());
+                latch.countDown();
             }
         }, "AccountsX Background Worker Thread - parallel-" + account.getAccountName());
         t.setDaemon(true);
