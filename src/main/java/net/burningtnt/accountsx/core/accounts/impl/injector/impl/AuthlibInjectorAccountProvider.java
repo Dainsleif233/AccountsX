@@ -25,8 +25,10 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
                 Map<String, List<String>> headers = NetworkUtils.headRequest(api);
                 List<String> apiLocations = headers.get("X-Authlib-Injector-API-Location");
                 if (apiLocations == null || apiLocations.isEmpty()) {
-                    if (redirects == 0) return "https://" + server + "/api/yggdrasil/";
-                    else return api;
+                    if (redirects == 0) {
+                        URI baseUri = URI.create(api);
+                        return baseUri.getScheme() + "://" + baseUri.getAuthority() + "/api/yggdrasil";
+                    } else return api;
                 }
                 String newApi = apiLocations.get(0);
                 if (!newApi.equals(api)) {
@@ -48,7 +50,7 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
         try {
             URI u = URI.create(server);
             if (u.getScheme() != null) return server;
-            return "http://" + server;
+            return "https://" + server;
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid server URL: " + server, e);
         }
