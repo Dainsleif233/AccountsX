@@ -12,7 +12,7 @@
   "as.account.oauth2.code.title": "OAuth2 Code Generated",
   "as.account.objects.player_name": "Player ID",
   "as.account.objects.player_uuid": "Player UUID",
-  "as.account.objects.server_domain": "Yggdrasil API URL (Root Domain Only)",
+  "as.account.objects.server_domain": "Yggdrasil API URL",
   "as.account.objects.server_id": "Server ID",
   "as.account.objects.user_id": "User ID (Leave blank to use OAuth)",
   "as.account.objects.user_name": "User ID",

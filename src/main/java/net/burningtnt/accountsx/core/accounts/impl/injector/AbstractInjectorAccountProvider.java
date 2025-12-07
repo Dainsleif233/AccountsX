@@ -12,6 +12,7 @@ import net.burningtnt.accountsx.core.utils.AvatarUtils;
 import net.burningtnt.accountsx.core.utils.NetworkUtils;
 
 import java.io.IOException;
+import java.net.URI;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
@@ -37,8 +38,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         this.userBaseTranslationKey = userBaseTranslationKey;
     }
 
-    protected void validateServerBaseURL(String server) throws IllegalArgumentException {
-    }
+    protected void validateServerBaseURL(String server) throws IllegalArgumentException {}
 
     protected abstract String transformServerBaseURL(String server);
 
@@ -46,7 +46,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     @Override
     public final AccountContext createAccountContext(T account) throws IOException {
-        String url = transformServerBaseURL(account.getServer());
+        String url = account.getServer();
 
         List<PublicKey> publicKeys;
         List<String> skinDomains = new ArrayList<>();
@@ -75,8 +75,10 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         }
 
         return new AccountContext(new AuthServerContext(
-                url + "authserver", url + "api",
-                url + "sessionserver", url + "minecraftservices",
+                url + "/authserver",
+                url + "/api",
+                url + "/sessionserver",
+                url + "/minecraftservices",
                 accountContextName
         ), new AuthSecurityContext(
                 publicKeys, publicKeys,
@@ -122,8 +124,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
     public final T login(Memory memory) throws IOException {
         if (memory.get(GUID_USER_NAME, String.class).isEmpty()) return loginOAuth(memory.get(GUID_SERVER_BASE, String.class));
         String baseUrl = transformServerBaseURL(memory.get(GUID_SERVER_BASE, String.class));
-        String loginUrl = baseUrl + "authserver/authenticate";
-        String profileUrl = baseUrl + "sessionserver/session/minecraft/profile/";
+        String loginUrl = baseUrl + "/authserver/authenticate";
+        String profileUrl = baseUrl + "/sessionserver/session/minecraft/profile/";
 
         JsonObject agent = new JsonObject();
         agent.addProperty("name", "Minecraft");
@@ -155,7 +157,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             return createAccount(
                     accessToken, profile.playerName,
                     AccountUUID.parse(profile.playerUUID),
-                    memory.get(GUID_SERVER_BASE, String.class),
+                    baseUrl,
                     profile.playerUUID,
                     getAccountName(baseUrl),
                     AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
@@ -167,7 +169,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                             accessToken,
                             profile.playerName,
                             AccountUUID.parse(profile.playerUUID),
-                            memory.get(GUID_SERVER_BASE, String.class),
+                            baseUrl,
                             profile.playerUUID,
                             getAccountName(baseUrl),
                             AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
@@ -185,9 +187,9 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             refreshOAuth(account);
             return;
         }
-        String baseUrl = transformServerBaseURL(account.getServer());
-        String refreshUrl = baseUrl + "authserver/refresh";
-        String profileUrl = baseUrl + "sessionserver/session/minecraft/profile/";
+        String baseUrl = account.getServer();
+        String refreshUrl = baseUrl + "/authserver/refresh";
+        String profileUrl = baseUrl + "/sessionserver/session/minecraft/profile/";
 
         JsonObject root = new JsonObject();
         root.addProperty("accessToken", account.getLoginToken());
@@ -254,9 +256,9 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         }
     }
 
-    private T loginOAuth(String host) throws IOException {
-        String yggUrl = transformServerBaseURL(host);
-        String profileUrl = yggUrl + "sessionserver/session/minecraft/profile/";
+    private T loginOAuth(String server) throws IOException {
+        String yggUrl = transformServerBaseURL(server);
+        String profileUrl = yggUrl + "/sessionserver/session/minecraft/profile/";
 
         String openidConfigurationUrl;
         JsonObject ygg = NetworkUtils.postRequest(NetworkUtils.buildGet(yggUrl));
@@ -270,6 +272,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         String tokenEndpoint = config.get("token_endpoint").getAsString();
         String userInfoEndpoint = config.get("userinfo_endpoint").getAsString();
         String clientId;
+
+        String host = URI.create(yggUrl).getHost();
         if (OAuthConstants.list.containsKey(host)) clientId = OAuthConstants.list.get(host);
         else if (config.get("shared_client_id") instanceof JsonPrimitive jp2 &&
                 jp2.isString()) clientId = jp2.getAsString();
@@ -338,7 +342,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 accessToken,
                 profile.playerName,
                 AccountUUID.parse(profile.playerUUID),
-                host,
+                yggUrl,
                 profile.playerUUID,
                 getAccountName(yggUrl),
                 AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
@@ -371,7 +375,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
         JsonObject userinfo = NetworkUtils.postRequest(NetworkUtils.buildGet(userInfoEndpoint, Map.of("Authorization", "Bearer " + accessToken)));
         Profile profile = readProfiles(userinfo).get(0);
-        String profileUrl = transformServerBaseURL(account.getServer()) + "sessionserver/session/minecraft/profile/";
+        String profileUrl = account.getServer() + "/sessionserver/session/minecraft/profile/";
 
         account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);

@@ -12,7 +12,7 @@
   "as.account.oauth2.code.title": "OAuth2 代码生成完毕",
   "as.account.objects.player_name": "玩家 ID",
   "as.account.objects.player_uuid": "玩家 UUID",
-  "as.account.objects.server_domain": "认证服务器（仅根域名）",
+  "as.account.objects.server_domain": "认证服务器",
   "as.account.objects.server_id": "服务器 ID",
   "as.account.objects.user_id": "用户 ID（OAuth留空）",
   "as.account.objects.user_name": "用户 ID",

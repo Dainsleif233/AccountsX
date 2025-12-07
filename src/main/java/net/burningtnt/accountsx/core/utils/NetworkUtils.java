@@ -16,6 +16,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +44,45 @@ public class NetworkUtils {
             builder.header(e.getKey(), e.getValue());
         }
         return builder.build();
+    }
+
+    public static Map<String, List<String>> headRequest(String url) throws IOException {
+        URI uri = URI.create(url);
+        int redirects = 0;
+        while (true) {
+            HttpRequest request = HttpRequest.newBuilder(uri)
+                    .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                    .build();
+            try {
+                HttpResponse<Void> response = CLIENT.send(request, HttpResponse.BodyHandlers.discarding());
+                int statusCode = response.statusCode();
+                if (statusCode / 100 == 3) {
+                    Optional<String> location = response.headers().firstValue("Location");
+                    if (location.isPresent()) {
+                        URI next;
+                        try {
+                            URI loc = URI.create(location.get());
+                            next = loc.isAbsolute() ? loc : uri.resolve(loc);
+                        } catch (IllegalArgumentException e) {
+                            throw new IOException("Invalid redirect location", e);
+                        }
+                        redirects++;
+                        if (redirects > 10)
+                            throw new IOException("Too many redirects (" + redirects + ") while following HEAD request, last URL: " + uri);
+                        uri = next;
+                        continue;
+                    } else
+                        throw new IOException("HTTP " + statusCode);
+                }
+                if (statusCode / 100 != 2) {
+                    throw new IOException("HTTP " + statusCode);
+                }
+                return response.headers().map();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted.", e);
+            }
+        }
     }
 
     public static JsonObject postRequest(HttpRequest request) throws IOException {

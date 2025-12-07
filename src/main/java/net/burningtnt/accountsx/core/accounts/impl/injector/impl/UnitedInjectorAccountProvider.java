@@ -36,7 +36,7 @@ public final class UnitedInjectorAccountProvider extends AbstractInjectorAccount
 
     @Override
     protected String transformServerBaseURL(String server) {
-        return "https://auth.mc-user.com:233/" + server + '/';
+        return "https://auth.mc-user.com:233/" + server;
     }
 
     @Override
