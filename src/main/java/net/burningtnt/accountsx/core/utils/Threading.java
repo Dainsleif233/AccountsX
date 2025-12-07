@@ -21,7 +21,7 @@ public final class Threading {
     }
 
     public static void checkAccountWorkerThread() {
-        if (AccountWorker.getWorkerThread() != java.lang.Thread.currentThread()) {
+        if (!AccountWorker.isWorkerThread(java.lang.Thread.currentThread())) {
             throw new IllegalStateException("Should in Account Worker Thread.");
         }
     }

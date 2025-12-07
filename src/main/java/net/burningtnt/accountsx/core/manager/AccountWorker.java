@@ -6,6 +6,8 @@ import net.burningtnt.accountsx.core.adapters.Adapters;
 import java.util.Queue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 
 public final class AccountWorker {
     public interface Task {
@@ -19,6 +21,8 @@ public final class AccountWorker {
 
     private static final Queue<Task> taskQueue = new ConcurrentLinkedQueue<>();
 
+    private static final Set<Thread> workerThreads = ConcurrentHashMap.newKeySet();
+
     private static volatile long taskStartTime = -1;
 
     public static void submit(Task task) {
@@ -31,8 +35,16 @@ public final class AccountWorker {
         return t != -1 && System.currentTimeMillis() - t >= TASK_DISPLAY_DELAY_MS;
     }
 
-    public static Thread getWorkerThread() {
-        return WORKER;
+    public static boolean isWorkerThread(Thread t) {
+        return workerThreads.contains(t);
+    }
+
+    public static void registerWorkerThread(Thread t) {
+        workerThreads.add(t);
+    }
+
+    public static void unregisterWorkerThread(Thread t) {
+        workerThreads.remove(t);
     }
 
     private static final Thread WORKER = new Thread((ThreadGroup) null, "AccountsX Background Worker Thread") {
@@ -74,6 +86,7 @@ public final class AccountWorker {
     };
 
     static {
+        workerThreads.add(WORKER);
         WORKER.start();
     }
 }

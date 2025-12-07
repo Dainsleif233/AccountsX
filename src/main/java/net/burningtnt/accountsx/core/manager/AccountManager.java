@@ -14,6 +14,7 @@ import net.burningtnt.accountsx.core.utils.Threading;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class AccountManager {
@@ -37,10 +38,15 @@ public final class AccountManager {
 
         accounts.addAll(ConfigHandle.load());
 
+        List<BaseAccount> toRefresh = new ArrayList<>();
         for (BaseAccount account : accounts) {
             if (account.getAccountStorage().getState() != AccountState.AUTHORIZED) {
-                AccountWorker.submit(() -> refreshAccount(account, false));
+                toRefresh.add(account);
             }
+        }
+
+        if (!toRefresh.isEmpty()) {
+            AccountWorker.submit(() -> refreshAccountsParallel(toRefresh));
         }
 
         save();
@@ -117,6 +123,38 @@ public final class AccountManager {
 
         if (account.getAccountStorage().getState() != AccountState.AUTHORIZED) {
             throw new IOException("Account provider " + account.getAccountType() + " has finished it's refresh invocation, but neither an exception was thrown nor set the account storage to AUTHORIZED");
+        }
+    }
+
+    @Threading.Thread(Threading.WORKER)
+    private static void refreshAccountsParallel(List<BaseAccount> toRefresh) {
+        List<Thread> threads = new ArrayList<>(toRefresh.size());
+        for (BaseAccount account : toRefresh) {
+            Thread t = new Thread(null, () -> {
+                AccountWorker.registerWorkerThread(java.lang.Thread.currentThread());
+                try {
+                    try {
+                        refreshAccount(account, false);
+                    } catch (Throwable t1) {
+                        AccountsX.LOGGER.warn("An exception has occurred in AccountsX Background Thread.", t1);
+                        Adapters.getMinecraftAdapter().showToast("as.account.fail.title", AccountManager.handleException(t1));
+                    }
+                } finally {
+                    AccountWorker.unregisterWorkerThread(java.lang.Thread.currentThread());
+                }
+            }, "AccountsX Background Worker Thread - parallel");
+            t.setDaemon(true);
+            threads.add(t);
+            t.start();
+        }
+
+        for (Thread t : threads) {
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                java.lang.Thread.currentThread().interrupt();
+                break;
+            }
         }
     }
 
