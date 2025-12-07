@@ -167,7 +167,7 @@ public final class AccountManager {
             } finally {
                 AccountWorker.unregisterWorkerThread(Thread.currentThread());
             }
-        }, "AccountsX Background Worker Thread - parallel");
+        }, "AccountsX Background Worker Thread - parallel-" + account.getAccountName());
         t.setDaemon(true);
         return t;
     }
