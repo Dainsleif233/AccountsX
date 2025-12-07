@@ -23,10 +23,12 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
         while (true) {
             try {
                 Map<String, List<String>> headers = NetworkUtils.headRequest(api);
-                if (!headers.containsKey("X-Authlib-Injector-API-Location"))
+                List<String> apiLocations = headers.get("X-Authlib-Injector-API-Location");
+                if (apiLocations == null || apiLocations.isEmpty()) {
                     if (redirects == 0) return "https://" + server + "/api/yggdrasil/";
                     else return api;
-                String newApi = headers.get("X-Authlib-Injector-API-Location").get(0);
+                }
+                String newApi = apiLocations.get(0);
                 if (!newApi.equals(api)) {
                     redirects++;
                     if (redirects > 10) {
