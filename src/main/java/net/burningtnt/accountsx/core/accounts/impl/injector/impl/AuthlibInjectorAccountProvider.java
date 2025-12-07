@@ -43,9 +43,13 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
     }
 
     private String buildUrl(String server) {
-        URI u = URI.create(server);
-        if (u.getScheme() != null) return server;
-        return "http://" + server;
+        try {
+            URI u = URI.create(server);
+            if (u.getScheme() != null) return server;
+            return "http://" + server;
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid server URL: " + server, e);
+        }
     }
 
     @Override
