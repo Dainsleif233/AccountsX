@@ -30,7 +30,7 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
                 if (!newApi.equals(api)) {
                     redirects++;
                     if (redirects > 10) {
-                        throw new IOException("Too many redirects");
+                        throw new IOException("Too many redirects (" + redirects + ") while resolving API location, last URL: " + api);
                     }
                     api = newApi;
                     continue;
