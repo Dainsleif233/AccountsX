@@ -108,6 +108,14 @@ public final class AccountManager {
 
     @Threading.Thread(Threading.WORKER)
     private static void refreshAccount(BaseAccount account, boolean thrown) throws IOException {
+        if (Thread.currentThread().isInterrupted()) {
+            account.setProfileState(AccountState.UNAUTHORIZED);
+            if (thrown) {
+                throw new IOException("Interrupted");
+            } else {
+                return;
+            }
+        }
         account.setProfileState(AccountState.AUTHORIZING);
         try {
             AccountProvider.getProvider(account).refresh(account);
@@ -130,20 +138,7 @@ public final class AccountManager {
     private static void refreshAccountsParallel(List<BaseAccount> toRefresh) {
         List<Thread> threads = new ArrayList<>(toRefresh.size());
         for (BaseAccount account : toRefresh) {
-            Thread t = new Thread(null, () -> {
-                AccountWorker.registerWorkerThread(java.lang.Thread.currentThread());
-                try {
-                    try {
-                        refreshAccount(account, false);
-                    } catch (Throwable t1) {
-                        AccountsX.LOGGER.warn("An exception has occurred in AccountsX Background Thread.", t1);
-                        Adapters.getMinecraftAdapter().showToast("as.account.fail.title", AccountManager.handleException(t1));
-                    }
-                } finally {
-                    AccountWorker.unregisterWorkerThread(java.lang.Thread.currentThread());
-                }
-            }, "AccountsX Background Worker Thread - parallel");
-            t.setDaemon(true);
+            final Thread t = getThread(account);
             threads.add(t);
             t.start();
         }
@@ -152,10 +147,29 @@ public final class AccountManager {
             try {
                 t.join();
             } catch (InterruptedException e) {
-                java.lang.Thread.currentThread().interrupt();
+                Thread.currentThread().interrupt();
+                for (Thread worker : threads) worker.interrupt();
                 break;
             }
         }
+    }
+
+    private static Thread getThread(BaseAccount account) {
+        Thread t = new Thread(null, () -> {
+            AccountWorker.registerWorkerThread(Thread.currentThread());
+            try {
+                try {
+                    refreshAccount(account, false);
+                } catch (Throwable t1) {
+                    AccountsX.LOGGER.warn("An exception has occurred in AccountsX Background Thread.", t1);
+                    Adapters.getMinecraftAdapter().showToast("as.account.fail.title", AccountManager.handleException(t1));
+                }
+            } finally {
+                AccountWorker.unregisterWorkerThread(Thread.currentThread());
+            }
+        }, "AccountsX Background Worker Thread - parallel");
+        t.setDaemon(true);
+        return t;
     }
 
     public static String handleException(Throwable t) {
