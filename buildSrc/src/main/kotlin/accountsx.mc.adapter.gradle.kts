@@ -50,7 +50,7 @@ dependencies {
             ).invokeWithArguments(
                 serviceOf<ObjectFactory>().newInstance(clazz),
                 "fabric-resource-loader-v0",
-                "${adapter.api}+${adapter.minecraft}"
+                "${adapter.api}+${adapter.minecraft.split(Regex("-"), 2)[0]}"
             )
         },
         "implementation" to { project(":adapters:authlib:${adapter.authlib}") }
