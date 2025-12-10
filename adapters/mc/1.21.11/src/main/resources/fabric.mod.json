@@ -17,7 +17,7 @@
     "accountsx-adapter-mc.mixins.json"
   ],
   "depends": {
-    "minecraft": ">1.21.10",
+    "minecraft": ">=${minecraft}",
     "java": ">=21",
     "accountsx-adapter-authlib": "${version}-${authlib}"
   },
