@@ -48,40 +48,35 @@ public class NetworkUtils {
 
     public static Map<String, List<String>> headRequest(String url) throws IOException {
         URI uri = URI.create(url);
-        int redirects = 0;
-        while (true) {
-            HttpRequest request = HttpRequest.newBuilder(uri)
-                    .method("HEAD", HttpRequest.BodyPublishers.noBody())
-                    .build();
-            try {
-                HttpResponse<Void> response = CLIENT.send(request, HttpResponse.BodyHandlers.discarding());
-                int statusCode = response.statusCode();
-                if (statusCode / 100 == 3) {
-                    Optional<String> location = response.headers().firstValue("Location");
-                    if (location.isPresent()) {
-                        URI next;
-                        try {
-                            URI loc = URI.create(location.get());
-                            next = loc.isAbsolute() ? loc : uri.resolve(loc);
-                        } catch (IllegalArgumentException e) {
-                            throw new IOException("Invalid redirect location", e);
-                        }
-                        redirects++;
-                        if (redirects > 10)
-                            throw new IOException("Too many redirects (" + redirects + ") while following HEAD request, last URL: " + uri);
-                        uri = next;
-                        continue;
-                    } else
-                        throw new IOException("HTTP " + statusCode);
-                }
-                if (statusCode / 100 != 2) {
-                    throw new IOException("HTTP " + statusCode);
-                }
-                return response.headers().map();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Interrupted.", e);
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                .build();
+        try {
+            HttpResponse<Void> response = CLIENT.send(request, HttpResponse.BodyHandlers.discarding());
+            return response.headers().map();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted.", e);
+        }
+    }
+
+    public static List<String> getHeaderIgnoreCase(Map<String, List<String>> headers, String name) {
+        for (Map.Entry<String, List<String>> e : headers.entrySet()) {
+            if (e.getKey() != null && e.getKey().equalsIgnoreCase(name)) {
+                return e.getValue();
             }
+        }
+        return null;
+    }
+
+    public static String resolveLocation(String base, String loc) throws IOException {
+        try {
+            URI baseUri = URI.create(base);
+            URI locUri = URI.create(loc);
+            URI next = locUri.isAbsolute() ? locUri : baseUri.resolve(locUri);
+            return next.toString();
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid redirect location", e);
         }
     }
 

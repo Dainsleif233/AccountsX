@@ -22,24 +22,31 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
         int redirects = 0;
         while (true) {
             try {
+                if (redirects > 10)
+                    throw new IOException("Too many redirects (" + redirects + ") while resolving API location, last URL: " + api);
                 Map<String, List<String>> headers = NetworkUtils.headRequest(api);
-                List<String> apiLocations = headers.get("X-Authlib-Injector-API-Location");
-                if (apiLocations == null || apiLocations.isEmpty()) {
+                List<String> apiLocations = NetworkUtils.getHeaderIgnoreCase(headers, "X-Authlib-Injector-API-Location");
+                List<String> locations = NetworkUtils.getHeaderIgnoreCase(headers, "Location");
+                if (apiLocations != null && !apiLocations.isEmpty()) {
+                    String candidate = apiLocations.get(0);
+                    String newApi = NetworkUtils.resolveLocation(api, candidate);
+                    if (!newApi.equals(api)) {
+                        redirects++;
+                        api = newApi;
+                    } else return api;
+                } else if (locations != null && !locations.isEmpty()) {
+                    String candidate = locations.get(0);
+                    String newApi = NetworkUtils.resolveLocation(api, candidate);
+                    if (!newApi.equals(api)) {
+                        redirects++;
+                        api = newApi;
+                    } else return api;
+                } else {
                     if (redirects == 0) {
                         URI baseUri = URI.create(api);
                         return baseUri.getScheme() + "://" + baseUri.getAuthority() + "/api/yggdrasil";
                     } else return api;
                 }
-                String newApi = apiLocations.get(0);
-                if (!newApi.equals(api)) {
-                    redirects++;
-                    if (redirects > 10) {
-                        throw new IOException("Too many redirects (" + redirects + ") while resolving API location, last URL: " + api);
-                    }
-                    api = newApi;
-                    continue;
-                }
-                return api;
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
