@@ -37,16 +37,14 @@ public class TitleScreenMixin extends Screen {
     @Inject(method = "initWidgetsNormal", at = @At("RETURN"))
     protected void init(CallbackInfo ci) {
         assert this.client != null;
-        int j = this.height / 4 + 48;
-
         this.addDrawableChild(TextIconButtonWidget.builder(
-                        Text.translatable("as.account.action.add_account"),
+                        Text.empty(),
                         (button) -> this.client.setScreen(new AccountScreen(this)),
                         true)
                 .dimension(20, 20)
                 .texture(SWITCH_ACCOUNT_ICON_TEXTURE, 20, 20)
                 .build()
-        ).setPosition(this.width / 2 + 104, j + 24 * 2);
+        ).setPosition(this.width / 2 + 104, this.height / 4 + 72);
     }
 
     @Inject(method = "render", at = @At("RETURN"))
