@@ -6,6 +6,7 @@ public class OAuthConstants {
     public static final Map<String, String> list = Map.of(
             "skin.jsumc.fun", "3",
             "skin.mualliance.ltd", "28",
-            "littleskin.cn", "1214"
+            "littleskin.cn", "1214",
+            "mcskin.ecustvr.top", "6"
     );
 }
