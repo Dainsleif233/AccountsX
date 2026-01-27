@@ -1,6 +1,7 @@
 package net.burningtnt.accountsx.adapters.mc.ui;
 
 import net.burningtnt.accountsx.core.accounts.BaseAccount;
+import net.burningtnt.accountsx.core.accounts.impl.injector.AbstractInjectorAccount;
 import net.burningtnt.accountsx.core.accounts.model.AccountType;
 import net.burningtnt.accountsx.core.adapters.api.AccountSession;
 import net.burningtnt.accountsx.core.manager.AccountManager;
@@ -16,7 +17,9 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.UUID;
 
 import static com.mojang.text2speech.Narrator.LOGGER;
 
@@ -177,12 +180,15 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
                 NativeImage nativeImage = NativeImage.read(new ByteArrayInputStream(imageBytes));
                 NativeImageBackedTexture texture = new NativeImageBackedTexture(nativeImage);
 
-                String safeName = account.getAccountStorage().getPlayerName()
-                        .toLowerCase()
-                        .replaceAll("[^a-z0-9._-]", "-");
+                AccountType type = account.getAccountType();
+                UUID uuid = account.getAccountStorage().getPlayerUUID();
+                String server = type == AccountType.AUTHLIB_INJECTOR || type == AccountType.UNITED_INJECTOR ?
+                        ((AbstractInjectorAccount) account).getServer() : "";
+                String textureKey = type.toString() + "_" + uuid.toString() + "_" + server;
+                UUID textureUUID = UUID.nameUUIDFromBytes(textureKey.getBytes(StandardCharsets.UTF_8));
 
                 return client.getTextureManager().registerDynamicTexture(
-                        "accountsx_avatar_" + safeName,
+                        "accountsx_avatar_" + textureUUID,
                         texture
                 );
             } catch (IOException e) {
