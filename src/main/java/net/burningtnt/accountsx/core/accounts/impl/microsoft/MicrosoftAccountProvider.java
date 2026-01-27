@@ -3,6 +3,7 @@ package net.burningtnt.accountsx.core.accounts.impl.microsoft;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import net.burningtnt.accountsx.core.accounts.AccountProvider;
 import net.burningtnt.accountsx.core.accounts.AccountUUID;
 import net.burningtnt.accountsx.core.adapters.Adapters;
@@ -68,11 +69,20 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
         String url = device.get("verification_uri").getAsString();
         Adapters.getMinecraftAdapter().openBrowser(url);
 
-        String microsoftAccessToken, microsoftRefreshToken;
+        String microsoftAccessToken = null, microsoftRefreshToken = null;
 
-        for (int interval = device.get("interval").getAsInt(); ; ) {
+        int interval;
+        if (device.get("interval") instanceof JsonPrimitive jp &&
+                jp.isNumber()) interval = jp.getAsInt();
+        else interval = 5;
+        int expires;
+        if (device.get("expires_in") instanceof JsonPrimitive jp &&
+                jp.isNumber()) expires = jp.getAsInt();
+        else expires = 300;
+
+        for (int i = 0; i < expires; i += interval) {
             try {
-                Thread.sleep(Math.max(interval, 1));
+                Thread.sleep(Math.max(interval, 1) * 1000L);
             } catch (InterruptedException e) {
                 throw new IOException("Interrupted.", e);
             }
@@ -114,6 +124,8 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
             throw new IOException("Unknown error: " + error);
         }
+
+        if (microsoftAccessToken == null || microsoftRefreshToken == null) throw new IOException("Invalid token.");
 
         String xblToken, userHash;
         {

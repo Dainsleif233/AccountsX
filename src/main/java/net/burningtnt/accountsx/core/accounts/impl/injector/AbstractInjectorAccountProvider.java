@@ -292,6 +292,10 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         if (device.get("interval") instanceof JsonPrimitive jp &&
                 jp.isNumber()) interval = jp.getAsInt();
         else interval = 5;
+        int expires;
+        if (device.get("expires_in") instanceof JsonPrimitive jp &&
+                jp.isNumber()) expires = jp.getAsInt();
+        else expires = 300;
         if (device.get("verification_uri_complete") instanceof JsonPrimitive jp && jp.isString()) {
             Adapters.getMinecraftAdapter().openBrowser(jp.getAsString());
             Adapters.getMinecraftAdapter().copyText(jp.getAsString());
@@ -301,10 +305,10 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         }
         Adapters.getMinecraftAdapter().showToast("as.account.oauth2.code.title", "as.account.oauth2.code.desc", userCode);
 
-        String accessToken, refreshToken;
-        while(true) {
+        String accessToken = null, refreshToken = null;
+        for (int i = 0; i < expires; i += interval) {
             try {
-                Thread.sleep(Math.max(interval, 1));
+                Thread.sleep(Math.max(interval, 1) * 1000L);
             } catch (InterruptedException e) {
                 throw new IOException("Interrupted.", e);
             }
@@ -328,6 +332,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             if (error.equals("expired_token")) throw new IOException("No character detected.");
             throw new IOException("Unknown error: " + error);
         }
+
+        if (accessToken == null || refreshToken == null) throw new IOException("Invalid token.");
 
         JsonObject userinfo = NetworkUtils.postRequest(NetworkUtils.buildGet(userInfoEndpoint, Map.of("Authorization", "Bearer " + accessToken)));
         Profile profile = readProfiles(userinfo).get(0);
