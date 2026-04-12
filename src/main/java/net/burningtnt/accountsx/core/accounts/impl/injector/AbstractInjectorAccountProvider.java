@@ -270,7 +270,6 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         JsonObject config = NetworkUtils.postRequest(NetworkUtils.buildGet(openidConfigurationUrl));
         String deviceAuthorizationEndpoint = config.get("device_authorization_endpoint").getAsString();
         String tokenEndpoint = config.get("token_endpoint").getAsString();
-        String userInfoEndpoint = config.get("userinfo_endpoint").getAsString();
         String clientId;
 
         String host = URI.create(yggUrl).getHost();
@@ -305,7 +304,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         }
         Adapters.getMinecraftAdapter().showToast("as.account.oauth2.code.title", "as.account.oauth2.code.desc", userCode);
 
-        String accessToken = null, refreshToken = null;
+        String accessToken = null, refreshToken = null, idToken = null;
         for (int i = 0; i < expires; i += interval) {
             try {
                 Thread.sleep(Math.max(interval, 1) * 1000L);
@@ -324,6 +323,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             if (err == null) {
                 accessToken = token.get("access_token").getAsString();
                 refreshToken = token.get("refresh_token").getAsString();
+                idToken = token.get("id_token").getAsString();
                 break;
             }
 
@@ -333,16 +333,19 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             throw new IOException("Unknown error: " + error);
         }
 
-        if (accessToken == null || refreshToken == null) throw new IOException("Invalid token.");
+        if (accessToken == null || refreshToken == null || idToken == null) throw new IOException("Invalid token.");
 
-        JsonObject userinfo = NetworkUtils.postRequest(NetworkUtils.buildGet(userInfoEndpoint, Map.of("Authorization", "Bearer " + accessToken)));
+        String[] parts = idToken.split("\\.");
+        if (parts.length < 2) throw new IOException("Invalid id token.");
+        Base64.Decoder decoder = Base64.getUrlDecoder();
+        String payload = new String(decoder.decode(parts[1]));
+        JsonObject userinfo = JsonParser.parseString(payload).getAsJsonObject();
         Profile profile = readProfiles(userinfo).get(0);
 
         JsonObject OAuth = new JsonObject();
         OAuth.addProperty("token_endpoint", tokenEndpoint);
         OAuth.addProperty("refresh_token", refreshToken);
         OAuth.addProperty("client_id", clientId);
-        OAuth.addProperty("userinfo_endpoint", userInfoEndpoint);
 
         T account = createAccount(
                 accessToken,
@@ -364,7 +367,6 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         String tokenEndpoint = OAuth.get("token_endpoint").getAsString();
         String refreshToken = OAuth.get("refresh_token").getAsString();
         String clientId = OAuth.get("client_id").getAsString();
-        String userInfoEndpoint = OAuth.get("userinfo_endpoint").getAsString();
 
         Map<String, String> form = Map.of(
                 "client_id", clientId,
@@ -378,8 +380,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         String accessToken = token.get("access_token").getAsString();
         refreshToken = token.get("refresh_token").getAsString();
         OAuth.addProperty("refresh_token", refreshToken);
+        String idToken = token.get("id_token").getAsString();
 
-        JsonObject userinfo = NetworkUtils.postRequest(NetworkUtils.buildGet(userInfoEndpoint, Map.of("Authorization", "Bearer " + accessToken)));
+        String[] parts = idToken.split("\\.");
+        if (parts.length < 2) throw new IOException("Invalid id token.");
+        Base64.Decoder decoder = Base64.getUrlDecoder();
+        String payload = new String(decoder.decode(parts[1]));
+        JsonObject userinfo = JsonParser.parseString(payload).getAsJsonObject();
         Profile profile = readProfiles(userinfo).get(0);
         String profileUrl = account.getServer() + "/sessionserver/session/minecraft/profile/";
 
