@@ -1,37 +1,9 @@
-# gradle
-
+# Gradle
 .gradle/
 build/
-out/
-classes/
 
-# eclipse
-
-*.launch
-
-# idea
-
+# IDE
 .idea/
-*.iml
-*.ipr
-*.iws
 
-# vscode
-
-.settings/
-.vscode/
-bin/
-.classpath
-.project
-
-# macos
-
-*.DS_Store
-
-# fabric
-
-run/
-.VSCodeCounter/
-Untitled-1.json
-Untitled-2.json
-Untitled-3.json
+# Agent
+CLAUDE.md

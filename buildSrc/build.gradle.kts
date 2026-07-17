@@ -3,6 +3,6 @@ plugins {
 }
 
 repositories {
-    gradlePluginPortal()
-    maven(url = "https://maven.fabricmc.net/")
+    maven("https://maven.fabricmc.net/")
+    maven("https://maven.aliyun.com/repository/gradle-plugin/")
 }

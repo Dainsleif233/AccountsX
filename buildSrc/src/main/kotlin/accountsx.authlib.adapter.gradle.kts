@@ -13,9 +13,9 @@ interface AuthlibAdapterExtension {
 val adapter = extensions.create("adapter", AuthlibAdapterExtension::class.java)
 
 repositories {
-    mavenCentral()
-    gradlePluginPortal()
-    maven(url = "https://libraries.minecraft.net/") {
+    maven("https://maven.aliyun.com/repository/public/")
+    maven("https://maven.aliyun.com/repository/gradle-plugin/")
+    maven("https://libraries.minecraft.net/") {
         metadataSources {
             artifact()
         }

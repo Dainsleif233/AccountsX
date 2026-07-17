@@ -12,7 +12,7 @@ plugins {
 
 buildscript {
     repositories {
-        mavenCentral()
+        maven("https://maven.aliyun.com/repository/public/")
     }
     dependencies {
         classpath("com.google.code.gson:gson:2.10.1")
@@ -22,8 +22,8 @@ buildscript {
 rootProject.version = properties["version"]!!
 
 repositories {
-    maven(url = "https://maven.fabricmc.net/")
-    mavenCentral()
+    maven("https://maven.fabricmc.net/")
+    maven("https://maven.aliyun.com/repository/public/")
 }
 
 dependencies {

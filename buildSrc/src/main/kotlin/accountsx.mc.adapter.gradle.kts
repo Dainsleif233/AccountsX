@@ -20,8 +20,8 @@ interface MCAdapterExtension {
 val adapter = extensions.create("adapter", MCAdapterExtension::class.java)
 
 repositories {
-    gradlePluginPortal()
-    maven(url = "https://maven.fabricmc.net/")
+    maven("https://maven.fabricmc.net/")
+    maven("https://maven.aliyun.com/repository/gradle-plugin/")
 }
 
 dependencies {

@@ -20,9 +20,9 @@ interface ModmenuAdapterExtension {
 val adapter = extensions.create("adapter", ModmenuAdapterExtension::class.java)
 
 repositories {
-    gradlePluginPortal()
-    maven(url = "https://maven.fabricmc.net/")
-    maven(url = "https://maven.terraformersmc.com/")
+    maven("https://maven.fabricmc.net/")
+    maven("https://maven.terraformersmc.com/")
+    maven("https://maven.aliyun.com/repository/gradle-plugin/")
 }
 
 dependencies {

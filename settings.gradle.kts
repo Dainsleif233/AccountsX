@@ -1,11 +1,11 @@
 pluginManagement {
     repositories {
-        maven(url = "https://maven.fabricmc.net/")
-        gradlePluginPortal()
+        maven("https://maven.fabricmc.net/")
+        maven("https://maven.aliyun.com/repository/gradle-plugin/")
     }
     val loomVersion: String = providers.gradleProperty("loomVersion").get()
     plugins {
-        id("fabric-loom") version loomVersion
+        id("net.fabricmc.fabric-loom-remap") version loomVersion
     }
 }
 
