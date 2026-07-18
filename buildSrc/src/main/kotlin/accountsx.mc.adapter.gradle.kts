@@ -26,9 +26,9 @@ repositories {
 
 dependencies {
     "modRuntimeOnly"("io.github.llamalad7:mixinextras-fabric:0.3.5")
-    "implementation"(rootProject)
+    "implementation"(project(":"))
 
-    mapOf<String, () -> Any>(
+    mapOf(
         "minecraft" to { "com.mojang:minecraft:${adapter.minecraft}" },
         "mappings" to { "net.fabricmc:yarn:${adapter.minecraft}+build.${adapter.yarn}:v2" },
         "modImplementation" to { "net.fabricmc:fabric-loader:${adapter.loader}" },

@@ -3,11 +3,12 @@
   "id": "accountsx",
   "version": "${version}",
   "name": "Accounts X",
-  "description": "",
+  "description": "Switch accounts in Minecraft.",
   "authors": [
     "IAFEnvoy",
     "Burning_TNT",
-    "JianMoOvO"
+    "JianMoOvO",
+    "Dainsleif"
   ],
   "license": "GPL-3.0",
   "environment": "client",
@@ -16,11 +17,7 @@
       "net.burningtnt.accountsx.core.AccountsX"
     ]
   },
-  "mixins": [
-  ],
   "depends": {
-    "fabricloader": ">=0.16.10",
-    "java": ">=17",
     "accountsx-adapter-mc": "*",
     "accountsx-adapter-authlib": "*",
     "accountsx-adapter-modmenu": "*"

@@ -31,5 +31,13 @@
   "as.account.type.united_injector.name": "United Pass Phrase Authentication",
   "as.account.type.united_injector.using": "Using United Pass Phrase Authentication Account: %s",
   "as.general.action.close": "Back",
-  "as.general.action.ok": "OK"
+  "as.general.action.ok": "OK",
+  "modmenu.nameTranslation.accountsx": "Accounts X",
+  "modmenu.descriptionTranslation.accountsx": "Switch accounts in Minecraft.",
+  "modmenu.nameTranslation.accountsx-adapter-mc": "Accounts X Minecraft Adapter",
+  "modmenu.descriptionTranslation.accountsx-adapter-mc": "Minecraft client adapter for Accounts X.",
+  "modmenu.nameTranslation.accountsx-adapter-authlib": "Accounts X Authlib Adapter",
+  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Authlib adapter for Accounts X.",
+  "modmenu.nameTranslation.accountsx-adapter-modmenu": "Accounts X Mod Menu Entry",
+  "modmenu.descriptionTranslation.accountsx-adapter-modmenu": "Mod Menu integration for Accounts X."
 }

@@ -6,7 +6,6 @@ import net.burningtnt.accountsx.core.accounts.model.context.AuthSecurityContext;
 import net.burningtnt.accountsx.core.accounts.model.context.AuthServerContext;
 import net.burningtnt.accountsx.core.utils.NetworkUtils;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
@@ -83,9 +82,9 @@ public final class MicrosoftConstants {
 
     private record KeySetResponse(
             @SerializedName("profilePropertyKeys")
-            @Nullable List<KeyData> profilePropertyKeys,
+            List<KeyData> profilePropertyKeys,
             @SerializedName("playerCertificateKeys")
-            @Nullable List<KeyData> playerCertificateKeys
+            List<KeyData> playerCertificateKeys
     ) {
     }
 

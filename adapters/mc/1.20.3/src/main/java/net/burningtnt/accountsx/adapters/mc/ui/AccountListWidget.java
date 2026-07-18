@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.UUID;
 
-import static com.mojang.text2speech.Narrator.LOGGER;
+import static net.burningtnt.accountsx.core.AccountsX.LOGGER;
 
 public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountListWidget.AccountEntry> {
     public AccountListWidget(MinecraftClient client, int left, int right, int top, int bottom, int entryHeight) {

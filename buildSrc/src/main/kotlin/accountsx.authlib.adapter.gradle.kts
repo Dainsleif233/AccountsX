@@ -15,7 +15,7 @@ val adapter = extensions.create("adapter", AuthlibAdapterExtension::class.java)
 repositories {
     maven("https://maven.aliyun.com/repository/public/")
     maven("https://maven.aliyun.com/repository/gradle-plugin/")
-    maven("https://libraries.minecraft.net/") {
+    maven("https://bmclapi2.bangbang93.com/maven/") {
         metadataSources {
             artifact()
         }
@@ -27,10 +27,10 @@ dependencies {
         "com.mojang:authlib:${adapter.authlib}"
     })
 
-    "implementation"("com.google.guava:guava:31.1-jre")
-    "implementation"("com.google.code.gson:gson:2.10.1")
-    "implementation"("org.slf4j:slf4j-api:2.0.1")
-    "implementation"(rootProject)
+    "implementation"("com.google.guava:guava:33.6.0-jre")
+    "implementation"("com.google.code.gson:gson:2.14.0")
+    "compileOnly"("org.slf4j:slf4j-api:2.0.18")
+    "implementation"(project(":"))
 }
 
 tasks.processResources {

@@ -3,20 +3,15 @@
   "id": "accountsx-adapter-authlib",
   "version": "${version}-${authlib}",
   "name": "Accounts X Authlib Adapter",
-  "description": "",
+  "description": "Authlib adapter for Accounts X.",
   "authors": [
     "IAFEnvoy",
     "Burning_TNT",
-    "JianMoOvO"
+    "JianMoOvO",
+    "Dainsleif"
   ],
   "license": "GPL-3.0",
   "environment": "client",
-  "entrypoints": {
-  },
-  "mixins": [
-  ],
-  "depends": {
-  },
   "custom": {
     "accountsx:adapter.authlib": {
       "class": "net.burningtnt.accountsx.authlib.AuthlibAdapterImpl"

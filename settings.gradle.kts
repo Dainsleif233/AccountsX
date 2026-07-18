@@ -2,6 +2,7 @@ pluginManagement {
     repositories {
         maven("https://maven.fabricmc.net/")
         maven("https://maven.aliyun.com/repository/gradle-plugin/")
+        maven("https://maven.aliyun.com/repository/public/")
     }
     val loomVersion: String = providers.gradleProperty("loomVersion").get()
     plugins {

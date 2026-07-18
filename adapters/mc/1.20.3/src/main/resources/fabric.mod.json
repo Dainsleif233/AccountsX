@@ -3,22 +3,20 @@
   "id": "accountsx-adapter-mc",
   "version": "${version}-${minecraft}",
   "name": "Accounts X Minecraft Adapter",
-  "description": "",
+  "description": "Minecraft client adapter for Accounts X.",
   "authors": [
     "IAFEnvoy",
     "Burning_TNT",
-    "JianMoOvO"
+    "JianMoOvO",
+    "Dainsleif"
   ],
   "license": "GPL-3.0",
   "environment": "client",
-  "entrypoints": {
-  },
   "mixins": [
     "accountsx-adapter-mc.mixins.json"
   ],
   "depends": {
     "minecraft": ">=${minecraft}",
-    "java": ">=17",
     "accountsx-adapter-authlib": "${version}-${authlib}"
   },
   "custom": {

@@ -10,7 +10,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.URL;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
@@ -61,7 +61,7 @@ public class AvatarUtils {
     private static BufferedImage getSkin(String skinUrl) throws IOException {
         if (skinUrl == null) throw new IllegalArgumentException("skinUrl is null");
 
-        BufferedImage skin = ImageIO.read(new URL(skinUrl));
+        BufferedImage skin = ImageIO.read(URI.create(skinUrl).toURL());
         if (skin == null) throw new IOException("Failed to decode skin image");
 
         return skin;

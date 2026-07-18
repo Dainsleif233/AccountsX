@@ -15,11 +15,11 @@ buildscript {
         maven("https://maven.aliyun.com/repository/public/")
     }
     dependencies {
-        classpath("com.google.code.gson:gson:2.10.1")
+        classpath("com.google.code.gson:gson:2.14.0")
     }
 }
 
-rootProject.version = properties["version"]!!
+rootProject.version = providers.gradleProperty("version").get()
 
 repositories {
     maven("https://maven.fabricmc.net/")
@@ -27,10 +27,10 @@ repositories {
 }
 
 dependencies {
-    compileOnly("net.fabricmc:fabric-loader:0.16.10")
-    compileOnly("com.google.code.gson:gson:2.10.1")
-    compileOnly("com.google.guava:guava:31.1-jre")
-    compileOnly("org.apache.logging.log4j:log4j-api:2.22.1")
+    compileOnly("net.fabricmc:fabric-loader:0.19.3")
+    compileOnly("com.google.code.gson:gson:2.14.0")
+    compileOnly("com.google.guava:guava:33.6.0-jre")
+    compileOnly("org.slf4j:slf4j-api:2.0.18")
     compileOnly("org.ow2.asm:asm:9.6")
 }
 
@@ -48,6 +48,7 @@ data class Adapter(val project: String, val builder: String, val prefix: String)
 
 val universal = tasks.register("universal") {
     group = "build"
+    description = "Package core jar with nested adapter jars into a universal fat jar"
 
     val adapters = projectDir.resolve("adapters").let { adapters ->
         listOf("authlib", "mc", "modmenu").flatMap { type ->

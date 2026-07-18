@@ -3,7 +3,7 @@
   "id": "accountsx-adapter-modmenu",
   "version": "${version}-${modmenu}",
   "name": "Accounts X Mod Menu Entry",
-  "description": "",
+  "description": "Mod Menu integration for Accounts X.",
   "authors": [
     "Dainsleif"
   ],
@@ -14,9 +14,6 @@
     "modmenu": [
       "top.syshub.accountsx.adapters.modmenu.ModMenuApiImpl"
     ]
-  },
-  "depends": {
-    "java": ">=17"
   },
   "custom": {
     "modmenu": {

@@ -9,13 +9,18 @@ public final class UnsafeLookupAccessor {
     private UnsafeLookupAccessor() {
     }
 
+    /**
+     * Obtain {@code MethodHandles.Lookup.IMPL_LOOKUP} via {@code sun.misc.Unsafe}.
+     * Memory-access methods used here are deprecated for removal (JEP 471).
+     */
+    @SuppressWarnings({"deprecation", "removal"})
     public static MethodHandles.Lookup get() throws Throwable {
         Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
         theUnsafe.setAccessible(true);
-        Unsafe U = (Unsafe) theUnsafe.get(null);
+        Unsafe u = (Unsafe) theUnsafe.get(null);
         Field implLookup = MethodHandles.Lookup.class.getDeclaredField("IMPL_LOOKUP");
-        Object base = U.staticFieldBase(implLookup);
-        long l = U.staticFieldOffset(implLookup);
-        return (MethodHandles.Lookup) U.getObject(base, l);
+        Object base = u.staticFieldBase(implLookup);
+        long offset = u.staticFieldOffset(implLookup);
+        return (MethodHandles.Lookup) u.getObject(base, offset);
     }
 }

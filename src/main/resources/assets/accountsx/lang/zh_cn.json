@@ -31,5 +31,13 @@
   "as.account.type.united_injector.name": "统一通行证",
   "as.account.type.united_injector.using": "正在使用统一通行证账户：%s",
   "as.general.action.close": "返回",
-  "as.general.action.ok": "我明白了"
+  "as.general.action.ok": "我明白了",
+  "modmenu.nameTranslation.accountsx": "Accounts X",
+  "modmenu.descriptionTranslation.accountsx": "在 Minecraft 中切换账户。",
+  "modmenu.nameTranslation.accountsx-adapter-mc": "Accounts X Minecraft 适配器",
+  "modmenu.descriptionTranslation.accountsx-adapter-mc": "Accounts X 的 Minecraft 客户端适配器。",
+  "modmenu.nameTranslation.accountsx-adapter-authlib": "Accounts X Authlib 适配器",
+  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Accounts X 的 Authlib 适配器。",
+  "modmenu.nameTranslation.accountsx-adapter-modmenu": "Accounts X Mod Menu 入口",
+  "modmenu.descriptionTranslation.accountsx-adapter-modmenu": "Accounts X 的 Mod Menu 集成。"
 }
