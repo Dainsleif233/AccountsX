@@ -14,7 +14,7 @@
   "environment": "client",
   "custom": {
     "accountsx:adapter.authlib": {
-      "class": "net.burningtnt.accountsx.authlib.AuthlibAdapterImpl"
+      "class": "top.syshub.accountsx.authlib.AuthlibAdapterImpl"
     },
     "modmenu": {
       "parent": {
