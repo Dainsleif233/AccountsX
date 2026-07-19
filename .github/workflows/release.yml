@@ -1,0 +1,195 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        default: false
+      draft:
+        description: "Create as draft release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Read version from gradle.properties
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(grep -E '^version=' gradle.properties | cut -d= -f2- | tr -d '[:space:]')"
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::Could not read version from gradle.properties"
+            exit 1
+          fi
+          TAG="$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION (tag: $TAG)"
+
+      - name: Ensure tag does not already exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag '$TAG' already exists. Bump version in gradle.properties first."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' already exists on origin. Bump version in gradle.properties first."
+            exit 1
+          fi
+
+      - name: Build
+        shell: bash
+        env:
+          # Full multi-adapter Loom matrix needs more heap than local defaults
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace build
+
+      - name: Locate build artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          UNIVERSAL="build/libs/AccountsX-${VERSION}-universal.jar"
+          if [[ ! -f "$UNIVERSAL" ]]; then
+            echo "::error::Expected artifact not found: $UNIVERSAL"
+            echo "Available jars:"
+            find build/libs -type f -name '*.jar' -print || true
+            exit 1
+          fi
+          echo "universal=$UNIVERSAL" >> "$GITHUB_OUTPUT"
+          ls -lh "$UNIVERSAL"
+
+      - name: Generate changelog from commits
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          PREV_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+
+          {
+            echo "## What's Changed"
+            echo
+
+            if [[ -n "$PREV_TAG" ]]; then
+              echo "Changes since \`$PREV_TAG\`:"
+              echo
+              RANGE="${PREV_TAG}..HEAD"
+            else
+              echo "Initial release notes:"
+              echo
+              RANGE="HEAD"
+            fi
+
+            # Prefer conventional-commit style grouping when possible
+            mapfile -t COMMITS < <(git log $RANGE --pretty=format:'%s|%h' --no-merges)
+
+            if [[ ${#COMMITS[@]} -eq 0 || -z "${COMMITS[0]:-}" ]]; then
+              echo "_No commits found for this release._"
+            else
+              declare -A SECTIONS
+              SECTIONS[feat]="### Features"
+              SECTIONS[fix]="### Bug Fixes"
+              SECTIONS[refactor]="### Refactors"
+              SECTIONS[perf]="### Performance"
+              SECTIONS[docs]="### Documentation"
+              SECTIONS[chore]="### Chores"
+              SECTIONS[other]="### Other Changes"
+
+              declare -A BUCKETS
+              for key in feat fix refactor perf docs chore other; do
+                BUCKETS[$key]=""
+              done
+
+              for line in "${COMMITS[@]}"; do
+                subject="${line%%|*}"
+                hash="${line##*|}"
+                # conventional: type(scope)!: message  or  type: message
+                if [[ "$subject" =~ ^(feat|fix|refactor|perf|docs|chore|ver|update)(\([^)]+\))?(!)?:[[:space:]]*(.+)$ ]]; then
+                  type="${BASH_REMATCH[1]}"
+                  body="${BASH_REMATCH[4]}"
+                  case "$type" in
+                    ver|update) type="chore" ;;
+                  esac
+                  BUCKETS[$type]+="- ${body} (\`${hash}\`)"$'\n'
+                else
+                  BUCKETS[other]+="- ${subject} (\`${hash}\`)"$'\n'
+                fi
+              done
+
+              for key in feat fix refactor perf docs chore other; do
+                if [[ -n "${BUCKETS[$key]}" ]]; then
+                  echo "${SECTIONS[$key]}"
+                  echo
+                  printf '%s' "${BUCKETS[$key]}"
+                  echo
+                fi
+              done
+            fi
+
+            echo
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-$(git rev-list --max-parents=0 HEAD)}...${TAG}"
+          } > release_notes.md
+
+          echo "----- release notes -----"
+          cat release_notes.md
+
+      - name: Create tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "refs/tags/$TAG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: AccountsX ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            ${{ steps.artifacts.outputs.universal }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
