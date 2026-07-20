@@ -19,26 +19,29 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-jobs:
-  release:
-    name: Build & Publish Release
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+env:
+  # Matrix legs build one leaf each; Loom still wants headroom.
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8 -Dorg.gradle.daemon=false"
 
+jobs:
+  # ---------------------------------------------------------------------------
+  # Discover version + dynamic matrices (filesystem-driven).
+  # ---------------------------------------------------------------------------
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      matrix_authlib: ${{ steps.matrix.outputs.matrix_authlib }}
+      matrix_mc: ${{ steps.matrix.outputs.matrix_mc }}
+      has_authlib: ${{ steps.matrix.outputs.has_authlib }}
+      has_mc: ${{ steps.matrix.outputs.has_mc }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "25"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
 
       - name: Read version from gradle.properties
         id: version
@@ -50,10 +53,9 @@ jobs:
             echo "::error::Could not read version from gradle.properties"
             exit 1
           fi
-          TAG="$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Resolved version: $VERSION (tag: $TAG)"
+          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
 
       - name: Ensure tag does not already exist
         shell: bash
@@ -69,22 +71,351 @@ jobs:
             exit 1
           fi
 
-      - name: Build
+      - name: Build adapter matrices
+        id: matrix
         shell: bash
-        env:
-          # Full multi-adapter Loom matrix needs more heap than local defaults
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          def versions(kind: str) -> list[str]:
+              kind_dir = Path("adapters") / kind
+              if not kind_dir.is_dir():
+                  return []
+              return sorted(
+                  p.name for p in kind_dir.iterdir() if p.is_dir() and not p.name.startswith(".")
+              )
+
+          def leaf_matrix(kind: str, task: str, extra: dict | None = None) -> dict:
+              include = []
+              for version in versions(kind):
+                  row = {
+                      "kind": kind,
+                      "version": version,
+                      "project": f"adapters:{kind}:{version}",
+                      "task": task,
+                      "artifact": f"adapter-{kind}-{version}",
+                  }
+                  if extra and version in extra:
+                      row.update(extra[version])
+                  include.append(row)
+              return {"include": include}
+
+          # modmenu adapters pin a linked MC version via `minecraft = "..."` in build.gradle.kts.
+          # Build those modmenu jars in the same job as that MC leaf so Gradle does not
+          # re-run Loom on a cold runner just for Mod Menu.
+          modmenu_by_mc: dict[str, list[str]] = {}
+          modmenu_dir = Path("adapters/modmenu")
+          mc_versions = versions("mc")
+          if modmenu_dir.is_dir():
+              for mm in sorted(p for p in modmenu_dir.iterdir() if p.is_dir() and not p.name.startswith(".")):
+                  text = (mm / "build.gradle.kts").read_text(encoding="utf-8")
+                  m = re.search(r'minecraft\s*=\s*"([^"]+)"', text)
+                  if not m:
+                      raise SystemExit(f"modmenu {mm.name}: could not parse minecraft = \"...\"")
+                  linked_mc = m.group(1)
+                  if linked_mc not in mc_versions:
+                      raise SystemExit(
+                          f"modmenu {mm.name}: minecraft = \"{linked_mc}\" but adapters/mc/{linked_mc} is missing"
+                      )
+                  modmenu_by_mc.setdefault(linked_mc, []).append(mm.name)
+
+          mc_extra = {
+              ver: {"modmenu_versions": ",".join(modmenu_by_mc.get(ver, []))}
+              for ver in mc_versions
+          }
+
+          matrices = {
+              "authlib": leaf_matrix("authlib", "jar"),
+              "mc": leaf_matrix("mc", "remapJar", mc_extra),
+          }
+
+          total = sum(len(m["include"]) for m in matrices.values()) + sum(len(v) for v in modmenu_by_mc.values())
+          if total == 0:
+              raise SystemExit("No adapters discovered under adapters/{authlib,mc,modmenu}/")
+
+          for name, matrix in matrices.items():
+              print(f"## {name} ({len(matrix['include'])})")
+              print(json.dumps(matrix, indent=2))
+          print("## modmenu linked from mc jobs")
+          print(json.dumps(modmenu_by_mc, indent=2))
+
+          # GHA matrix cannot be empty; emit a dummy and gate jobs with has_* outputs.
+          def emit(name: str, matrix: dict) -> None:
+              include = matrix["include"]
+              has = "true" if include else "false"
+              payload = matrix if include else {
+                  "include": [{
+                      "version": "none",
+                      "project": "none",
+                      "task": "none",
+                      "artifact": "none",
+                      "kind": name,
+                      "modmenu_versions": "",
+                  }]
+              }
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  fh.write(f"has_{name}={has}\n")
+                  fh.write(f"matrix_{name}={json.dumps(payload, separators=(',', ':'))}\n")
+
+          for name, matrix in matrices.items():
+              emit(name, matrix)
+          PY
+
+  # ---------------------------------------------------------------------------
+  # Stage 1: authlib adapters (no Loom). Parallel. Uploaded for universal pack.
+  # ---------------------------------------------------------------------------
+  build-authlib:
+    name: authlib/${{ matrix.version }}
+    needs: prepare
+    if: needs.prepare.outputs.has_authlib == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix_authlib) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
+          cache-cleanup: on-success
+
+      - name: Build authlib adapter
+        shell: bash
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace build
+          ./gradlew --stacktrace --build-cache \
+            ":${{ matrix.project }}:${{ matrix.task }}"
+
+      - name: Upload authlib jar
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: adapters/${{ matrix.kind }}/${{ matrix.version }}/build/libs/${{ matrix.version }}-${{ needs.prepare.outputs.version }}.jar
+          if-no-files-found: error
+          retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # Stage 2: MC adapters (Loom) in parallel. Linked Mod Menu adapters are built
+  # in the same job as their pinned MC version (avoids a second cold Loom run).
+  # ---------------------------------------------------------------------------
+  build-mc:
+    name: mc/${{ matrix.version }}
+    needs: [prepare, build-authlib]
+    if: |
+      always() &&
+      needs.prepare.outputs.has_mc == 'true' &&
+      needs.prepare.result == 'success' &&
+      (needs.build-authlib.result == 'success' || needs.build-authlib.result == 'skipped')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix_mc) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
+          cache-cleanup: on-success
+
+      - name: Build MC adapter (+ linked Mod Menu)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+
+          TASKS=(":${{ matrix.project }}:${{ matrix.task }}")
+
+          # matrix.modmenu_versions is a comma-separated list (may be empty)
+          IFS=',' read -r -a MODMENUS <<< "${{ matrix.modmenu_versions }}"
+          for mm in "${MODMENUS[@]:-}"; do
+            mm="$(echo "$mm" | tr -d '[:space:]')"
+            [[ -z "$mm" ]] && continue
+            TASKS+=(":adapters:modmenu:${mm}:remapJar")
+          done
+
+          echo "Gradle tasks: ${TASKS[*]}"
+          ./gradlew --stacktrace --build-cache "${TASKS[@]}"
+
+      - name: Upload MC jar
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: adapters/${{ matrix.kind }}/${{ matrix.version }}/build/libs/${{ matrix.version }}-${{ needs.prepare.outputs.version }}.jar
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload linked Mod Menu jars
+        if: matrix.modmenu_versions != ''
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          MODMENU_VERSIONS: ${{ matrix.modmenu_versions }}
+        run: |
+          set -euo pipefail
+          mkdir -p modmenu-artifacts
+          IFS=',' read -r -a MODMENUS <<< "$MODMENU_VERSIONS"
+          count=0
+          for mm in "${MODMENUS[@]:-}"; do
+            mm="$(echo "$mm" | tr -d '[:space:]')"
+            [[ -z "$mm" ]] && continue
+            jar="adapters/modmenu/${mm}/build/libs/${mm}-${VERSION}.jar"
+            if [[ ! -f "$jar" ]]; then
+              echo "::error::Expected Mod Menu jar not found: $jar"
+              exit 1
+            fi
+            cp -f "$jar" "modmenu-artifacts/$(basename "$jar")"
+            count=$((count + 1))
+          done
+          if [[ "$count" -eq 0 ]]; then
+            echo "::error::modmenu_versions set but no jars collected"
+            exit 1
+          fi
+          echo "Collected $count Mod Menu jar(s)"
+
+      - name: Publish linked Mod Menu artifact
+        if: matrix.modmenu_versions != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: adapter-modmenu-from-mc-${{ matrix.version }}
+          path: modmenu-artifacts/*.jar
+          if-no-files-found: error
+          retention-days: 3
+
+  # ---------------------------------------------------------------------------
+  # Assemble universal jar from matrix artifacts, then tag + GitHub Release.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Assemble & Publish
+    needs: [prepare, build-authlib, build-mc]
+    if: |
+      always() &&
+      needs.prepare.result == 'success' &&
+      (needs.build-authlib.result == 'success' || needs.build-authlib.result == 'skipped') &&
+      (needs.build-mc.result == 'success' || needs.build-mc.result == 'skipped') &&
+      !(needs.build-authlib.result == 'failure' || needs.build-mc.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
+          cache-cleanup: on-success
+
+      - name: Download all adapter jars
+        uses: actions/download-artifact@v8
+        with:
+          path: ci-artifacts
+          pattern: adapter-*
+          merge-multiple: false
+
+      - name: Restore adapter jars into build/libs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          import shutil
+          from pathlib import Path
+
+          root = Path("ci-artifacts")
+          if not root.is_dir():
+              raise SystemExit("ci-artifacts missing")
+
+          restored = 0
+          for jar in sorted(root.rglob("*.jar")):
+              parent = jar.parent.name
+
+              # adapter-authlib-6.0.54 / adapter-mc-1.21.11
+              m = re.fullmatch(r"adapter-(authlib|mc|modmenu)-(.+)", parent)
+              if m:
+                  kind, version = m.group(1), m.group(2)
+                  # Skip the synthetic "adapter-modmenu-from-mc-*" channel here; handled below
+                  # only if kind is authlib|mc|modmenu AND version is a real leaf dir.
+                  leaf = Path("adapters") / kind / version
+                  if leaf.is_dir():
+                      dest = leaf / "build" / "libs" / jar.name
+                      dest.parent.mkdir(parents=True, exist_ok=True)
+                      shutil.copy2(jar, dest)
+                      print(f"Restored {jar} -> {dest}")
+                      restored += 1
+                      continue
+
+              # adapter-modmenu-from-mc-1.21  (jars named <modmenuVer>-<modVer>.jar)
+              if parent.startswith("adapter-modmenu-from-mc-"):
+                  # jar.name = 11.0.0-2.0.0-alpha.0.jar → leaf version is prefix before last -${project.version}
+                  # Safer: match directory adapters/modmenu/<name> where jar starts with name-
+                  matched = False
+                  modmenu_root = Path("adapters/modmenu")
+                  if modmenu_root.is_dir():
+                      for leaf in modmenu_root.iterdir():
+                          if leaf.is_dir() and jar.name.startswith(leaf.name + "-"):
+                              dest = leaf / "build" / "libs" / jar.name
+                              dest.parent.mkdir(parents=True, exist_ok=True)
+                              shutil.copy2(jar, dest)
+                              print(f"Restored {jar} -> {dest}")
+                              restored += 1
+                              matched = True
+                              break
+                  if not matched:
+                      print(f"WARN: could not place modmenu jar {jar}")
+                  continue
+
+              print(f"skip unexpected artifact: {jar}")
+
+          if restored == 0:
+              raise SystemExit("No adapter jars downloaded")
+          print(f"Restored {restored} adapter jar(s)")
+          PY
+
+      - name: Build core jar and package universal
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          # packageUniversal only packs existing adapter jars + builds core :jar
+          ./gradlew --stacktrace --build-cache packageUniversal
 
       - name: Locate build artifacts
         id: artifacts
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
           UNIVERSAL="build/libs/AccountsX-${VERSION}-universal.jar"
           if [[ ! -f "$UNIVERSAL" ]]; then
             echo "::error::Expected artifact not found: $UNIVERSAL"
@@ -96,11 +427,10 @@ jobs:
           ls -lh "$UNIVERSAL"
 
       - name: Generate changelog from commits
-        id: changelog
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${{ steps.version.outputs.tag }}"
+          TAG="${{ needs.prepare.outputs.tag }}"
           PREV_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
 
           {
@@ -117,7 +447,6 @@ jobs:
               RANGE="HEAD"
             fi
 
-            # Prefer conventional-commit style grouping when possible
             mapfile -t COMMITS < <(git log $RANGE --pretty=format:'%s|%h' --no-merges)
 
             if [[ ${#COMMITS[@]} -eq 0 || -z "${COMMITS[0]:-}" ]]; then
@@ -140,7 +469,6 @@ jobs:
               for line in "${COMMITS[@]}"; do
                 subject="${line%%|*}"
                 hash="${line##*|}"
-                # conventional: type(scope)!: message  or  type: message
                 if [[ "$subject" =~ ^(feat|fix|refactor|perf|docs|chore|ver|update)(\([^)]+\))?(!)?:[[:space:]]*(.+)$ ]]; then
                   type="${BASH_REMATCH[1]}"
                   body="${BASH_REMATCH[4]}"
@@ -174,17 +502,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${{ steps.version.outputs.tag }}"
+          TAG="${{ needs.prepare.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "refs/tags/$TAG"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: AccountsX ${{ steps.version.outputs.version }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: AccountsX ${{ needs.prepare.outputs.version }}
           body_path: release_notes.md
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}
