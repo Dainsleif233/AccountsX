@@ -62,19 +62,24 @@ dependencies {
 java.withSourcesJar()
 
 tasks.withType<ProcessResources> {
+    val version = project.version
+    val loader = adapter.loader
+    val minecraft = adapter.minecraft
+    val authlib = adapter.authlib
+
     inputs.properties(
         mapOf(
-            "version" to project.version
+            "version" to version
         )
     )
 
     filesMatching("fabric.mod.json") {
         expand(
             mapOf(
-                "version" to project.version,
-                "loader" to adapter.loader,
-                "minecraft" to adapter.minecraft,
-                "authlib" to adapter.authlib
+                "version" to version,
+                "loader" to loader,
+                "minecraft" to minecraft,
+                "authlib" to authlib
             )
         )
     }

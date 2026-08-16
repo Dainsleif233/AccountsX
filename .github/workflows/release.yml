@@ -1,14 +1,14 @@
-name: 发布
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
       prerelease:
-        description: "标记为预发布"
+        description: "Mark as prerelease"
         type: boolean
         default: false
       draft:
-        description: "创建为草稿"
+        description: "Create as draft"
         type: boolean
         default: false
 
@@ -21,65 +21,72 @@ concurrency:
 
 jobs:
   release:
-    name: 构建并发布
+    name: Build and Release
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: 设置 JDK 25
-        uses: actions/setup-java@v4
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "25"
 
-      - name: 设置 Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
 
-      - name: 读取版本号
+      - name: Read Version
         id: version
         shell: bash
         run: |
           set -euo pipefail
           VERSION="$(grep -E '^version=' gradle.properties | cut -d= -f2- | tr -d '[:space:]')"
           if [[ -z "$VERSION" ]]; then
-            echo "::error::无法从 gradle.properties 读取版本号"
+            echo "::error::Failed to read version from gradle.properties"
             exit 1
           fi
           TAG="$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "解析版本号: $VERSION（标签: $TAG）"
+          echo "Resolved version: $VERSION (tag: $TAG)"
 
-      - name: 检查标签是否已存在
+      - name: Check If Tag Exists
         shell: bash
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "::error::标签 '$TAG' 已存在，请先在 gradle.properties 中更新版本号"
+            echo "::error::Tag '$TAG' already exists, please update the version in gradle.properties first"
             exit 1
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "::error::标签 '$TAG' 在远程仓库中已存在，请先在 gradle.properties 中更新版本号"
+            echo "::error::Tag '$TAG' already exists on the remote repository, please update the version in gradle.properties first"
             exit 1
           fi
 
-      - name: 构建所有适配器及通用包
+      - name: Build All Adapters and Universal JAR
         shell: bash
         env:
-          # 多适配器 Loom 构建需要较大堆内存
+          # Multi-adapter Loom builds require a larger heap
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace build
+          # Override the Chinese mirrors (gradle.properties) with the official
+          # endpoints, since GitHub-hosted runners cannot reach BMCLAPI/USTC.
+          ./gradlew --no-daemon --stacktrace \
+            -Ploom_libraries_base=https://libraries.minecraft.net/ \
+            -Ploom_resources_base=https://resources.download.minecraft.net/ \
+            -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest.json \
+            -Ploom_fabric_repository=https://maven.fabricmc.net/ \
+            build
 
-      - name: 查找构建产物
+      - name: Find Build Artifacts
         id: artifacts
         shell: bash
         run: |
@@ -87,15 +94,15 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           UNIVERSAL="build/libs/AccountsX-${VERSION}-universal.jar"
           if [[ ! -f "$UNIVERSAL" ]]; then
-            echo "::error::未找到期望的构建产物: $UNIVERSAL"
-            echo "可用的 jar 文件:"
+            echo "::error::Expected build artifact not found: $UNIVERSAL"
+            echo "Available jar files:"
             find build/libs -type f -name '*.jar' -print || true
             exit 1
           fi
           echo "universal=$UNIVERSAL" >> "$GITHUB_OUTPUT"
           ls -lh "$UNIVERSAL"
 
-      - name: 生成更新日志
+      - name: Generate Changelog
         id: changelog
         shell: bash
         run: |
@@ -136,18 +143,20 @@ jobs:
                 BUCKETS[$key]=""
               done
 
+              COMMIT_PATTERN='^(feat|fix|refactor|perf|docs|chore|ver|update)(\([^)]+\))?(!)?:[[:space:]]*(.+)$'
+
               for line in "${COMMITS[@]}"; do
                 subject="${line%%|*}"
                 hash="${line##*|}"
-                if [[ "$subject" =~ ^(feat|fix|refactor|perf|docs|chore|ver|update)(\([^)]+\))?(!)?:[[:space:]]*(.+)$ ]]; then
+                if [[ "$subject" =~ $COMMIT_PATTERN ]]; then
                   type="${BASH_REMATCH[1]}"
                   body="${BASH_REMATCH[4]}"
                   case "$type" in
                     ver|update) type="chore" ;;
                   esac
-                  BUCKETS[$type]+="- ${body}（\`${hash}\`）"$'\n'
+                  BUCKETS[$type]+="- ${body}（[\`${hash}\`](https://github.com/${{ github.repository }}/commit/${hash})）"$'\n'
                 else
-                  BUCKETS[other]+="- ${subject}（\`${hash}\`）"$'\n'
+                  BUCKETS[other]+="- ${subject}（[\`${hash}\`](https://github.com/${{ github.repository }}/commit/${hash})）"$'\n'
                 fi
               done
 
@@ -165,20 +174,20 @@ jobs:
             echo "**完整变更日志**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-$(git rev-list --max-parents=0 HEAD)}...${TAG}"
           } > release_notes.md
 
-          echo "----- 更新日志 -----"
+          echo "----- Changelog -----"
           cat release_notes.md
 
-      - name: 创建标签
+      - name: Create Tag
         shell: bash
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "发布 $TAG"
+          git tag -a "$TAG" -m "Release $TAG"
           git push origin "refs/tags/$TAG"
 
-      - name: 创建 GitHub Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
