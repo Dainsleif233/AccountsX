@@ -1,13 +1,13 @@
 package top.syshub.accountsx.adapters.mc.mixins;
 
-import net.minecraft.client.texture.PlayerSkinProvider;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 import java.io.File;
+import net.minecraft.client.resources.SkinManager;
 
-@Mixin(PlayerSkinProvider.class)
+@Mixin(SkinManager.class)
 public interface PlayerSkinProviderAccessor {
-    @Accessor("skinCacheDir")
+    @Accessor("skinsDirectory")
     File getSkinCacheDir();
 }

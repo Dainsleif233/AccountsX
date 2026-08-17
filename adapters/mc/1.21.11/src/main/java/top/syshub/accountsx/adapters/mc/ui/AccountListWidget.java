@@ -6,16 +6,6 @@ import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.adapters.api.AccountSession;
 import top.syshub.accountsx.core.manager.AccountManager;
 import top.syshub.accountsx.core.manager.AccountWorker;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.AlwaysSelectedEntryListWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
@@ -23,11 +13,22 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.UUID;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import static top.syshub.accountsx.core.AccountsX.LOGGER;
 
-public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountListWidget.AccountEntry> {
-    public AccountListWidget(MinecraftClient client, int left, int right, int top, int bottom, int entryHeight) {
+import com.mojang.blaze3d.platform.NativeImage;
+
+public class AccountListWidget extends ObjectSelectionList<AccountListWidget.AccountEntry> {
+    public AccountListWidget(Minecraft client, int left, int right, int top, int bottom, int entryHeight) {
         super(client, right - left, bottom - top, top, entryHeight);
         this.updateSize(left, right, top, bottom);
 
@@ -65,11 +66,11 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
 
                     AccountSession session = AccountManager.loginAccount(account);
 
-                    client.send(() -> {
+                    minecraft.schedule(() -> {
                         AccountManager.switchAccount(account, session);
 
                         super.setSelected(entry);
-                        client.getNarratorManager().narrate(Text.of((Text.translatable("narrator.select", entry.account.getAccountStorage().getPlayerName())).getString()));
+                        minecraft.getNarrator().saySystemChatQueued(Component.nullToEmpty((Component.translatable("narrator.select", entry.account.getAccountStorage().getPlayerName())).getString()));
                     });
                 });
             }
@@ -79,13 +80,13 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
     }
 
     @Override
-    protected int getScrollbarX() {
+    protected int scrollBarX() {
         return this.getRight();
     }
 
     @Override
-    public boolean keyPressed(KeyInput input) {
-        AccountEntry entry = this.getSelectedOrNull();
+    public boolean keyPressed(KeyEvent input) {
+        AccountEntry entry = this.getSelected();
         return entry != null && entry.keyPressed(input) || super.keyPressed(input);
     }
 
@@ -109,60 +110,60 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
         }
 
         @Override
-        public void render(DrawContext context, int mouseX, int mouseY, boolean hovered, float deltaTicks) {
+        public void renderContent(GuiGraphics context, int mouseX, int mouseY, boolean hovered, float deltaTicks) {
             int index = children().indexOf(this);
             int x = getRowLeft() + 2;
             int y = getRowTop(index) + 2;
             int entryWidth = getRowWidth();
 
-            context.drawText(client.textRenderer, this.account.getAccountStorage().getPlayerName(), x + 32 + 3, y + 1, 0xFFFFFFFF, false);
-            context.drawText(client.textRenderer, this.account.getAccountName() == null ? I18N.TRANSLATOR.translate(this.account.getAccountType()) : Text.of(this.account.getAccountName()), x + 32 + 3, y + 1 + 9, 0xFFFFFFFF, false);
-            context.drawText(client.textRenderer, I18N.TRANSLATOR.translate(this.account.getAccountStorage().getState()), x + 32 + 3, y + 1 + 18, 0xFFFFFFFF, false);
-            context.drawTexture(RenderPipelines.GUI_TEXTURED, avatarTextureId, x, y, 1, 1, 30, 30, 32, 32);
+            context.drawString(minecraft.font, this.account.getAccountStorage().getPlayerName(), x + 32 + 3, y + 1, 0xFFFFFFFF, false);
+            context.drawString(minecraft.font, this.account.getAccountName() == null ? I18N.TRANSLATOR.translate(this.account.getAccountType()) : Component.nullToEmpty(this.account.getAccountName()), x + 32 + 3, y + 1 + 9, 0xFFFFFFFF, false);
+            context.drawString(minecraft.font, I18N.TRANSLATOR.translate(this.account.getAccountStorage().getState()), x + 32 + 3, y + 1 + 18, 0xFFFFFFFF, false);
+            context.blit(RenderPipelines.GUI_TEXTURED, avatarTextureId, x, y, 1, 1, 30, 30, 32, 32);
 
             if (this.account.getAccountType() != AccountType.ENV_DEFAULT) {
                 if (index > 1) {
-                    context.drawText(client.textRenderer, ACTION_UP, (int) (x + entryWidth - 1.5 * client.textRenderer.getWidth(ACTION_UP)), y + 1 + 5 - client.textRenderer.fontHeight / 2, 0xFFFFFFFF, false);
+                    context.drawString(minecraft.font, ACTION_UP, (int) (x + entryWidth - 1.5 * minecraft.font.width(ACTION_UP)), y + 1 + 5 - minecraft.font.lineHeight / 2, 0xFFFFFFFF, false);
                 }
 
-                context.drawText(client.textRenderer, ACTION_DELETE, (int) (x + entryWidth - 1.5 * client.textRenderer.getWidth(ACTION_DELETE)), y + 1 + 15 - client.textRenderer.fontHeight / 2, 0xFFFFFFFF, false);
+                context.drawString(minecraft.font, ACTION_DELETE, (int) (x + entryWidth - 1.5 * minecraft.font.width(ACTION_DELETE)), y + 1 + 15 - minecraft.font.lineHeight / 2, 0xFFFFFFFF, false);
 
-                if (index < getEntryCount() - 1) {
-                    context.drawText(client.textRenderer, ACTION_DOWN, (int) (x + entryWidth - 1.5 * client.textRenderer.getWidth(ACTION_DOWN)), y + 1 + 25 - client.textRenderer.fontHeight / 2, 0xFFFFFFFF, false);
+                if (index < getItemCount() - 1) {
+                    context.drawString(minecraft.font, ACTION_DOWN, (int) (x + entryWidth - 1.5 * minecraft.font.width(ACTION_DOWN)), y + 1 + 25 - minecraft.font.lineHeight / 2, 0xFFFFFFFF, false);
                 }
             }
         }
 
         @Override
-        public boolean mouseClicked(Click click, boolean doubled) {
+        public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
             double mouseX = click.x();
             double mouseY = click.y();
             int right = getRowRight();
-            int buttonW = client.textRenderer.getWidth("x");
+            int buttonW = minecraft.font.width("x");
             if (mouseX >= right - buttonW * 1.5 && mouseX <= right - buttonW * 0.5) {
                 int index = children().indexOf(this);
                 int top = getRowTop(index);
 
                 if (this.account.getAccountType() != AccountType.ENV_DEFAULT) {
                     if (index > 1) {
-                        int btnTop = top + 1 + 5 - client.textRenderer.fontHeight / 2;
-                        if (mouseY >= btnTop && mouseY <= btnTop + client.textRenderer.fontHeight) {
+                        int btnTop = top + 1 + 5 - minecraft.font.lineHeight / 2;
+                        if (mouseY >= btnTop && mouseY <= btnTop + minecraft.font.lineHeight) {
                             AccountManager.moveAccount(this.account, index - 1);
                             AccountListWidget.this.syncAccounts();
                             return false;
                         }
                     }
 
-                    int btnTop = top + 1 + 15 - client.textRenderer.fontHeight / 2;
-                    if (mouseY >= btnTop && mouseY <= btnTop + client.textRenderer.fontHeight) {
+                    int btnTop = top + 1 + 15 - minecraft.font.lineHeight / 2;
+                    if (mouseY >= btnTop && mouseY <= btnTop + minecraft.font.lineHeight) {
                         AccountManager.dropAccount(this.account);
                         AccountListWidget.this.syncAccounts();
                         return false;
                     }
 
-                    if (index < getEntryCount() - 1) {
-                        int btnTop2 = top + 1 + 25 - client.textRenderer.fontHeight / 2;
-                        if (mouseY >= btnTop2 && mouseY <= btnTop2 + client.textRenderer.fontHeight) {
+                    if (index < getItemCount() - 1) {
+                        int btnTop2 = top + 1 + 25 - minecraft.font.lineHeight / 2;
+                        if (mouseY >= btnTop2 && mouseY <= btnTop2 + minecraft.font.lineHeight) {
                             AccountManager.moveAccount(this.account, index + 1);
                             AccountListWidget.this.syncAccounts();
                             return false;
@@ -176,8 +177,8 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
         }
 
         @Override
-        public Text getNarration() {
-            return Text.of("");
+        public Component getNarration() {
+            return Component.nullToEmpty("");
         }
 
         private Identifier loadAvatar(String avatarBase64) {
@@ -195,13 +196,13 @@ public class AccountListWidget extends AlwaysSelectedEntryListWidget<AccountList
                 String textureKey = type.toString() + "_" + uuid.toString() + "_" + server;
                 UUID textureUUID = UUID.nameUUIDFromBytes(textureKey.getBytes(StandardCharsets.UTF_8));
 
-                NativeImageBackedTexture texture = new NativeImageBackedTexture(
+                DynamicTexture texture = new DynamicTexture(
                         () -> "accountsx_avatar_" + textureUUID,
                         nativeImage
                 );
 
-                Identifier identifier = Identifier.of("accountsx", "avatar_" + textureUUID);
-                client.getTextureManager().registerTexture(identifier, texture);
+                Identifier identifier = Identifier.fromNamespaceAndPath("accountsx", "avatar_" + textureUUID);
+                minecraft.getTextureManager().register(identifier, texture);
                 return identifier;
             } catch (IOException e) {
                 LOGGER.error("Failed to load avatar for {}: {}", account.getAccountStorage().getPlayerName(), e.getMessage());

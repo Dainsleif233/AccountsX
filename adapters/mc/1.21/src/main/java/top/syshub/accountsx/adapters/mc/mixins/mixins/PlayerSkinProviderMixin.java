@@ -2,8 +2,6 @@ package top.syshub.accountsx.adapters.mc.mixins.mixins;
 
 import com.mojang.authlib.minecraft.MinecraftSessionService;
 import top.syshub.accountsx.adapters.mc.mixins.PlayerSkinProviderAccessor;
-import net.minecraft.client.texture.PlayerSkinProvider;
-import net.minecraft.client.texture.TextureManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -12,8 +10,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.nio.file.Path;
 import java.util.concurrent.Executor;
+import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.client.resources.SkinManager;
 
-@Mixin(PlayerSkinProvider.class)
+@Mixin(SkinManager.class)
 public class PlayerSkinProviderMixin implements PlayerSkinProviderAccessor {
     @Unique
     private Path accountsx$directory;

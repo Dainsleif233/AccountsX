@@ -3,10 +3,9 @@ package top.syshub.accountsx.adapters.modmenu;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.option.OptionsScreen;
-
 import java.util.Map;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.options.OptionsScreen;
 
 public class ModMenuApiImpl implements ModMenuApi {
     @Override
@@ -16,6 +15,6 @@ public class ModMenuApiImpl implements ModMenuApi {
 
     @Override
     public Map<String, ConfigScreenFactory<?>> getProvidedConfigScreenFactories() {
-        return Map.of("minecraft", parent -> new OptionsScreen(parent, MinecraftClient.getInstance().options));
+        return Map.of("minecraft", parent -> new OptionsScreen(parent, Minecraft.getInstance().options));
     }
 }

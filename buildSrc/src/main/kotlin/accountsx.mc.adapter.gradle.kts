@@ -10,7 +10,6 @@ version = rootProject.version
 
 interface MCAdapterExtension {
     var minecraft: String
-    var yarn: Int
 
     var loader: String
     var api: String
@@ -19,18 +18,29 @@ interface MCAdapterExtension {
 
 val adapter = extensions.create("adapter", MCAdapterExtension::class.java)
 
+// Mojang official mappings for this adapter's Minecraft version. The `loom`
+// extension is not on this precompiled plugin's classpath (Gradle isolates Loom
+// classes from other plugins), so it is reached reflectively. The returned
+// dependency resolves the Minecraft version lazily from the `minecraft` config.
+val mojangMappings = extensions.getByName("loom").let { loom ->
+    loom.javaClass.methods.first {
+        it.name == "officialMojangMappings" && it.parameterCount == 0
+    }.invoke(loom)
+}
+
 repositories {
     maven("https://maven.fabricmc.net/")
     maven("https://maven.aliyun.com/repository/gradle-plugin/")
 }
 
 dependencies {
+    add("mappings", mojangMappings)
+
     "modRuntimeOnly"("io.github.llamalad7:mixinextras-fabric:0.3.5")
     "implementation"(project(":"))
 
     mapOf(
         "minecraft" to { "com.mojang:minecraft:${adapter.minecraft}" },
-        "mappings" to { "net.fabricmc:yarn:${adapter.minecraft}+build.${adapter.yarn}:v2" },
         "modImplementation" to { "net.fabricmc:fabric-loader:${adapter.loader}" },
         "modRuntimeOnly" to {
             // Gradle restricts access Loom classes from other plugins.
@@ -62,24 +72,18 @@ dependencies {
 java.withSourcesJar()
 
 tasks.withType<ProcessResources> {
-    val version = project.version
-    val loader = adapter.loader
-    val minecraft = adapter.minecraft
-    val authlib = adapter.authlib
+    inputs.property("version", project.version)
 
-    inputs.properties(
-        mapOf(
-            "version" to version
-        )
-    )
-
+    // Values are read lazily here (inside filesMatching's execution-time
+    // closure) rather than eagerly at plugin-apply, because the per-adapter
+    // `adapter { }` values are only assigned by the leaf project afterwards.
     filesMatching("fabric.mod.json") {
         expand(
             mapOf(
-                "version" to version,
-                "loader" to loader,
-                "minecraft" to minecraft,
-                "authlib" to authlib
+                "version" to project.version,
+                "loader" to adapter.loader,
+                "minecraft" to adapter.minecraft,
+                "authlib" to adapter.authlib
             )
         )
     }

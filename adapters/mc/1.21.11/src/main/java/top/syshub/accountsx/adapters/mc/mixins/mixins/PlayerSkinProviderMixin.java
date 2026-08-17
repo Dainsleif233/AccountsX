@@ -1,9 +1,6 @@
 package top.syshub.accountsx.adapters.mc.mixins.mixins;
 
 import top.syshub.accountsx.adapters.mc.mixins.PlayerSkinProviderAccessor;
-import net.minecraft.client.texture.PlayerSkinProvider;
-import net.minecraft.client.texture.PlayerSkinTextureDownloader;
-import net.minecraft.util.ApiServices;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -12,14 +9,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.nio.file.Path;
 import java.util.concurrent.Executor;
+import net.minecraft.client.renderer.texture.SkinTextureDownloader;
+import net.minecraft.client.resources.SkinManager;
+import net.minecraft.server.Services;
 
-@Mixin(PlayerSkinProvider.class)
+@Mixin(SkinManager.class)
 public class PlayerSkinProviderMixin implements PlayerSkinProviderAccessor {
     @Unique
     private Path accountsx$directory;
 
     @Unique
-    private PlayerSkinTextureDownloader accountsX$downloader;
+    private SkinTextureDownloader accountsX$downloader;
 
     @Unique
     private Executor accountsx$executor;
@@ -28,7 +28,7 @@ public class PlayerSkinProviderMixin implements PlayerSkinProviderAccessor {
             method = "<init>",
             at = @At("TAIL")
     )
-    private void accountsx$init(Path cacheDirectory, ApiServices apiServices, PlayerSkinTextureDownloader downloader, Executor executor, CallbackInfo ci) {
+    private void accountsx$init(Path cacheDirectory, Services apiServices, SkinTextureDownloader downloader, Executor executor, CallbackInfo ci) {
         accountsx$directory = cacheDirectory;
         accountsX$downloader = downloader;
         accountsx$executor = executor;
@@ -40,7 +40,7 @@ public class PlayerSkinProviderMixin implements PlayerSkinProviderAccessor {
     }
 
     @Unique
-    public PlayerSkinTextureDownloader accountsX$getDownloader() {
+    public SkinTextureDownloader accountsX$getDownloader() {
         return accountsX$downloader;
     }
 

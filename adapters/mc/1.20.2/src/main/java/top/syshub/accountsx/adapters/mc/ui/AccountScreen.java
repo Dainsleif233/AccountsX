@@ -1,13 +1,13 @@
 package top.syshub.accountsx.adapters.mc.ui;
 
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 import top.syshub.accountsx.adapters.mc.ui.impl.UIScreenImpl;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.manager.AccountManager;
 import top.syshub.accountsx.core.manager.AccountWorker;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.text.Text;
 
 public class AccountScreen extends Screen {
     private static final int LAYOUT_HORIZONTAL_SPACING = 16;
@@ -23,21 +23,21 @@ public class AccountScreen extends Screen {
     private static final int LAYOUT_ENTRY_X = LAYOUT_HORIZONTAL_SPACING + LAYOUT_TOOL_BAR_W + LAYOUT_TOOL_BAR_SPACING / 2 + 10;
     private static final int LAYOUT_ENTRY_H = 36;
 
-    private final Text WORKING = Text.translatable("accountsx.account.general.operating");
-    private final Text ACCOUNT_LIST = Text.translatable("accountsx.account.general.account_list");
+    private final Component WORKING = Component.translatable("accountsx.account.general.operating");
+    private final Component ACCOUNT_LIST = Component.translatable("accountsx.account.general.account_list");
 
     private final Screen parent;
     private AccountListWidget accountListWidget;
 
     public AccountScreen(Screen parent) {
-        super(Text.translatable("accountsx.account.general.add_account"));
+        super(Component.translatable("accountsx.account.general.add_account"));
         this.parent = parent;
     }
 
-    public void close() {
-        assert this.client != null;
+    public void onClose() {
+        assert this.minecraft != null;
 
-        this.client.setScreen(this.parent);
+        this.minecraft.setScreen(this.parent);
     }
 
     public void syncAccounts() {
@@ -53,20 +53,20 @@ public class AccountScreen extends Screen {
                     LAYOUT_VERTICAL_SPACING + 20, this.height - LAYOUT_VERTICAL_SPACING - 20
             );
         } else {
-            this.accountListWidget = new AccountListWidget(this.client,
+            this.accountListWidget = new AccountListWidget(this.minecraft,
                     LAYOUT_ENTRY_X, this.width - LAYOUT_HORIZONTAL_SPACING,
                     LAYOUT_VERTICAL_SPACING + 20, this.height - LAYOUT_VERTICAL_SPACING - 20,
                     LAYOUT_ENTRY_H
             );
         }
 
-        this.addSelectableChild(this.accountListWidget);
+        this.addWidget(this.accountListWidget);
 
         this.addField(new ButtonWidget(
                 LAYOUT_HORIZONTAL_SPACING, LAYOUT_VERTICAL_SPACING,
                 LAYOUT_TOOL_BAR_W, LAYOUT_BUTTON_H,
-                Text.translatable("accountsx.general.action.close"),
-                button -> this.close())
+                Component.translatable("accountsx.general.action.close"),
+                button -> this.onClose())
         );
 
         int y = LAYOUT_TOOL_BAR_ADD_ACCOUNT_Y + 10;
@@ -76,9 +76,9 @@ public class AccountScreen extends Screen {
                     LAYOUT_TOOL_BAR_W, LAYOUT_BUTTON_H,
                     I18N.TRANSLATOR.translate(type),
                     button -> {
-                        assert this.client != null;
+                        assert this.minecraft != null;
 
-                        UIScreenImpl.login(this.client, this, type.getAccountProvider());
+                        UIScreenImpl.login(this.minecraft, this, type.getAccountProvider());
                     }
             ));
 
@@ -87,23 +87,23 @@ public class AccountScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
         super.renderBackground(context, mouseX, mouseY, delta);
         super.render(context, mouseX, mouseY, delta);
         this.accountListWidget.render(context, mouseX, mouseY, delta);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, AccountWorker.isRunning() ? WORKING : ACCOUNT_LIST, this.width / 2 + LAYOUT_ENTRY_X / 2, LAYOUT_VERTICAL_SPACING, 0xFFFFFF);
-        context.drawCenteredTextWithShadow(this.textRenderer, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2 + LAYOUT_ENTRY_X / 2, this.height - LAYOUT_VERTICAL_SPACING, 0xFFFFFF);
+        context.drawCenteredString(this.font, AccountWorker.isRunning() ? WORKING : ACCOUNT_LIST, this.width / 2 + LAYOUT_ENTRY_X / 2, LAYOUT_VERTICAL_SPACING, 0xFFFFFF);
+        context.drawCenteredString(this.font, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2 + LAYOUT_ENTRY_X / 2, this.height - LAYOUT_VERTICAL_SPACING, 0xFFFFFF);
 
-        context.drawCenteredTextWithShadow(
-                this.textRenderer, Text.translatable("accountsx.account.general.add_account"),
+        context.drawCenteredString(
+                this.font, Component.translatable("accountsx.account.general.add_account"),
                 LAYOUT_TOOL_BAR_TEXT_CENTER_X, LAYOUT_TOOL_BAR_ADD_ACCOUNT_Y,
                 0xFFFFFF
         );
     }
 
-    public void addField(ClickableWidget drawable) {
-        this.addDrawable(drawable);
-        this.addSelectableChild(drawable);
+    public void addField(AbstractWidget drawable) {
+        this.addRenderableOnly(drawable);
+        this.addWidget(drawable);
     }
 }

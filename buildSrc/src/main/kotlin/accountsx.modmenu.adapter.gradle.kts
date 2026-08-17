@@ -10,7 +10,6 @@ version = rootProject.version
 
 interface ModmenuAdapterExtension {
     var minecraft: String
-    var yarn: Int
 
     var loader: String
     var api: String
@@ -19,6 +18,16 @@ interface ModmenuAdapterExtension {
 
 val adapter = extensions.create("adapter", ModmenuAdapterExtension::class.java)
 
+// Mojang official mappings for this adapter's Minecraft version. The `loom`
+// extension is not on this precompiled plugin's classpath (Gradle isolates Loom
+// classes from other plugins), so it is reached reflectively. The returned
+// dependency resolves the Minecraft version lazily from the `minecraft` config.
+val mojangMappings = extensions.getByName("loom").let { loom ->
+    loom.javaClass.methods.first {
+        it.name == "officialMojangMappings" && it.parameterCount == 0
+    }.invoke(loom)
+}
+
 repositories {
     maven("https://maven.fabricmc.net/")
     maven("https://maven.terraformersmc.com/")
@@ -26,11 +35,12 @@ repositories {
 }
 
 dependencies {
+    add("mappings", mojangMappings)
+
     "modRuntimeOnly"("io.github.llamalad7:mixinextras-fabric:0.3.5")
     "implementation"(project(":"))
 
     addProvider("minecraft", provider { "com.mojang:minecraft:${adapter.minecraft}" })
-    addProvider("mappings", provider { "net.fabricmc:yarn:${adapter.minecraft}+build.${adapter.yarn}:v2" })
     addProvider("modImplementation", provider { "net.fabricmc:fabric-loader:${adapter.loader}" })
     addProvider("modImplementation", provider { "com.terraformersmc:modmenu:${adapter.modmenu}" })
     addProvider("implementation", provider { project(":adapters:mc:${adapter.minecraft}") })
@@ -60,22 +70,18 @@ dependencies {
 java.withSourcesJar()
 
 tasks.withType<ProcessResources> {
-    val version = project.version
-    val loader = adapter.loader
-    val modmenu = adapter.modmenu
+    inputs.property("version", project.version)
 
-    inputs.properties(
-        mapOf(
-            "version" to version
-        )
-    )
-
+    // Values are read lazily here (inside filesMatching's execution-time
+    // closure) rather than eagerly at plugin-apply, because the per-adapter
+    // `adapter { }` values are only assigned by the leaf project afterwards.
     filesMatching("fabric.mod.json") {
         expand(
             mapOf(
-                "version" to version,
-                "loader" to loader,
-                "modmenu" to modmenu
+                "version" to project.version,
+                "loader" to adapter.loader,
+                "minecraft" to adapter.minecraft,
+                "modmenu" to adapter.modmenu
             )
         )
     }

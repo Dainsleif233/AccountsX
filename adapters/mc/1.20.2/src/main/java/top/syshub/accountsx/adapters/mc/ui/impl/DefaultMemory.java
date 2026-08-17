@@ -2,11 +2,10 @@ package top.syshub.accountsx.adapters.mc.ui.impl;
 
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.utils.Threading;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 
 public final class DefaultMemory implements Memory {
     private final Screen loginScreen;
@@ -33,6 +32,6 @@ public final class DefaultMemory implements Memory {
         Threading.checkAccountWorkerThread();
 
         // TODO: currentScreen is not volatile.
-        return MinecraftClient.getInstance().currentScreen != loginScreen;
+        return Minecraft.getInstance().screen != loginScreen;
     }
 }

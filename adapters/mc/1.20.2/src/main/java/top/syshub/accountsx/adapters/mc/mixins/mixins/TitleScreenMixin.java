@@ -4,14 +4,14 @@ import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import top.syshub.accountsx.adapters.mc.ui.I18N;
 import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.manager.AccountManager;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.gui.widget.TextIconButtonWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.Util;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.Util;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.SpriteIconButton;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -23,41 +23,41 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(TitleScreen.class)
 public class TitleScreenMixin extends Screen {
     @Unique
-    private static final Identifier SWITCH_ACCOUNT_ICON_TEXTURE = new Identifier(AccountsX.MC_ADAPTER_ID, "icon/account");
+    private static final ResourceLocation SWITCH_ACCOUNT_ICON_TEXTURE = new ResourceLocation(AccountsX.MC_ADAPTER_ID, "icon/account");
 
     @Final
     @Shadow
-    private boolean doBackgroundFade;
+    private boolean fading;
 
     @Shadow
-    private long backgroundFadeStart;
+    private long fadeInStart;
 
-    protected TitleScreenMixin(Text title) {
+    protected TitleScreenMixin(Component title) {
         super(title);
     }
 
-    @Inject(method = "initWidgetsNormal", at = @At("RETURN"))
+    @Inject(method = "createNormalMenuOptions", at = @At("RETURN"))
     protected void init(CallbackInfo ci) {
-        assert this.client != null;
-        this.addDrawableChild(TextIconButtonWidget.builder(
-                        Text.empty(),
-                        button -> this.client.setScreen(new AccountScreen(this)),
+        assert this.minecraft != null;
+        this.addRenderableWidget(SpriteIconButton.builder(
+                        Component.empty(),
+                        button -> this.minecraft.setScreen(new AccountScreen(this)),
                         true
                 )
-                .dimension(20, 20)
-                .texture(SWITCH_ACCOUNT_ICON_TEXTURE, 20, 20)
+                .size(20, 20)
+                .sprite(SWITCH_ACCOUNT_ICON_TEXTURE, 20, 20)
                 .build()
         ).setPosition(this.width / 2 + 104, this.height / 4 + 72);
     }
 
     @Inject(method = "render", at = @At("RETURN"))
-    public void onRender(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        float f = this.doBackgroundFade ? (float) (Util.getMeasuringTimeMs() - this.backgroundFadeStart) / 1000.0F : 1.0F;
-        float g = this.doBackgroundFade ? MathHelper.clamp(f - 1.0F, 0.0F, 1.0F) : 1.0F;
-        int i = MathHelper.ceil(g * 255.0F) << 24;
+    public void onRender(GuiGraphics context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        float f = this.fading ? (float) (Util.getMillis() - this.fadeInStart) / 1000.0F : 1.0F;
+        float g = this.fading ? Mth.clamp(f - 1.0F, 0.0F, 1.0F) : 1.0F;
+        int i = Mth.ceil(g * 255.0F) << 24;
 
         if ((i & -67108864) != 0) {
-            context.drawCenteredTextWithShadow(this.textRenderer, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2, 15, 0xFFFFFF | i);
+            context.drawCenteredString(this.font, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2, 15, 0xFFFFFF | i);
         }
     }
 }

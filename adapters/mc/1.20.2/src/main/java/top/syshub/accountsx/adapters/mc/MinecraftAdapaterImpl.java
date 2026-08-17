@@ -4,6 +4,7 @@ import com.mojang.authlib.minecraft.MinecraftSessionService;
 import com.mojang.authlib.minecraft.UserApiService;
 import com.mojang.authlib.yggdrasil.ProfileResult;
 import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;
+import com.mojang.blaze3d.platform.ClipboardManager;
 import top.syshub.accountsx.adapters.mc.mixins.mixins.MinecraftClientAccessor;
 import top.syshub.accountsx.adapters.mc.mixins.PlayerSkinProviderAccessor;
 import top.syshub.accountsx.adapters.mc.mixins.mixins.SplashTextResourceSupplierAccessor;
@@ -11,28 +12,26 @@ import top.syshub.accountsx.authlib.AccountSessionImpl;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.impl.env.EnvironmentAccount;
 import top.syshub.accountsx.core.adapters.api.MinecraftAdapter;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.SocialInteractionsManager;
-import net.minecraft.client.session.ProfileKeys;
-import net.minecraft.client.session.Session;
-import net.minecraft.client.session.report.AbuseReportContext;
-import net.minecraft.client.session.report.ReporterEnvironment;
-import net.minecraft.client.session.telemetry.TelemetryManager;
-import net.minecraft.client.texture.PlayerSkinProvider;
-import net.minecraft.client.toast.SystemToast;
-import net.minecraft.client.util.Clipboard;
-import net.minecraft.text.Text;
-import net.minecraft.util.Util;
-
 import java.net.Proxy;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import net.minecraft.Util;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.User;
+import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.client.gui.screens.social.PlayerSocialManager;
+import net.minecraft.client.multiplayer.ProfileKeyPairManager;
+import net.minecraft.client.multiplayer.chat.report.ReportEnvironment;
+import net.minecraft.client.multiplayer.chat.report.ReportingContext;
+import net.minecraft.client.resources.SkinManager;
+import net.minecraft.client.telemetry.ClientTelemetryManager;
+import net.minecraft.network.chat.Component;
 
 public class MinecraftAdapaterImpl implements MinecraftAdapter<AccountSessionImpl> {
     @Override
     public EnvironmentAccount fromCurrentClient() {
-        Session session = MinecraftClient.getInstance().getSession();
-        return new EnvironmentAccount(session.getAccessToken(), session.getUsername(), session.getUuidOrNull());
+        User session = Minecraft.getInstance().getUser();
+        return new EnvironmentAccount(session.getAccessToken(), session.getName(), session.getProfileId());
     }
 
     @Override
@@ -43,71 +42,71 @@ public class MinecraftAdapaterImpl implements MinecraftAdapter<AccountSessionImp
         ProfileResult profileResult = session.profileResult();
         YggdrasilAuthenticationService authenticationService = session.authenticationService();
 
-        Session s = new Session(storage.getPlayerName(), storage.getPlayerUUID(), storage.getAccessToken(), Optional.empty(), Optional.empty(), Session.AccountType.MOJANG);
+        User s = new User(storage.getPlayerName(), storage.getPlayerUUID(), storage.getAccessToken(), Optional.empty(), Optional.empty(), User.Type.MOJANG);
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         ((MinecraftClientAccessor) client).setAuthenticationService(authenticationService);
         ((MinecraftClientAccessor) client).setSessionService(sessionService);
         ((MinecraftClientAccessor) client).setSession(s);
         ((MinecraftClientAccessor) client).setGameProfileFuture(CompletableFuture.completedFuture(profileResult));
         ((MinecraftClientAccessor) client).setUserAPIService(userAPIService);
-        ((SplashTextResourceSupplierAccessor) client.getSplashTextLoader()).setSession(s);
-        ((MinecraftClientAccessor) client).setSocialInteractionManager(new SocialInteractionsManager(client, userAPIService));
-        ((MinecraftClientAccessor) client).setTelemetryManager(new TelemetryManager(client, userAPIService, s));
-        ((MinecraftClientAccessor) client).setProfileKeys(ProfileKeys.create(userAPIService, s, client.runDirectory.toPath()));
-        ((MinecraftClientAccessor) client).setAbuseReportContext(AbuseReportContext.create(ReporterEnvironment.ofIntegratedServer(), userAPIService));
-        ((MinecraftClientAccessor) client).setSkinProvider(new PlayerSkinProvider(
+        ((SplashTextResourceSupplierAccessor) client.getSplashManager()).setSession(s);
+        ((MinecraftClientAccessor) client).setSocialInteractionManager(new PlayerSocialManager(client, userAPIService));
+        ((MinecraftClientAccessor) client).setTelemetryManager(new ClientTelemetryManager(client, userAPIService, s));
+        ((MinecraftClientAccessor) client).setProfileKeys(ProfileKeyPairManager.create(userAPIService, s, client.gameDirectory.toPath()));
+        ((MinecraftClientAccessor) client).setAbuseReportContext(ReportingContext.create(ReportEnvironment.local(), userAPIService));
+        ((MinecraftClientAccessor) client).setSkinProvider(new SkinManager(
                 client.getTextureManager(),
-                ((PlayerSkinProviderAccessor) client.getSkinProvider()).accountsX$getDirectory(),
+                ((PlayerSkinProviderAccessor) client.getSkinManager()).accountsX$getDirectory(),
                 sessionService,
-                ((PlayerSkinProviderAccessor) client.getSkinProvider()).accountsX$getExecutor()
+                ((PlayerSkinProviderAccessor) client.getSkinManager()).accountsX$getExecutor()
         ));
     }
 
     @Override
     public Proxy getGameProxy() {
-        return MinecraftClient.getInstance().getNetworkProxy();
+        return Minecraft.getInstance().getProxy();
     }
 
     @Override
     public void openBrowser(String url) {
-        Util.getOperatingSystem().open(url);
+        Util.getPlatform().openUri(url);
     }
 
     @Override
     public Thread getMinecraftClientThread() {
-        return ((MinecraftClientAccessor) MinecraftClient.getInstance()).getThread();
+        return ((MinecraftClientAccessor) Minecraft.getInstance()).getThread();
     }
 
     @Override
     public void crash(RuntimeException e) {
-        MinecraftClient.getInstance().send(() -> {
+        Minecraft.getInstance().tell(() -> {
             throw e;
         });
     }
 
     @Override
     public void copyText(String text) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.isOnThread()) {
-            new Clipboard().setClipboard(client.getWindow().getHandle(), text);
+        Minecraft client = Minecraft.getInstance();
+        if (client.isSameThread()) {
+            new ClipboardManager().setClipboard(client.getWindow().getWindow(), text);
         } else {
-            client.send(() -> copyText(text));
+            client.tell(() -> copyText(text));
         }
     }
 
     @Override
     public void showToast(String title, String description, Object... args) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.isOnThread()) {
-            SystemToast.show(
-                    MinecraftClient.getInstance().getToastManager(),
-                    SystemToast.Type.NARRATOR_TOGGLE,
-                    Text.translatable(title),
-                    description == null ? null : Text.translatable(description, args)
+        Minecraft client = Minecraft.getInstance();
+        if (client.isSameThread()) {
+            SystemToast.addOrUpdate(
+                    Minecraft.getInstance().getToasts(),
+                    SystemToast.SystemToastIds.NARRATOR_TOGGLE,
+                    Component.translatable(title),
+                    description == null ? null : Component.translatable(description, args)
             );
         } else {
-            client.send(() -> showToast(title, description, args));
+            client.tell(() -> showToast(title, description, args));
         }
     }
 }
