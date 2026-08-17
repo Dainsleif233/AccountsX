@@ -2,6 +2,7 @@ import com.google.gson.*
 import java.net.URI
 import java.nio.file.FileSystems
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlin.io.path.bufferedReader
 import kotlin.io.path.bufferedWriter
 import kotlin.io.path.copyTo
@@ -79,10 +80,13 @@ fun discoverAdapters(): List<Adapter> {
 val adapters: List<Adapter> = discoverAdapters()
 
 fun packageUniversalJar() {
-    val output = project.layout.buildDirectory.file("libs/${project.name}-${project.version}-universal.jar")
-    val outputFile = output.get().asFile
-
-    val coreJar = project.layout.buildDirectory.file("libs/${project.name}-${project.version}.jar").get().asFile
+    // The universal fat jar is the deliverable and ships under the plain
+    // `<name>-<version>.jar` name, replacing the core jar produced by `:jar`.
+    // We package into a temporary copy and atomically move it over the output
+    // so we never open the Gradle-tracked output file in place (which would hit
+    // an exclusive file lock).
+    val outputFile = project.layout.buildDirectory.file("libs/${project.name}-${project.version}.jar").get().asFile
+    val coreJar = project.layout.buildDirectory.file("libs/${project.name}-core-${project.version}.jar").get().asFile
     require(coreJar.isFile) {
         "Core jar missing: ${coreJar.absolutePath}. Run `:jar` first."
     }
@@ -96,42 +100,49 @@ fun packageUniversalJar() {
         }
     }
 
-    outputFile.parentFile.mkdirs()
-    outputFile.delete()
-    coreJar.copyTo(outputFile)
+    val tmp = File(outputFile.parentFile, "universal-${System.nanoTime()}.jar")
+    coreJar.copyTo(tmp)
 
-    FileSystems.newFileSystem(
-        URI.create("jar:" + outputFile.toURI()), emptyMap<String, Any>()
-    ).use { fs ->
-        Files.createDirectories(fs.getPath("/META-INF/jars"))
+    try {
+        FileSystems.newFileSystem(
+            URI.create("jar:" + tmp.toURI()), emptyMap<String, Any>()
+        ).use { fs ->
+            Files.createDirectories(fs.getPath("/META-INF/jars"))
 
-        val e = fs.getPath("/fabric.mod.json").bufferedReader().use {
-            Gson().fromJson(it, JsonElement::class.java)
-        } as JsonObject
+            val e = fs.getPath("/fabric.mod.json").bufferedReader().use {
+                Gson().fromJson(it, JsonElement::class.java)
+            } as JsonObject
 
-        (e.get("depends") as JsonObject).addProperty("fabric-api", "*")
+            (e.get("depends") as JsonObject).addProperty("fabric-api", "*")
 
-        val jars = JsonArray().also {
-            e.add("jars", it)
-        }
+            val jars = JsonArray().also {
+                e.add("jars", it)
+            }
 
-        adapters.forEach { adapter ->
-            val p = project(adapter.project)
-            val fileName = "${p.name}-${p.version}.jar"
-            p.layout.buildDirectory.file("libs/$fileName").get().asFile.toPath().copyTo(
-                fs.getPath("/META-INF/jars/adapter-${adapter.prefix}-$fileName")
-            )
+            adapters.forEach { adapter ->
+                val p = project(adapter.project)
+                val fileName = "${p.name}-${p.version}.jar"
+                p.layout.buildDirectory.file("libs/$fileName").get().asFile.toPath().copyTo(
+                    fs.getPath("/META-INF/jars/adapter-${adapter.prefix}-$fileName")
+                )
 
-            JsonObject().also {
-                it.addProperty("file", "META-INF/jars/adapter-${adapter.prefix}-$fileName")
-                jars.add(it)
+                JsonObject().also {
+                    it.addProperty("file", "META-INF/jars/adapter-${adapter.prefix}-$fileName")
+                    jars.add(it)
+                }
+            }
+
+            fs.getPath("/fabric.mod.json").bufferedWriter().use {
+                GsonBuilder().setPrettyPrinting().create().toJson(e, it)
             }
         }
-
-        fs.getPath("/fabric.mod.json").bufferedWriter().use {
-            GsonBuilder().setPrettyPrinting().create().toJson(e, it)
-        }
+    } catch (t: Throwable) {
+        tmp.delete()
+        throw t
     }
+
+    outputFile.parentFile.mkdirs()
+    Files.move(tmp.toPath(), outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
 }
 
 /**
@@ -150,7 +161,7 @@ val universal = tasks.register("universal") {
             tasks.named("jar").get().state.upToDate
     }
 
-    val output = project.layout.buildDirectory.file("libs/${project.name}-${project.version}-universal.jar")
+    val output = project.layout.buildDirectory.file("libs/${project.name}-${project.version}.jar")
     outputs.file(output)
 
     doLast {
@@ -168,7 +179,7 @@ val packageUniversal = tasks.register("packageUniversal") {
 
     dependsOn(tasks.named("jar"))
 
-    val output = project.layout.buildDirectory.file("libs/${project.name}-${project.version}-universal.jar")
+    val output = project.layout.buildDirectory.file("libs/${project.name}-${project.version}.jar")
     outputs.file(output)
 
     // Inputs are external artifacts restored by CI; always re-pack when invoked.
@@ -187,4 +198,10 @@ tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
     sourceCompatibility = "17"
     targetCompatibility = "17"
+}
+
+// Core module jar ships as `AccountsX-core-<version>.jar`; the universal task
+// repackages it (nested adapters) into the plain-named final deliverable.
+tasks.jar {
+    archiveAppendix = "core"
 }

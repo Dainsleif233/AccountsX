@@ -92,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          UNIVERSAL="build/libs/AccountsX-${VERSION}-universal.jar"
+          UNIVERSAL="build/libs/AccountsX-${VERSION}.jar"
           if [[ ! -f "$UNIVERSAL" ]]; then
             echo "::error::Expected build artifact not found: $UNIVERSAL"
             echo "Available jar files:"
