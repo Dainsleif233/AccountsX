@@ -74,13 +74,18 @@ java.withSourcesJar()
 tasks.withType<ProcessResources> {
     inputs.property("version", project.version)
 
-    // Values are read lazily here (inside filesMatching's execution-time
-    // closure) rather than eagerly at plugin-apply, because the per-adapter
-    // `adapter { }` values are only assigned by the leaf project afterwards.
+    // `version` is assigned by this plugin itself above, so capture it here at
+    // configuration time. (Reading `project` inside the execution-time copy
+    // action below would be deprecated in Gradle 10.) The per-adapter
+    // `adapter { }` values are only assigned by the leaf project after this
+    // plugin applies, so they are still read lazily inside filesMatching's
+    // execution-time closure.
+    val modVersion = project.version
+
     filesMatching("fabric.mod.json") {
         expand(
             mapOf(
-                "version" to project.version,
+                "version" to modVersion,
                 "loader" to adapter.loader,
                 "minecraft" to adapter.minecraft,
                 "authlib" to adapter.authlib
