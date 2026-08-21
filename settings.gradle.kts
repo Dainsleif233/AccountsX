@@ -7,6 +7,7 @@ pluginManagement {
     val loomVersion: String = providers.gradleProperty("loomVersion").get()
     plugins {
         id("net.fabricmc.fabric-loom-remap") version loomVersion
+        id("net.fabricmc.fabric-loom") version loomVersion
     }
 }
 

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "accountsx-adapter-mc",
+  "version": "${version}-${minecraft}",
+  "name": "Accounts X Minecraft Adapter",
+  "description": "Minecraft client adapter for Accounts X.",
+  "authors": [
+    "IAFEnvoy",
+    "Burning_TNT",
+    "JianMoOvO",
+    "Dainsleif"
+  ],
+  "license": "GPL-3.0",
+  "environment": "client",
+  "mixins": [
+    "accountsx-adapter-mc.mixins.json"
+  ],
+  "depends": {
+    "minecraft": ">=${minecraft}",
+    "accountsx-adapter-authlib": "${version}-${authlib}"
+  },
+  "custom": {
+    "accountsx:adapter.mc": {
+      "class": "top.syshub.accountsx.adapters.mc.MinecraftAdapaterImpl"
+    },
+    "modmenu": {
+      "parent": {
+        "id": "accountsx"
+      }
+    }
+  }
+}
