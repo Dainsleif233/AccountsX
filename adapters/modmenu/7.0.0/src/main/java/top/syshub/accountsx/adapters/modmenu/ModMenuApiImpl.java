@@ -5,7 +5,7 @@ import com.terraformersmc.modmenu.api.ModMenuApi;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.options.OptionsScreen;
+import net.minecraft.client.gui.screens.OptionsScreen;
 
 public class ModMenuApiImpl implements ModMenuApi {
     @Override

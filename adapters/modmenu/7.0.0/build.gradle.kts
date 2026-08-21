@@ -4,8 +4,8 @@ plugins {
 }
 
 adapter {
-    minecraft = "1.21"
+    minecraft = "1.20"
     loader = "0.19.3"
-    api = "0.100.1"
-    modmenu = "11.0.0"
+    api = "0.83.0"
+    modmenu = "7.0.0"
 }
