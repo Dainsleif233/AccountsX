@@ -38,7 +38,7 @@ public class TitleScreenMixin extends Screen {
     protected void init(CallbackInfo ci) {
         this.addRenderableWidget(SpriteIconButton.builder(
                         Component.empty(),
-                        (button) -> this.minecraft.setScreen(new AccountScreen(this)),
+                        (button) -> this.minecraft.setScreenAndShow(new AccountScreen(this)),
                         true)
                 .size(20, 20)
                 .sprite(SWITCH_ACCOUNT_ICON_TEXTURE, 20, 20)
@@ -47,13 +47,13 @@ public class TitleScreenMixin extends Screen {
     }
 
     @Inject(method = "extractRenderState", at = @At("RETURN"))
-    public void onExtractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    public void onExtractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a, CallbackInfo ci) {
         float f = this.fading ? (float) (Util.getMillis() - this.fadeInStart) / 1000.0F : 1.0F;
         float g = this.fading ? Mth.clamp(f - 1.0F, 0.0F, 1.0F) : 1.0F;
         int i = Mth.ceil(g * 255.0F) << 24;
 
         if ((i & -67108864) != 0) {
-            context.centeredText(this.font, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2, 15, 0xFFFFFF | i);
+            graphics.centeredText(this.font, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2, 15, 0xFFFFFF | i);
         }
     }
 }

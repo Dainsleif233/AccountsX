@@ -36,7 +36,6 @@ public class TitleScreenMixin extends Screen {
 
     @Inject(method = "init", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/components/CommonButtons;language(ILnet/minecraft/client/gui/components/Button$OnPress;Z)Lnet/minecraft/client/gui/components/SpriteIconButton;"))
     protected void init(CallbackInfo ci) {
-        assert this.minecraft != null;
         this.addRenderableWidget(SpriteIconButton.builder(
                         Component.empty(),
                         (button) -> this.minecraft.setScreen(new AccountScreen(this)),

@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.7",
+  "package": "top.syshub.accountsx.adapters.mc.mixins.mixins",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "MinecraftClientAccessor",
+    "PlayerSkinProviderMixin",
+    "TextureUrlCheckerMixin",
+    "TitleScreenMixin",
+    "YggdrasilUserApiServiceMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
