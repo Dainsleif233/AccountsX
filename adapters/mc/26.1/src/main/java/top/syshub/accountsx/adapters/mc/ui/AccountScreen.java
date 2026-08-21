@@ -1,6 +1,6 @@
 package top.syshub.accountsx.adapters.mc.ui;
 
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -87,14 +87,14 @@ public class AccountScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-        this.accountListWidget.render(context, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        this.accountListWidget.extractRenderState(context, mouseX, mouseY, delta);
 
-        context.drawCenteredString(this.font, AccountWorker.isRunning() ? WORKING : ACCOUNT_LIST, this.width / 2 + LAYOUT_ENTRY_X / 2, LAYOUT_VERTICAL_SPACING, 0xFFFFFFFF);
-        context.drawCenteredString(this.font, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2 + LAYOUT_ENTRY_X / 2, this.height - LAYOUT_VERTICAL_SPACING, 0xFFFFFFFF);
+        context.centeredText(this.font, AccountWorker.isRunning() ? WORKING : ACCOUNT_LIST, this.width / 2 + LAYOUT_ENTRY_X / 2, LAYOUT_VERTICAL_SPACING, 0xFFFFFFFF);
+        context.centeredText(this.font, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2 + LAYOUT_ENTRY_X / 2, this.height - LAYOUT_VERTICAL_SPACING, 0xFFFFFFFF);
 
-        context.drawCenteredString(
+        context.centeredText(
                 this.font, Component.translatable("accountsx.account.general.add_account"),
                 LAYOUT_TOOL_BAR_TEXT_CENTER_X, LAYOUT_TOOL_BAR_ADD_ACCOUNT_Y,
                 0xFFFFFFFF

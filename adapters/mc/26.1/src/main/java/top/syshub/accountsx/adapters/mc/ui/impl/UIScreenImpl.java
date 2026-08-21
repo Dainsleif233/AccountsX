@@ -12,7 +12,7 @@ import top.syshub.accountsx.adapters.mc.ui.ButtonWidget;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Renderable;
@@ -162,15 +162,15 @@ public final class UIScreenImpl implements UIScreen {
         }
 
         @Override
-        public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+        public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
             assert this.minecraft != null;
 
-            super.render(context, mouseX, mouseY, delta);
+            super.extractRenderState(context, mouseX, mouseY, delta);
 
             int textTop = this.height / 2 - (UIScreenImpl.this.inputs.size() + 1) * 25 / 2 + 5;
             int textLeft = this.width / 2 - 170;
 
-            context.drawString(
+            context.text(
                     minecraft.font,
                     this.title,
                     this.width / 2 - minecraft.font.width(this.title) / 2,
@@ -179,7 +179,7 @@ public final class UIScreenImpl implements UIScreen {
             );
 
             for (ValuedWidget<EditBox> widget : UIScreenImpl.this.inputs.values()) {
-                context.drawString(
+                context.text(
                         minecraft.font,
                         Component.translatable(widget.description),
                         textLeft,

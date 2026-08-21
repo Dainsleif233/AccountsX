@@ -69,7 +69,13 @@ fun discoverAdapters(): List<Adapter> {
             .map { version ->
                 when (type) {
                     "authlib" -> Adapter("adapters:$type:$version", "jar", "authlib")
-                    "mc" -> Adapter("adapters:$type:$version", "remapJar", "mc")
+                    "mc" -> {
+                        // Non-obfuscated MC versions (26.1+) use fabric-loom which has no
+                        // remapJar task — fall back to plain `jar`.
+                        val buildFile = typeDir.resolve("$version/build.gradle.kts").readText()
+                        val builder = if ("fabric-loom-remap" in buildFile) "remapJar" else "jar"
+                        Adapter("adapters:$type:$version", builder, "mc")
+                    }
                     "modmenu" -> Adapter("adapters:$type:$version", "remapJar", "modmenu")
                     else -> throw IllegalArgumentException("Unknown type: $type")
                 }
