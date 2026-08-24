@@ -1,0 +1,266 @@
+# AGENTS.md
+
+AI agent 和所有开发者的项目权威手册。保持与代码同步；任何约束变更必须同步更新此文件。
+
+## 项目简介
+
+Accounts X 是一个**客户端 Fabric 模组**，用于 Minecraft 多账号切换。支持离线账号、Microsoft（device-code OAuth）、Authlib-Injector（第三方 Yggdrasil）和 United-Injector 账号，以及启动器提供的环境账号。
+
+- 基础包：`top.syshub.accountsx`
+- Java **25**（`sourceCompatibility` / `targetCompatibility`）
+- Gradle **9.7.0**（wrapper），Fabric Loom **1.17-SNAPSHOT**
+- Fabric Loader：**0.19.3**（各适配器固定版本；core 使用 `compileOnly`）
+- 版本号：`gradle.properties`（当前 `2.0.0-beta.1`）
+- 许可：GPL-3.0
+- 仓库：https://github.com/Dainsleif233/AccountsX
+
+### MC 版本支持矩阵
+
+| Minecraft | authlib | Loom 插件         | Fabric API |
+|-----------|---------|-------------------|------------|
+| 1.20      | 4.0.43  | fabric-loom-remap | 0.83.0     |
+| 1.20.2    | 5.0.47  | fabric-loom-remap | 0.91.6     |
+| 1.20.3    | 6.0.52  | fabric-loom-remap | 0.91.1     |
+| 1.20.5    | 6.0.54  | fabric-loom-remap | 0.97.8     |
+| 1.21      | 6.0.54  | fabric-loom-remap | 0.102.0    |
+| 1.21.2    | 6.0.54  | fabric-loom-remap | 0.106.1    |
+| 1.21.4    | 6.0.54  | fabric-loom-remap | 0.118.5    |
+| 1.21.6    | 6.0.54  | fabric-loom-remap | 0.128.0    |
+| 1.21.9    | 7.0.61  | fabric-loom-remap | 0.134.0    |
+| 1.21.11   | 7.0.61  | fabric-loom-remap | 0.139.4    |
+| 26.1      | 7.0.61  | fabric-loom       | 0.145.1    |
+| 26.2      | 7.0.61  | fabric-loom       | 0.158.0    |
+
+每个 MC 适配器的 `depends.minecraft` 使用 `>=<版本>` 无上界，Fabric Loader 在所有满足的候选适配器中选版本号最大的那个。  
+这是有意设计——新增更高版本 MC 时**不需要修改已有适配器的上界**。  
+MC 26.1+ 是非混淆版本（无 ProGuard），Loom 没有 `remapJar` 任务，`officialMojangMappings()` 会抛异常。
+
+## 硬性不变量
+
+| 不变量                                                                  | 为什么                                                                         | 违反后的症状                                         | 强制机制                            |
+|-------------------------------------------------------------------------|--------------------------------------------------------------------------------|------------------------------------------------------|-------------------------------------|
+| core 不得 import `net/minecraft/*` 或 `com/mojang/authlib/*`            | core 被 12 个不同 MC 版本共用编译                                              | 编译失败或运行时 ClassNotFoundException              | `:core:checkArchitecture`（P0.5）   |
+| `MinecraftAdapterImpl`（或 `MinecraftAdapaterImpl`）类名是数据契约      | 写在各适配器 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里              | 12 个适配器中找不到实现，模组崩溃                    | 人工校验 + fabric.mod.json 校验     |
+| `~/.accountsx/` 下的文件含明文 token                                    | 所有日志、报错、提交都不得包含其内容                                           | token 泄露                                           | 人工 review                         |
+| `depends.minecraft` 使用 `>=` 无上界                                    | Loader 在候选中取版本号最大者，MC 版本号嵌在适配器版本串尾部                   | 版本排序被破坏时选错适配器 → mixin 目标不存在 → 崩溃 | `:validateAdapterMatrix`（P0.5）    |
+| 载荷读失败时**不得**写回配置                                            | `initialize()` 末尾的无条件 `save()` 会把文件覆写成 `[]`，静默丢失用户全部账号 | 一次瞬时 I/O 错误永久删除所有账号                    | P1 修复（只读降级模式）             |
+| 实例配置里的 `id` 是载荷文件的索引；账号数据在 `~/.accountsx/<id>.json` | 实例目录可能被同步、打包、提交，明文 token 不宜放其中                          | 混淆配置与载荷的职责                                 | 人工理解                            |
+| 26.1+ 使用 `fabric-loom`（非 `fabric-loom-remap`）                      | 非混淆版本没有 `remapJar` 任务                                                 | 构建失败                                             | `discoverAdapters()` 字符串匹配     |
+| `configId`（`AccountType` 枚举的第三个参数）是持久化契约                | 写入 `accounts.json`，迁移时按此识别类型                                       | 未知 type 导致整个账号集加载失败                     | `ConfigVersion.RENAME_ACCOUNT_TYPE` |
+| i18n key 格式 `accountsx.account.type.<configId>.name` / `.using`       | `Translator` 通过拼接 `configId` 动态生成 key                                  | 缺译 key 显示原始 key 名                             | `:core:test`（P0.4）                |
+
+## 项目布局
+
+```
+AccountsX（根项目 / core）
+├── src/main/java/top/syshub/accountsx/core/
+│   ├── AccountsX.java              # ClientModInitializer，入口
+│   ├── accounts/                    # 账号模型 + 提供者
+│   │   ├── AccountProvider.java     # 接口：configure / validate / login / refresh
+│   │   ├── AccountUUID.java
+│   │   ├── BaseAccount.java         # 基类，含嵌套 AccountStorage
+│   │   ├── impl/env/                # 环境账号（启动器会话）
+│   │   ├── impl/injector/           # Authlib-Injector + United-Injector
+│   │   ├── impl/microsoft/          # Microsoft device-code OAuth
+│   │   ├── impl/offline/            # 离线账号
+│   │   └── model/                   # AccountType 枚举、AccountState、Auth* 上下文
+│   ├── adapters/
+│   │   ├── api/                     # MinecraftAdapter / AuthlibAdapter / AccountSession 接口
+│   │   └── Adapters.java            # 反射加载适配器实现（memoize）
+│   ├── manager/
+│   │   ├── AccountManager.java      # 账号列表管理 + 刷新调度
+│   │   ├── AccountWorker.java       # 后台任务队列（daemon）
+│   │   └── config/
+│   │       ├── ConfigHandle.java    # 配置读写（实例配置 + ~/.accountsx/ 载荷）
+│   │       └── ConfigVersion.java   # 迁移链（当前 v0 → v3）
+│   ├── ui/                          # 版本无关的 UIScreen / Memory / Translator
+│   └── utils/                       # Threading / NetworkUtils / UnsafeVM / AvatarUtils
+├── adapters/
+│   ├── authlib/<ver>/               # authlib API 桥接（5 个版本）
+│   ├── mc/<mc-ver>/                 # MC 客户端 API + UI + Mixins（12 个版本）
+│   └── modmenu/<ver>/               # Mod Menu 配置入口
+├── buildSrc/                        # 预编译 Gradle 插件（3 个）
+└── src/main/resources/
+    ├── fabric.mod.json              # 核心模组元数据
+    └── assets/accountsx/lang/       # i18n（en_us.json + zh_cn.json，41 个 key）
+```
+
+### Core vs Adapters
+
+**根项目**持有所有认证流程、账号模型、持久化和工作线程。它仅 `compileOnly` 依赖 Fabric Loader / Gson / Guava / SLF4J / ASM——编译期不依赖 Minecraft 或 authlib。
+
+运行时平台代码在 **adapters** 中，由 Fabric Loader 从已安装的适配器集中选择。Core 通过 `fabric.mod.json` 的自定义值发现实现：
+
+| Mod ID                      | 自定义键                                           | 接口               |
+|-----------------------------|----------------------------------------------------|--------------------|
+| `accountsx-adapter-authlib` | `accountsx:adapter.authlib` → `{ "class": "..." }` | `AuthlibAdapter`   |
+| `accountsx-adapter-mc`      | `accountsx:adapter.mc` → `{ "class": "..." }`      | `MinecraftAdapter` |
+
+`Adapters`（`core/adapters/Adapters.java`）通过反射加载两者，使用 `Suppliers.memoize` 缓存，并断言它们共享相同的 `AccountSession` 类型参数。始终通过 `Adapters.getMinecraftAdapter()` / `Adapters.getAuthlibAdpater()` 访问，不要直接引用 MC/authlib 类型。
+
+Core `fabric.mod.json` 依赖全部三个适配器 mod id（`accountsx-adapter-mc`、`accountsx-adapter-authlib`、`accountsx-adapter-modmenu`），并注册 MethodHandles lookup accessor 到 `accountsx:impl-lookup-accessor` 供 `UnsafeVM` 使用。
+
+### Universal 打包
+
+`tasks.universal`（根 `build.gradle.kts`）复制 core jar 并将每个适配器 jar 嵌套到 `META-INF/jars/` 下，同时重写 `fabric.mod.json` 的 `jars` 字段，使一个产物包含完整的多版本适配器集。Fabric Loader 选择其 `depends` 匹配运行中游戏的适配器。  
+universal 任务还会在嵌套的 core 元数据中添加 `fabric-api: *` 依赖。
+
+### 账号模型
+
+- `BaseAccount` + 嵌套 `AccountStorage`（token、name、UUID、state）
+- `AccountType` 枚举注册 class + `AccountProvider` + configId：
+  - `ENV_DEFAULT` — 当前启动器会话（不持久化）
+  - `OFFLINE`（configId: `"offline"`）
+  - `MICROSOFT`（configId: `"microsoft"`）— device-code OAuth
+  - `AUTHLIB_INJECTOR`（configId: `"injector.authlib-injector"`）— 第三方 Yggdrasil
+  - `UNITED_INJECTOR`（configId: `"injector.united"`）— 联合通行证
+- Provider 实现 `configure`（UI 配置）/ `validate`（校验输入）/ `login` / `refresh` / `createAccountContext`
+- 登录上下文是 `AccountContext(AuthServerContext, AuthSecurityContext, AuthPolicy)`，用于构建 authlib session
+
+### 运行时流程
+
+1. `AccountsX.onInitializeClient` → `AccountManager.initialize` + `MicrosoftConstants.initialize`
+2. Manager 用环境账号 + `ConfigHandle.load()` 填充列表，在 worker 上刷新非授权账号
+3. UI（各 MC 版本的 `AccountScreen`）在**客户端线程**上修改账号
+4. 登录/刷新/保存在 **AccountWorker**（daemon 队列）上运行；并行刷新使用额外注册的 worker 线程
+5. `loginAccount` → authlib 适配器构建 `AccountSession` → 客户端线程 `switchAccount` 重连 MC session/sessionService/skin 等
+
+`@Threading.Thread` 文档标注预期线程；`Threading.checkMinecraftClientThread()` / `checkAccountWorkerThread()` 强制执行。不要在 worker 线程外调用 profile 修改 API。
+
+### 持久化
+
+- 实例配置：`<game>/config/accountsx/accounts.json` — version + UUID `id`
+- 账号载荷：`~/.accountsx/<id>.json`（用户主目录，跨实例共享）
+- 迁移：`ConfigVersion` 在 version 较旧时就地升级 JSON
+- `ENV_DEFAULT` 账号不写入磁盘
+
+### MC 适配器（`adapters/mc/<version>`）
+
+每个版本是独立的 Loom 项目。典型布局：
+
+- `MinecraftAdapterImpl`（或历史拼写 `MinecraftAdapaterImpl`）— 实现 `MinecraftAdapter`
+- `ui/` — `AccountScreen`、列表控件、`UIScreenImpl` / `DefaultMemory` 桥接 core `UIScreen`/`Memory`
+- `mixins/` — 标题屏按钮、session/skin accessor、Yggdrasil hook；多数版本嵌套在 `mixins/mixins/` 下（1.20 较扁平）
+
+通过插件 `accountsx.mc.adapter` 的 `adapter { }` 扩展固定 MC/loader/API/authlib 版本。Mojang official mappings 由 `accountsx.mc.adapter` 集中添加（通过反射访问 Loom 的 `loom` 扩展，因为 Loom 类不在 buildSrc classpath 上）。
+
+### Authlib 适配器（`adapters/authlib/<version>`）
+
+薄桥接层：`AuthlibAdapterImpl` + `AccountSessionImpl`，针对特定 `com.mojang:authlib` 版本。包：`top.syshub.accountsx.authlib`。保持包/类名与 `accountsx:adapter.authlib` 自定义条目对齐（`top.syshub.accountsx.authlib.AuthlibAdapterImpl`）。
+
+### Mod Menu 适配器
+
+`adapters/modmenu/7.0.0` — `top.syshub.accountsx.adapters.modmenu.ModMenuApiImpl` 打开账号 UI。通过其 `adapter { }` 块关联到 MC `1.20`（Mod Menu 7.0.0）。
+
+### buildSrc 插件
+
+- `accountsx.mc.adapter` — Loom 依赖（minecraft、mappings、loader、fabric-resource-loader、关联 authlib 适配器）；检测非混淆版本
+- `accountsx.authlib.adapter` — authlib + 根项目
+- `accountsx.modmenu.adapter` — Mod Menu + 关联 MC 适配器
+
+`FabricApiVersions` 反射代码（使用 `StackWalker` 找 Loom 的 ClassLoader）在 `accountsx.mc.adapter` 中，注释说明了为何必须反射。新增适配器版本：在 `adapters/<type>/<version>/` 添加 `build.gradle.kts` 并应用对应插件；`settings.gradle.kts` 自动包含 `adapters/{authlib,mc,modmenu}/` 下的每个目录。
+
+### i18n
+
+Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn.json`）。UI 字符串使用 `accountsx.account.*` 格式的 key。Type 相关 key 通过 `Translator` 拼接 `configId` 生成，格式为 `accountsx.account.type.<configId>.name` / `.using`。
+
+## 命令与代价
+
+```bash
+# 全量构建
+./gradlew build                    # 输出：build/libs/AccountsX-<version>.jar
+
+# Core 模块
+./gradlew :core:build              # ~1 min（热缓存）
+
+# 单个适配器（冒号分隔的项目路径）
+./gradlew :adapters:mc:1.21.4:remapJar       # ~4 min（热缓存）
+./gradlew :adapters:authlib:6.0.54:jar
+./gradlew :adapters:modmenu:7.0.0:remapJar
+
+# 快速校验元数据/架构约束
+./gradlew :core:checkArchitecture :validateAdapterMatrix
+
+# 清理
+./gradlew clean
+```
+
+- Windows 上等效使用 `gradlew.bat`。
+- 当只改一个 MC/authlib 版本时，优先构建该适配器而非全量 `build`。
+- 非混淆版本（26.1+）使用 `jar` 任务而非 `remapJar`。
+
+## 常见任务操作手册
+
+### 加一个 MC 版本
+
+1. 确定该 MC 版本不能正常运行，非正式版的版本识别可能不正确，需要手动调整依赖再测试
+2. 复制最接近的现有版本目录：`cp -r adapters/mc/<近邻> adapters/mc/<新版本>`
+3. 更新 `adapters/mc/<新版本>/build.gradle.kts` 的 `adapter { }` 块（minecraft / loader / api 版本号）
+4. 按需修改 `MinecraftAdapterImpl` 和 `ui/` 以适配 API 变更
+5. 若当前 MC 版本不适配 authlib 版本，则按「加 authlib 版本」步骤操作
+6. `./gradlew :adapters:mc:<新版本>:build` 并修复编译错误
+7. `./gradlew :validateAdapterMatrix`（模拟 Loader 选择，确认新版本选中新适配器）
+8. 构建全量 jar 并在游戏内验证：`./gradlew build`
+9. commit：`feat(mc): 新增 MC <版本> 适配器`
+
+### 加一个 authlib 版本
+
+1. 在 `adapters/authlib/<新版本>/` 创建项目，应用 `accountsx.authlib.adapter` 插件
+2. `build.gradle.kts` 中 `adapter { authlib = "<版本>" }`
+3. 实现 `AuthlibAdapterImpl` + `AccountSessionImpl`
+4. `./gradlew :adapters:authlib:<新版本>:build`
+
+### 加一个账号类型
+
+需要改动的 **6 个点**（漏任何一个都会静默失败）：
+
+1. **`AccountType` 枚举**（`core/accounts/model/AccountType.java`）— 添加枚举值，传入 accountClass、provider 实例、configId 字符串（持久化契约，不可随意改）
+2. **Provider 实现**（`core/accounts/impl/`）— 实现 `AccountProvider<T>` 的 `configure` / `validate` / `login` / `refresh` / `createAccountContext`
+3. **账号模型**（`BaseAccount` 子类）— 定义账号数据结构，注册 Gson TypeAdapter（若需要自定义序列化）
+4. **i18n key**（`en_us.json` + `zh_cn.json`）— 添加 `accountsx.account.type.<configId>.name` 和 `.using`
+5. **配置迁移**（`ConfigVersion.java`）— 如果 configId 是新增的，确保旧配置中的未知 type 不会导致整个加载失败
+6. **适配器 UI**（各 `adapters/mc/<ver>/ui/AccountScreen.java`）— 确保 `configure()` / `validate()` 在 `UIScreen` SPI 下工作
+
+### 改配置格式
+
+- 必须加 `ConfigVersion` 迁移 + 迁移测试
+- 迁移后回写 version 并更新 `CURRENT_VERSION`
+- 详见 `docs/config-schema.md`（P2 阶段产出）
+
+### 改 UI
+
+- 先判断改动是否版本无关
+- 版本无关改动改 `mc-shared`（P5 阶段产出），需全矩阵编译
+- 版本相关改动改对应 `adapters/mc/<ver>/ui/`
+
+## 安全约束
+
+- `~/.accountsx/` 下的文件含明文 token，**任何日志、报错、提交都不得包含其内容**
+- 不得在代码里硬编码真实 client_id 之外的凭据
+- 测试 fixture 一律使用 `fake-` 前缀
+- 不要提交 `~/.accountsx/` 或任何含 token 的文件
+
+## 代码风格
+
+- Java 17、UTF-8、4 空格缩进
+- 注释解释「为什么」而非「做什么」
+- 历史拼写错误保留以维持兼容性：
+  - `getAuthlibAdpater()`（应为 `getAuthlibAdapter()`）— 纯 Java 符号，新代码可加 `@Deprecated` 转发
+  - `MinecraftAdapaterImpl`（应为 `MinecraftAdapterImpl`）— **类名写在 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里**，属于数据契约。26.2 已改为正确拼写，其余 11 个版本仍为旧拼写
+- `AccountProvider.validate` 返回 `int` 常量（`STATE_IMMEDIATE_CLOSE=0` / `STATE_HANDLE=1`），而非枚举
+
+## Commit 规范
+
+```
+<type>(<scope>): 中文摘要
+```
+
+常用 type：`feat` / `fix` / `refactor` / `chore` / `docs` / `style` / `perf` / `test`
+
+scope 参照项目已有模块名：`build`、`ci`、`core`、`storage`、`auth`、`ui`、`mc`、`authlib`、`modmenu`、`docs`、`test`
+
+规则：
+1. 先 `git log --oneline -20` 查看历史提交，参照已有风格
+2. summary 用中文，简洁明了
+3. 一个 commit 做一件事
+4. **不要擅自 commit**：没有明确 commit 指令时不执行 `git commit`

@@ -6,5 +6,6 @@ build/
 .idea/
 
 # Agent
-CLAUDE.md
-REFACTORING_PLAN.md
+PERSONAL_HABITS.md
+.claude/
+REFACTORING/
