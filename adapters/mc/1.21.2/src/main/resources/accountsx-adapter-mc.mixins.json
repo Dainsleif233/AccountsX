@@ -4,7 +4,6 @@
   "package": "top.syshub.accountsx.adapters.mc.mixins.mixins",
   "compatibilityLevel": "JAVA_17",
   "client": [
-    "TitleScreenMixin",
     "DrawContextAccessor",
     "MinecraftClientAccessor",
     "PlayerSkinProviderMixin",

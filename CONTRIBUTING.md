@@ -36,6 +36,13 @@
 
 **不要**只改一个适配器就跑 `./gradlew build` — 那会编译全部 Loom 适配器，非常耗时。
 
+### 版本号写在哪
+
+- 第三方依赖版本 → `gradle/libs.versions.toml`
+- 适配器矩阵（每个 MC 版本用哪个 authlib / Fabric API、是否混淆）→ `gradle/adapters.toml`
+
+适配器目录下的 `build.gradle.kts` 只声明插件，不含任何版本号；新增适配器版本必须先在 `gradle/adapters.toml` 加条目，否则该子项目不会被 `include`。
+
 ### PR 要求
 
 - PR 前确保 `./gradlew :core:build` 通过

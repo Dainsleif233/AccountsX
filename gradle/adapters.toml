@@ -1,0 +1,108 @@
+## 版本矩阵单一数据源（P0.2）。
+##
+## 消费者：
+##   - `settings.gradle.kts`      —— 决定包含哪些子项目（不再列目录）
+##   - `buildSrc` 的三个适配器插件 —— 每个适配器的依赖版本与 fabric.mod.json 占位符
+##   - 根 `build.gradle.kts`      —— universal 打包时每个适配器的产物任务名
+##   - `:validateAdapterMatrix`（P0.5）—— 校验本文件与磁盘目录一致 + 模拟 Loader 选择
+##
+## 约定：
+##   - `version` 必须等于 `adapters/<type>/<version>/` 目录名；
+##   - `obfuscated = false` 表示该 MC 版本没有 ProGuard 混淆（26.1+），
+##     构建用 `fabric-loom` + `jar`，而不是 `fabric-loom-remap` + `remapJar`，
+##     且 `officialMojangMappings()` 不可用；
+##   - `loader` 可选，缺省取 `gradle/libs.versions.toml` 的 `fabric-loader`。
+##
+## 解析器只支持这里用到的 TOML 子集（`[[表]]` + 引号字符串 / 布尔值），
+## 见 `buildSrc/src/main/kotlin/accountsx/build/Toml.kt`。
+
+[[mc]]
+version = "1.20"
+authlib = "4.0.43"
+fabricApi = "0.83.0"
+obfuscated = true
+
+[[mc]]
+version = "1.20.2"
+authlib = "5.0.47"
+fabricApi = "0.91.6"
+obfuscated = true
+
+[[mc]]
+version = "1.20.3"
+authlib = "6.0.52"
+fabricApi = "0.91.1"
+obfuscated = true
+
+[[mc]]
+version = "1.20.5"
+authlib = "6.0.54"
+fabricApi = "0.97.8"
+obfuscated = true
+
+[[mc]]
+version = "1.21"
+authlib = "6.0.54"
+fabricApi = "0.102.0"
+obfuscated = true
+
+[[mc]]
+version = "1.21.2"
+authlib = "6.0.54"
+fabricApi = "0.106.1"
+obfuscated = true
+
+[[mc]]
+version = "1.21.4"
+authlib = "6.0.54"
+fabricApi = "0.118.5"
+obfuscated = true
+
+[[mc]]
+version = "1.21.6"
+authlib = "6.0.54"
+fabricApi = "0.128.0"
+obfuscated = true
+
+[[mc]]
+version = "1.21.9"
+authlib = "7.0.61"
+fabricApi = "0.134.0"
+obfuscated = true
+
+[[mc]]
+version = "1.21.11"
+authlib = "7.0.61"
+fabricApi = "0.139.4"
+obfuscated = true
+
+[[mc]]
+version = "26.1"
+authlib = "7.0.61"
+fabricApi = "0.145.1"
+obfuscated = false
+
+[[mc]]
+version = "26.2"
+authlib = "7.0.61"
+fabricApi = "0.158.0"
+obfuscated = false
+
+[[authlib]]
+version = "4.0.43"
+
+[[authlib]]
+version = "5.0.47"
+
+[[authlib]]
+version = "6.0.52"
+
+[[authlib]]
+version = "6.0.54"
+
+[[authlib]]
+version = "7.0.61"
+
+[[modmenu]]
+version = "7.0.0"
+minecraft = "1.20"

@@ -1,6 +1,6 @@
-import org.gradle.kotlin.dsl.support.serviceOf
-import java.lang.invoke.MethodHandles
-import java.lang.invoke.MethodType
+import accountsx.build.AdapterMatrix
+import accountsx.build.Catalog
+import accountsx.build.Loom
 
 plugins {
     java
@@ -8,25 +8,19 @@ plugins {
 
 version = rootProject.version
 
-interface ModmenuAdapterExtension {
-    var minecraft: String
+// Pinned versions come from `gradle/adapters.toml`, keyed by the project
+// directory name (= the Mod Menu version). The matrix also decides which MC
+// adapter this Mod Menu build binds to (P0.2).
+val matrix = AdapterMatrix.load(rootDir)
+val adapter = matrix.modmenu(project.name)
+val mc = matrix.mc(adapter.minecraft)
 
-    var loader: String
-    var api: String
-    var modmenu: String
+require(mc.obfuscated) {
+    "${project.path}: Mod Menu adapter is pinned to MC ${mc.version}, which adapters.toml marks as " +
+        "non-obfuscated — this plugin only supports the fabric-loom-remap path."
 }
 
-val adapter = extensions.create("adapter", ModmenuAdapterExtension::class.java)
-
-// Mojang official mappings for this adapter's Minecraft version. The `loom`
-// extension is not on this precompiled plugin's classpath (Gradle isolates Loom
-// classes from other plugins), so it is reached reflectively. The returned
-// dependency resolves the Minecraft version lazily from the `minecraft` config.
-val mojangMappings = extensions.getByName("loom").let { loom ->
-    loom.javaClass.methods.first {
-        it.name == "officialMojangMappings" && it.parameterCount == 0
-    }.invoke(loom)
-}
+val loaderVersion = mc.loader ?: Catalog.version(project, "fabric-loader")
 
 repositories {
     maven("https://maven.fabricmc.net/")
@@ -35,60 +29,40 @@ repositories {
 }
 
 dependencies {
-    add("mappings", mojangMappings)
+    add("mappings", Loom.officialMojangMappings(project))
 
-    "modRuntimeOnly"("io.github.llamalad7:mixinextras-fabric:0.3.5")
-    "implementation"(project(":"))
+    add("modRuntimeOnly", Catalog.notation(project, "mixinextras-fabric"))
+    add("implementation", project(":"))
 
-    addProvider("minecraft", provider { "com.mojang:minecraft:${adapter.minecraft}" })
-    addProvider("modImplementation", provider { "net.fabricmc:fabric-loader:${adapter.loader}" })
-    addProvider("modImplementation", provider { "com.terraformersmc:modmenu:${adapter.modmenu}" })
-    addProvider("implementation", provider { project(":adapters:mc:${adapter.minecraft}") })
+    add("minecraft", "com.mojang:minecraft:${mc.version}")
+    add("modImplementation", Catalog.notation(project, "fabric-loader", loaderVersion))
+    add("modImplementation", "com.terraformersmc:modmenu:${adapter.version}")
+    add("implementation", project(":adapters:mc:${mc.version}"))
+
+    // Resolved lazily on purpose: the reflection inside Loom.fabricApiModule
+    // needs a Loom frame on the call stack.
     addProvider("modRuntimeOnly", provider {
-        // Gradle restricts access Loom classes from other plugins.
-        // As configuration 'modRuntimeOnly' is resolved by Loom, StackWalker can access a Loom class instance (and its class loader).
-
-        val clazz = Class.forName(
-            "net.fabricmc.loom.configuration.fabricapi.FabricApiVersions", true,
-            StackWalker.getInstance(setOf(StackWalker.Option.RETAIN_CLASS_REFERENCE)).walk { stream ->
-                stream.filter { frame -> frame.className.startsWith("net.fabricmc.loom.") }.findFirst()
-            }.orElseThrow().declaringClass.classLoader
-        )
-
-        MethodHandles.lookup().findVirtual(
-            clazz, "module", MethodType.methodType(
-                Dependency::class.java, Class.forName("java.lang.String"), Class.forName("java.lang.String")
-            )
-        ).invokeWithArguments(
-            serviceOf<ObjectFactory>().newInstance(clazz),
-            "fabric-resource-loader-v0",
-            "${adapter.api}+${adapter.minecraft}"
-        )
+        Loom.fabricApiModule(project, "fabric-resource-loader-v0", "${mc.fabricApi}+${mc.version}")
     })
 }
 
 java.withSourcesJar()
 
 tasks.withType<ProcessResources> {
-    inputs.property("version", project.version)
+    val placeholders = mapOf(
+        // `version` is assigned by this plugin above, so capture it at
+        // configuration time — reading `project` inside the execution-time copy
+        // action would be deprecated in Gradle 10.
+        "version" to project.version.toString(),
+        "loader" to loaderVersion,
+        "minecraft" to mc.version,
+        "modmenu" to adapter.version
+    )
 
-    // `version` is assigned by this plugin itself above, so capture it here at
-    // configuration time. (Reading `project` inside the execution-time copy
-    // action below would be deprecated in Gradle 10.) The per-adapter
-    // `adapter { }` values are only assigned by the leaf project after this
-    // plugin applies, so they are still read lazily inside filesMatching's
-    // execution-time closure.
-    val modVersion = project.version
+    inputs.properties(placeholders)
 
     filesMatching("fabric.mod.json") {
-        expand(
-            mapOf(
-                "version" to modVersion,
-                "loader" to adapter.loader,
-                "minecraft" to adapter.minecraft,
-                "modmenu" to adapter.modmenu
-            )
-        )
+        expand(placeholders)
     }
 }
 

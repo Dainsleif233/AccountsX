@@ -35,19 +35,21 @@ Accounts X 是一个**客户端 Fabric 模组**，用于 Minecraft 多账号切�
 这是有意设计——新增更高版本 MC 时**不需要修改已有适配器的上界**。  
 MC 26.1+ 是非混淆版本（无 ProGuard），Loom 没有 `remapJar` 任务，`officialMojangMappings()` 会抛异常。
 
+上表是 `gradle/adapters.toml` 的人类可读副本；改矩阵改 toml，然后同步此表。
+
 ## 硬性不变量
 
-| 不变量                                                                  | 为什么                                                                         | 违反后的症状                                         | 强制机制                            |
-|-------------------------------------------------------------------------|--------------------------------------------------------------------------------|------------------------------------------------------|-------------------------------------|
-| core 不得 import `net/minecraft/*` 或 `com/mojang/authlib/*`            | core 被 12 个不同 MC 版本共用编译                                              | 编译失败或运行时 ClassNotFoundException              | `:core:checkArchitecture`（P0.5）   |
-| `MinecraftAdapterImpl`（或 `MinecraftAdapaterImpl`）类名是数据契约      | 写在各适配器 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里              | 12 个适配器中找不到实现，模组崩溃                    | 人工校验 + fabric.mod.json 校验     |
-| `~/.accountsx/` 下的文件含明文 token                                    | 所有日志、报错、提交都不得包含其内容                                           | token 泄露                                           | 人工 review                         |
-| `depends.minecraft` 使用 `>=` 无上界                                    | Loader 在候选中取版本号最大者，MC 版本号嵌在适配器版本串尾部                   | 版本排序被破坏时选错适配器 → mixin 目标不存在 → 崩溃 | `:validateAdapterMatrix`（P0.5）    |
-| 载荷读失败时**不得**写回配置                                            | `initialize()` 末尾的无条件 `save()` 会把文件覆写成 `[]`，静默丢失用户全部账号 | 一次瞬时 I/O 错误永久删除所有账号                    | P1 修复（只读降级模式）             |
-| 实例配置里的 `id` 是载荷文件的索引；账号数据在 `~/.accountsx/<id>.json` | 实例目录可能被同步、打包、提交，明文 token 不宜放其中                          | 混淆配置与载荷的职责                                 | 人工理解                            |
-| 26.1+ 使用 `fabric-loom`（非 `fabric-loom-remap`）                      | 非混淆版本没有 `remapJar` 任务                                                 | 构建失败                                             | `discoverAdapters()` 字符串匹配     |
-| `configId`（`AccountType` 枚举的第三个参数）是持久化契约                | 写入 `accounts.json`，迁移时按此识别类型                                       | 未知 type 导致整个账号集加载失败                     | `ConfigVersion.RENAME_ACCOUNT_TYPE` |
-| i18n key 格式 `accountsx.account.type.<configId>.name` / `.using`       | `Translator` 通过拼接 `configId` 动态生成 key                                  | 缺译 key 显示原始 key 名                             | `:core:test`（P0.4）                |
+| 不变量                                                                  | 为什么                                                                         | 违反后的症状                                         | 强制机制                                   |
+|-------------------------------------------------------------------------|--------------------------------------------------------------------------------|------------------------------------------------------|--------------------------------------------|
+| core 不得 import `net/minecraft/*` 或 `com/mojang/authlib/*`            | core 被 12 个不同 MC 版本共用编译                                              | 编译失败或运行时 ClassNotFoundException              | `:core:checkArchitecture`（P0.5）          |
+| `MinecraftAdapterImpl`（或 `MinecraftAdapaterImpl`）类名是数据契约      | 写在各适配器 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里              | 12 个适配器中找不到实现，模组崩溃                    | 人工校验 + fabric.mod.json 校验            |
+| `~/.accountsx/` 下的文件含明文 token                                    | 所有日志、报错、提交都不得包含其内容                                           | token 泄露                                           | 人工 review                                |
+| `depends.minecraft` 使用 `>=` 无上界                                    | Loader 在候选中取版本号最大者，MC 版本号嵌在适配器版本串尾部                   | 版本排序被破坏时选错适配器 → mixin 目标不存在 → 崩溃 | `:validateAdapterMatrix`（P0.5）           |
+| 载荷读失败时**不得**写回配置                                            | `initialize()` 末尾的无条件 `save()` 会把文件覆写成 `[]`，静默丢失用户全部账号 | 一次瞬时 I/O 错误永久删除所有账号                    | P1 修复（只读降级模式）                    |
+| 实例配置里的 `id` 是载荷文件的索引；账号数据在 `~/.accountsx/<id>.json` | 实例目录可能被同步、打包、提交，明文 token 不宜放其中                          | 混淆配置与载荷的职责                                 | 人工理解                                   |
+| 26.1+ 使用 `fabric-loom`（非 `fabric-loom-remap`）                      | 非混淆版本没有 `remapJar` 任务                                                 | 构建失败                                             | `adapters.toml` 的 `obfuscated` + 插件断言 |
+| `configId`（`AccountType` 枚举的第三个参数）是持久化契约                | 写入 `accounts.json`，迁移时按此识别类型                                       | 未知 type 导致整个账号集加载失败                     | `ConfigVersion.RENAME_ACCOUNT_TYPE`        |
+| i18n key 格式 `accountsx.account.type.<configId>.name` / `.using`       | `Translator` 通过拼接 `configId` 动态生成 key                                  | 缺译 key 显示原始 key 名                             | `:core:test`（P0.4）                       |
 
 ## 项目布局
 
@@ -142,7 +144,7 @@ universal 任务还会在嵌套的 core 元数据中添加 `fabric-api: *` 依�
 - `ui/` — `AccountScreen`、列表控件、`UIScreenImpl` / `DefaultMemory` 桥接 core `UIScreen`/`Memory`
 - `mixins/` — 标题屏按钮、session/skin accessor、Yggdrasil hook；多数版本嵌套在 `mixins/mixins/` 下（1.20 较扁平）
 
-通过插件 `accountsx.mc.adapter` 的 `adapter { }` 扩展固定 MC/loader/API/authlib 版本。Mojang official mappings 由 `accountsx.mc.adapter` 集中添加（通过反射访问 Loom 的 `loom` 扩展，因为 Loom 类不在 buildSrc classpath 上）。
+MC/loader/API/authlib 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目录名（= MC 版本）提供，适配器自己的 `build.gradle.kts` 只应用 Loom 插件 + `accountsx.mc.adapter`，没有 `adapter { }` 块。Mojang official mappings 由 `accountsx.mc.adapter` 集中添加（通过反射访问 Loom 的 `loom` 扩展，因为 Loom 类不在 buildSrc classpath 上）。
 
 ### Authlib 适配器（`adapters/authlib/<version>`）
 
@@ -150,15 +152,35 @@ universal 任务还会在嵌套的 core 元数据中添加 `fabric-api: *` 依�
 
 ### Mod Menu 适配器
 
-`adapters/modmenu/7.0.0` — `top.syshub.accountsx.adapters.modmenu.ModMenuApiImpl` 打开账号 UI。通过其 `adapter { }` 块关联到 MC `1.20`（Mod Menu 7.0.0）。
+`adapters/modmenu/7.0.0` — `top.syshub.accountsx.adapters.modmenu.ModMenuApiImpl` 打开账号 UI。通过 `gradle/adapters.toml` 的 `[[modmenu]]` 条目关联到 MC `1.20`（Mod Menu 7.0.0）。
+
+### 构建期单一数据源（P0.2）
+
+| 文件                        | 内容                                                                                                   | 消费者                                                                                                                                    |
+|-----------------------------|--------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| `gradle/libs.versions.toml` | 与 MC 版本无关的依赖版本（gson / guava / slf4j / asm / fabric-loader / mixinextras ×2 / sponge-mixin） | 根项目用 `libs.*` 访问器；buildSrc 三个插件通过 `accountsx.build.Catalog` 读取（预编译脚本插件没有 `libs` 访问器）                        |
+| `gradle/adapters.toml`      | 适配器矩阵：每个 MC 版本的 authlib / Fabric API / `obfuscated`，以及 authlib 与 Mod Menu 适配器清单    | `settings.gradle.kts`（决定 `include` 哪些子项目）、三个 buildSrc 插件（按目录名查条目）、根 `build.gradle.kts`（universal 打包的任务名） |
+
+后果性约束：
+
+- 适配器的 `build.gradle.kts` **只有 `plugins { }` 块**，没有 `adapter { }`。版本改矩阵，不改脚本。
+- 目录必须在 toml 里有对应条目，否则 `include` 不到（`settings.gradle.kts` 从 toml 列，不再列目录）。反过来 toml 里有而目录不存在会在配置阶段失败。
+- `obfuscated` 字段替代了旧的"读适配器脚本文本匹配 `fabric-loom-remap`"，并由 `accountsx.mc.adapter` 断言与实际应用的 Loom 插件一致。
+- buildSrc 的 `dependencies` 里声明了 Gson，因此根 `build.gradle.kts` 不再有 `buildscript { classpath }` 块。
 
 ### buildSrc 插件
 
-- `accountsx.mc.adapter` — Loom 依赖（minecraft、mappings、loader、fabric-resource-loader、关联 authlib 适配器）；检测非混淆版本
+- `accountsx.mc.adapter` — Loom 依赖（minecraft、mappings、loader、fabric-resource-loader、关联 authlib 适配器）；按矩阵区分混淆/非混淆路径
 - `accountsx.authlib.adapter` — authlib + 根项目
 - `accountsx.modmenu.adapter` — Mod Menu + 关联 MC 适配器
 
-`FabricApiVersions` 反射代码（使用 `StackWalker` 找 Loom 的 ClassLoader）在 `accountsx.mc.adapter` 中，注释说明了为何必须反射。新增适配器版本：在 `adapters/<type>/<version>/` 添加 `build.gradle.kts` 并应用对应插件；`settings.gradle.kts` 自动包含 `adapters/{authlib,mc,modmenu}/` 下的每个目录。
+共享代码在 `buildSrc/src/main/kotlin/accountsx/build/`：
+
+- `AdapterMatrix.kt` / `Toml.kt` — 矩阵模型与极简 TOML 解析（只支持 `[[表]]` + 引号字符串/布尔值，超出即报错）
+- `Loom.kt` — 对 Loom 内部的两处反射（`officialMojangMappings`、`FabricApiVersions.module`），MC 与 Mod Menu 插件共用，注释说明为何必须反射以及为何必须惰性调用
+- `Catalog.kt` — 版本目录访问
+
+新增适配器版本：先在 `gradle/adapters.toml` 加条目，再在 `adapters/<type>/<version>/` 添加只含 `plugins { }` 的 `build.gradle.kts`。
 
 ### i18n
 
@@ -194,19 +216,21 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 ### 加一个 MC 版本
 
 1. 确定该 MC 版本不能正常运行，非正式版的版本识别可能不正确，需要手动调整依赖再测试
-2. 复制最接近的现有版本目录：`cp -r adapters/mc/<近邻> adapters/mc/<新版本>`
-3. 更新 `adapters/mc/<新版本>/build.gradle.kts` 的 `adapter { }` 块（minecraft / loader / api 版本号）
-4. 按需修改 `MinecraftAdapterImpl` 和 `ui/` 以适配 API 变更
-5. 若当前 MC 版本不适配 authlib 版本，则按「加 authlib 版本」步骤操作
-6. `./gradlew :adapters:mc:<新版本>:build` 并修复编译错误
-7. `./gradlew :validateAdapterMatrix`（模拟 Loader 选择，确认新版本选中新适配器）
-8. 构建全量 jar 并在游戏内验证：`./gradlew build`
-9. commit：`feat(mc): 新增 MC <版本> 适配器`
+2. 在 `gradle/adapters.toml` 追加 `[[mc]]` 条目（version / authlib / fabricApi / obfuscated），**漏这步子项目不会被 `include`**
+3. 复制最接近的现有版本目录：`cp -r adapters/mc/<近邻> adapters/mc/<新版本>`
+4. 改 `adapters/mc/<新版本>/build.gradle.kts` 里的 Loom 插件 id（26.1+ 用 `net.fabricmc.fabric-loom`，否则 `net.fabricmc.fabric-loom-remap`），版本号不写在这里
+5. 按需修改 `MinecraftAdapterImpl` 和 `ui/` 以适配 API 变更
+6. 若当前 MC 版本不适配 authlib 版本，则按「加 authlib 版本」步骤操作
+7. `./gradlew :adapters:mc:<新版本>:build` 并修复编译错误
+8. `./gradlew :validateAdapterMatrix`（模拟 Loader 选择，确认新版本选中新适配器）
+9. 构建全量 jar 并在游戏内验证：`./gradlew build`
+10. 同步 AGENTS.md 顶部的支持矩阵表
+11. commit：`feat(mc): 新增 MC <版本> 适配器`
 
 ### 加一个 authlib 版本
 
-1. 在 `adapters/authlib/<新版本>/` 创建项目，应用 `accountsx.authlib.adapter` 插件
-2. `build.gradle.kts` 中 `adapter { authlib = "<版本>" }`
+1. 在 `gradle/adapters.toml` 追加 `[[authlib]]` 条目
+2. 在 `adapters/authlib/<新版本>/` 创建 `build.gradle.kts`，只写 `plugins { java; id("accountsx.authlib.adapter") }`
 3. 实现 `AuthlibAdapterImpl` + `AccountSessionImpl`
 4. `./gradlew :adapters:authlib:<新版本>:build`
 

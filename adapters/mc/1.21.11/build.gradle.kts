@@ -1,11 +1,5 @@
+// Versions come from gradle/adapters.toml (keyed by this directory name).
 plugins {
     id("net.fabricmc.fabric-loom-remap")
     id("accountsx.mc.adapter")
-}
-
-adapter {
-    minecraft = "1.21.11"
-    loader = "0.19.3"
-    api = "0.139.4"
-    authlib = "7.0.61"
 }

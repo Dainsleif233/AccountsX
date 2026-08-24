@@ -1,4 +1,9 @@
-import com.google.gson.*
+import accountsx.build.AdapterMatrix
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import java.net.URI
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -11,14 +16,10 @@ plugins {
     java
 }
 
-buildscript {
-    repositories {
-        maven("https://maven.aliyun.com/repository/public/")
-    }
-    dependencies {
-        classpath("com.google.code.gson:gson:2.14.0")
-    }
-}
+// Gson (used below to rewrite the nested fabric.mod.json) reaches this script
+// through buildSrc's runtime classpath, so its version lives in
+// gradle/libs.versions.toml like every other dependency — there is deliberately
+// no `buildscript { classpath(...) }` block here anymore.
 
 rootProject.version = providers.gradleProperty("version").get()
 
@@ -28,11 +29,11 @@ repositories {
 }
 
 dependencies {
-    compileOnly("net.fabricmc:fabric-loader:0.19.3")
-    compileOnly("com.google.code.gson:gson:2.14.0")
-    compileOnly("com.google.guava:guava:33.6.0-jre")
-    compileOnly("org.slf4j:slf4j-api:2.0.18")
-    compileOnly("org.ow2.asm:asm:9.6")
+    compileOnly(libs.fabric.loader)
+    compileOnly(libs.gson)
+    compileOnly(libs.guava)
+    compileOnly(libs.slf4j.api)
+    compileOnly(libs.asm)
 }
 
 tasks.processResources {
@@ -56,34 +57,15 @@ tasks.processResources {
  */
 data class Adapter(val project: String, val builder: String, val prefix: String)
 
-fun discoverAdapters(): List<Adapter> {
-    val adaptersDir = projectDir.resolve("adapters")
-    return listOf("authlib", "mc", "modmenu").flatMap { type ->
-        val typeDir = adaptersDir.resolve(type)
-        if (!typeDir.isDirectory) {
-            return@flatMap emptyList()
-        }
-        typeDir.list()!!.asIterable()
-            .filter { name -> typeDir.resolve(name).isDirectory && !name.startsWith(".") }
-            .sorted()
-            .map { version ->
-                when (type) {
-                    "authlib" -> Adapter("adapters:$type:$version", "jar", "authlib")
-                    "mc" -> {
-                        // Non-obfuscated MC versions (26.1+) use fabric-loom which has no
-                        // remapJar task — fall back to plain `jar`.
-                        val buildFile = typeDir.resolve("$version/build.gradle.kts").readText()
-                        val builder = if ("fabric-loom-remap" in buildFile) "remapJar" else "jar"
-                        Adapter("adapters:$type:$version", builder, "mc")
-                    }
-                    "modmenu" -> Adapter("adapters:$type:$version", "remapJar", "modmenu")
-                    else -> throw IllegalArgumentException("Unknown type: $type")
-                }
-            }
-    }
+// The adapter list and each adapter's jar task come from gradle/adapters.toml
+// (P0.2). The `obfuscated` flag there is what decides `remapJar` vs `jar`,
+// replacing the old approach of reading each adapter's build script text and
+// string-matching "fabric-loom-remap".
+val adapters: List<Adapter> = AdapterMatrix.load(rootDir).let { matrix ->
+    matrix.authlib.map { Adapter(it.projectPath, it.jarTask, "authlib") } +
+        matrix.mc.map { Adapter(it.projectPath, it.jarTask, "mc") } +
+        matrix.modmenu.map { Adapter(it.projectPath, it.jarTask, "modmenu") }
 }
-
-val adapters: List<Adapter> = discoverAdapters()
 
 fun packageUniversalJar() {
     // The universal fat jar is the deliverable and ships under the plain
@@ -177,7 +159,11 @@ val universal = tasks.register("universal") {
 
 /**
  * Package universal jar from already-built core/adapter jars without recompiling adapters.
- * Used by CI assemble after a parallel matrix has produced the jars.
+ *
+ * Deliberately kept even though nothing calls it today (audit 1.15): P6's CI
+ * matrix builds each adapter in a separate job and then re-packs the downloaded
+ * artifacts with this task, which `universal` cannot do because it would rebuild
+ * every adapter.
  */
 val packageUniversal = tasks.register("packageUniversal") {
     group = "build"

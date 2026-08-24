@@ -1,4 +1,5 @@
-import org.gradle.kotlin.dsl.*
+import accountsx.build.AdapterMatrix
+import accountsx.build.Catalog
 
 plugins {
     java
@@ -6,11 +7,10 @@ plugins {
 
 version = rootProject.version
 
-interface AuthlibAdapterExtension {
-    var authlib: String
-}
-
-val adapter = extensions.create("adapter", AuthlibAdapterExtension::class.java)
+// The authlib version is the project directory name; `gradle/adapters.toml`
+// declares which ones exist, so an undeclared directory fails here instead of
+// silently building an adapter nothing references (P0.2).
+val adapter = AdapterMatrix.load(rootDir).authlib(project.name)
 
 repositories {
     maven("https://maven.aliyun.com/repository/public/")
@@ -23,25 +23,23 @@ repositories {
 }
 
 dependencies {
-    addProvider("implementation", provider {
-        "com.mojang:authlib:${adapter.authlib}"
-    })
+    "implementation"("com.mojang:authlib:${adapter.version}")
 
-    "implementation"("com.google.guava:guava:33.6.0-jre")
-    "implementation"("com.google.code.gson:gson:2.14.0")
-    "compileOnly"("org.slf4j:slf4j-api:2.0.18")
+    "implementation"(Catalog.notation(project, "guava"))
+    "implementation"(Catalog.notation(project, "gson"))
+    "compileOnly"(Catalog.notation(project, "slf4j-api"))
     "implementation"(project(":"))
 }
 
 tasks.processResources {
     mapOf(
-        "version" to project.version,
-        "authlib" to adapter.authlib
-    ).let { map ->
-        inputs.properties(map)
+        "version" to project.version.toString(),
+        "authlib" to adapter.version
+    ).let { placeholders ->
+        inputs.properties(placeholders)
 
         filesMatching("fabric.mod.json") {
-            expand(map)
+            expand(placeholders)
         }
     }
 }

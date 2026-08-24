@@ -1,6 +1,6 @@
-import org.gradle.kotlin.dsl.support.serviceOf
-import java.lang.invoke.MethodHandles
-import java.lang.invoke.MethodType
+import accountsx.build.AdapterMatrix
+import accountsx.build.Catalog
+import accountsx.build.Loom
 
 plugins {
     java
@@ -8,40 +8,21 @@ plugins {
 
 version = rootProject.version
 
-interface MCAdapterExtension {
-    var minecraft: String
+// Every version this adapter pins comes from `gradle/adapters.toml`, keyed by the
+// project directory name (= the Minecraft version). The leaf build script only
+// applies the right Loom plugin; there is deliberately no `adapter { }` block
+// anymore, so the matrix cannot drift from the build scripts (P0.2).
+val adapter = AdapterMatrix.load(rootDir).mc(project.name)
 
-    var loader: String
-    var api: String
-    var authlib: String
+// Guard the one thing the leaf script still chooses for itself: MC 26.1+ is
+// unobfuscated, has no `remapJar`, no `officialMojangMappings()` and no `mod*`
+// configurations, so it must use plain `fabric-loom`.
+require(pluginManager.hasPlugin("net.fabricmc.fabric-loom-remap") == adapter.obfuscated) {
+    "${project.path}: adapters.toml says obfuscated=${adapter.obfuscated}, so this project must " +
+        "apply ${adapter.loomPluginId}"
 }
 
-val adapter = extensions.create("adapter", MCAdapterExtension::class.java)
-
-// ── Detect non-obfuscated MC versions (26.1+) ──────────────────────────
-// Minecraft 26.1+ ships without ProGuard obfuscation — the game jar already
-// carries Mojang names, so officialMojangMappings() throws
-// UnsupportedOperationException.  Loom also skips creating the mod*
-// configurations (modImplementation / modRuntimeOnly / …) in this mode.
-val nonObfuscated: Boolean = try {
-    extensions.getByName("loom").let { loom ->
-        loom.javaClass.methods.first {
-            it.name == "officialMojangMappings" && it.parameterCount == 0
-        }.invoke(loom)
-        false // call succeeded → mappings needed → obfuscated env
-    }
-} catch (e: Exception) {
-    generateSequence<Throwable>(e) { it.cause }.firstOrNull { it is UnsupportedOperationException } != null
-}
-
-// Mojang official mappings (null for non-obfuscated versions).
-val mojangMappings: Any? = if (!nonObfuscated) {
-    extensions.getByName("loom").let { loom ->
-        loom.javaClass.methods.first {
-            it.name == "officialMojangMappings" && it.parameterCount == 0
-        }.invoke(loom)
-    }
-} else null
+val loaderVersion = adapter.loader ?: Catalog.version(project, "fabric-loader")
 
 repositories {
     maven("https://maven.fabricmc.net/")
@@ -49,72 +30,58 @@ repositories {
 }
 
 dependencies {
-    if (mojangMappings != null) {
-        add("mappings", mojangMappings)
+    if (adapter.obfuscated) {
+        add("mappings", Loom.officialMojangMappings(project))
     }
 
     add("implementation", project(":"))
 
-    if (!nonObfuscated) {
+    if (adapter.obfuscated) {
         // ── Classic path (pre-26.1) — Loom handles remapping via mod* configs ──
-        add("modRuntimeOnly", "io.github.llamalad7:mixinextras-fabric:0.3.5")
-        addProvider("modImplementation", provider { "net.fabricmc:fabric-loader:${adapter.loader}" })
+        add("modRuntimeOnly", Catalog.notation(project, "mixinextras-fabric"))
+        add("modImplementation", Catalog.notation(project, "fabric-loader", loaderVersion))
 
-        // Fabric API resource-loader module (resolved by Loom's FabricApiVersions).
+        // Fabric API resource-loader module. Resolved lazily on purpose: the
+        // reflection inside Loom.fabricApiModule needs a Loom frame on the stack.
         addProvider("modRuntimeOnly", provider {
-            val clazz = Class.forName(
-                "net.fabricmc.loom.configuration.fabricapi.FabricApiVersions", true,
-                StackWalker.getInstance(setOf(StackWalker.Option.RETAIN_CLASS_REFERENCE)).walk { stream ->
-                    stream.filter { frame -> frame.className.startsWith("net.fabricmc.loom.") }.findFirst()
-                }.orElseThrow().declaringClass.classLoader
-            )
-            MethodHandles.lookup().findVirtual(
-                clazz, "module", MethodType.methodType(
-                    Dependency::class.java, Class.forName("java.lang.String"), Class.forName("java.lang.String")
-                )
-            ).invokeWithArguments(
-                serviceOf<ObjectFactory>().newInstance(clazz),
+            Loom.fabricApiModule(
+                project,
                 "fabric-resource-loader-v0",
-                "${adapter.api}+${adapter.minecraft.split(Regex("-"), 2)[0]}"
+                "${adapter.fabricApi}+${adapter.version.split(Regex("-"), 2)[0]}"
             )
         })
     } else {
         // ── Non-obfuscated path (26.1+) — mod* configs don't exist ──
-        // Same deps as above, just through implementation/compileOnly since
-        // Loom skips creating modImplementation / modRuntimeOnly.
-        // sponge-mixin & mixinextras are bundled inside fabric-loader's JAR
-        // (not in its Maven POM), so we add them explicitly.
-        add("implementation", "io.github.llamalad7:mixinextras-fabric:0.5.4")
-        add("implementation", "net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7")
-        addProvider("implementation", provider { "net.fabricmc:fabric-loader:${adapter.loader}" })
+        // Same deps as above, just through implementation since Loom skips
+        // creating modImplementation / modRuntimeOnly. sponge-mixin &
+        // mixinextras are bundled inside fabric-loader's JAR (not in its Maven
+        // POM), so we add them explicitly.
+        add("implementation", Catalog.notation(project, "mixinextras-fabric-plain"))
+        add("implementation", Catalog.notation(project, "sponge-mixin"))
+        add("implementation", Catalog.notation(project, "fabric-loader", loaderVersion))
     }
 
-    addProvider("minecraft", provider { "com.mojang:minecraft:${adapter.minecraft}" })
-    addProvider("implementation", provider { project(":adapters:authlib:${adapter.authlib}") })
+    add("minecraft", "com.mojang:minecraft:${adapter.version}")
+    add("implementation", project(":adapters:authlib:${adapter.authlib}"))
 }
 
 java.withSourcesJar()
 
 tasks.withType<ProcessResources> {
-    inputs.property("version", project.version)
+    val placeholders = mapOf(
+        // `version` is assigned by this plugin above, so capture it at
+        // configuration time — reading `project` inside the execution-time copy
+        // action would be deprecated in Gradle 10.
+        "version" to project.version.toString(),
+        "loader" to loaderVersion,
+        "minecraft" to adapter.version,
+        "authlib" to adapter.authlib
+    )
 
-    // `version` is assigned by this plugin itself above, so capture it here at
-    // configuration time. (Reading `project` inside the execution-time copy
-    // action below would be deprecated in Gradle 10.) The per-adapter
-    // `adapter { }` values are only assigned by the leaf project after this
-    // plugin applies, so they are still read lazily inside filesMatching's
-    // execution-time closure.
-    val modVersion = project.version
+    inputs.properties(placeholders)
 
     filesMatching("fabric.mod.json") {
-        expand(
-            mapOf(
-                "version" to modVersion,
-                "loader" to adapter.loader,
-                "minecraft" to adapter.minecraft,
-                "authlib" to adapter.authlib
-            )
-        )
+        expand(placeholders)
     }
 }
 
