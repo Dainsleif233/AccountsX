@@ -1,6 +1,8 @@
 # Gradle
 .gradle/
-build/
+/build/
+adapters/**/build/
+buildSrc/build/
 
 # IDE
 .idea/
