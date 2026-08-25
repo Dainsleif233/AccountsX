@@ -162,9 +162,10 @@ val universal = tasks.register("universal") {
 /**
  * Package universal jar from already-built core/adapter jars without recompiling adapters.
  *
- * Used by CI matrix builds (P0.3): each adapter is built in a separate job, artifacts
- * are downloaded and restored with [restoreAdapterArtifacts], then this task re-packs
- * the universal jar without rebuilding any adapter.
+ * Nothing in CI calls this today (CI runs the full `build`, which goes through
+ * `universal`): a per-adapter job matrix that would have needed this measured
+ * slower than one full build. Kept because re-packing without rebuilding is the
+ * only way to assemble the fat jar from externally supplied adapter jars.
  */
 val packageUniversal = tasks.register("packageUniversal") {
     group = "build"
@@ -184,27 +185,21 @@ val packageUniversal = tasks.register("packageUniversal") {
 }
 
 /**
- * Restore adapter jar artifacts downloaded by CI into each adapter's build/libs.
+ * Restore adapter jar artifacts (e.g. downloaded from a CI run) into each
+ * adapter's build/libs, so [packageUniversal] can find them without rebuilding.
  *
- * CI builds each adapter in a separate job and uploads the jar as an artifact.
- * This task copies them back to the expected locations so [packageUniversalJar]
- * can find them.
+ * Not used by ci.yml, which runs the full `build` instead — kept as the entry
+ * point for assembling a fat jar from externally supplied adapter jars.
  *
  * Usage: `./gradlew restoreAdapterArtifacts -PartifactsDir=artifacts`
  *
- * Expected artifact directory layout (produced by actions/download-artifact):
+ * Expected layout (as produced by actions/download-artifact for the uploads
+ * ci.yml used to do, i.e. the adapter's own `build/libs` path is preserved):
  * ```
  * artifacts/
- *   adapter-mc-1.20/          ← artifact name "adapter-mc-1.20"
- *     accountsx-adapter-mc-<ver>.jar
- *   adapter-mc-1.20.2/
- *     ...
- *   adapter-authlib/          ← artifact name "adapter-authlib"
- *     accountsx-adapter-authlib-<ver>.jar
- *     ...
- *   adapter-modmenu-7.0.0/    ← artifact name "adapter-modmenu-7.0.0"
- *     accountsx-modmenu-<ver>.jar
- *     ...
+ *   adapter-mc-1.20/<version>-<rootVersion>.jar
+ *   adapter-authlib/<version>/build/libs/<version>-<rootVersion>.jar
+ *   adapter-modmenu-7.0.0/<version>-<rootVersion>.jar
  * ```
  */
 val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
@@ -278,11 +273,17 @@ val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
  * 3. Root fabric.mod.json `depends` contains `fabric-api`
  * 4. Each nested jar's fabric.mod.json has a valid `custom.accountsx:adapter.*.class`
  *    entry pointing to a .class file that actually exists inside that nested jar
+ *    (the Mod Menu adapter has no such entry and is skipped)
+ *
+ * Deliberately declares no `dependsOn`, only ordering: it verifies whatever
+ * produced the jar, whether that was `universal` (full build, what CI does) or
+ * `packageUniversal` (re-pack of restored artifacts). Depending on one of them
+ * would make the other path pack the jar twice.
  */
 val verifyUniversalJar = tasks.register("verifyUniversalJar") {
     group = "build"
     description = "Verify universal jar: nested jar count, fabric.mod.json consistency, class existence"
-    dependsOn(tasks.named("packageUniversal"))
+    mustRunAfter(universal, packageUniversal)
 
     doLast {
         val universalJar = file("build/libs/${project.name}-${project.version}.jar")

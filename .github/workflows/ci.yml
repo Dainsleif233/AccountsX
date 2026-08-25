@@ -13,85 +13,20 @@ permissions:
   contents: read
 
 jobs:
-  core:
-    name: Core (build)
+  build:
+    name: Build (all adapters + universal jar)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-build
-      # 核心代码在根项目，:jar 编译并打包核心 jar，不触发 universal（适配器在后续 job 构建）
-      - run: ./gradlew :jar
-
-  adapters:
-    name: MC ${{ matrix.mc }}
-    needs: core
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        mc:
-          - "1.20"
-          - "1.20.2"
-          - "1.20.3"
-          - "1.20.5"
-          - "1.21"
-          - "1.21.2"
-          - "1.21.4"
-          - "1.21.6"
-          - "1.21.9"
-          - "1.21.11"
-          - "26.1"
-          - "26.2"
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-build
-      - run: ./gradlew ":adapters:mc:${{ matrix.mc }}:build"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: adapter-mc-${{ matrix.mc }}
-          path: adapters/mc/${{ matrix.mc }}/build/libs/*.jar
-
-  authlib:
-    name: Authlib + Mod Menu adapters
-    needs: core
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-build
-      - run: >-
-          ./gradlew
-          :adapters:authlib:4.0.43:build
-          :adapters:authlib:5.0.47:build
-          :adapters:authlib:6.0.52:build
-          :adapters:authlib:6.0.54:build
-          :adapters:authlib:7.0.61:build
-          :adapters:modmenu:7.0.0:build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: adapter-authlib
-          path: adapters/authlib/*/build/libs/*.jar
-      - uses: actions/upload-artifact@v4
-        with:
-          name: adapter-modmenu-7.0.0
-          path: adapters/modmenu/7.0.0/build/libs/*.jar
-
-  package:
-    name: Universal jar
-    needs: [adapters, authlib]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-build
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - run: ./gradlew restoreAdapterArtifacts -PartifactsDir=artifacts
-      - run: ./gradlew packageUniversal
-      - run: ./gradlew verifyUniversalJar
+      # One Gradle invocation on purpose: a per-adapter job matrix measured
+      # ~7m40s wall clock versus ~3m for the full build, because each job pays
+      # checkout + JDK + cache restore + buildSrc compile + configuration of
+      # all 18 subprojects again (Loom configures every project even when only
+      # one is built). `build` depends on `universal`, so this also produces
+      # the nested fat jar; `verifyUniversalJar` then checks its structure.
+      - run: ./gradlew build verifyUniversalJar
       - uses: actions/upload-artifact@v4
         with:
           name: AccountsX-universal
