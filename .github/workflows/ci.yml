@@ -89,10 +89,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - name: Debug artifact structure
-        run: |
-          echo "=== all jars in artifacts/ ==="
-          find artifacts -type f -name '*.jar' | sort
       - run: ./gradlew restoreAdapterArtifacts -PartifactsDir=artifacts
       - run: ./gradlew packageUniversal
       - run: ./gradlew verifyUniversalJar

@@ -234,15 +234,16 @@ val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
         }
 
         // Restore authlib adapters: artifact name "adapter-authlib" → adapters/authlib/<version>/build/libs/
-        // Downloaded artifact layout: adapter-authlib/<jar-filename>.jar
+        // Downloaded artifact layout: adapter-authlib/<version>/build/libs/<version>-<rootVersion>.jar
+        // (upload-artifact@v4 with merge-multiple:false nests the original build/libs structure)
         val authlibArtifactDir = baseDir.resolve("adapter-authlib")
         if (authlibArtifactDir.isDirectory) {
             for (authlib in matrix.authlib) {
                 val targetDir = rootDir.resolve("adapters/authlib/${authlib.version}/build/libs")
                 targetDir.mkdirs()
-                authlibArtifactDir.listFiles(jarFilter)?.forEach { jar ->
-                    // Match by version prefix: jar name is "<version>-<rootVersion>.jar"
-                    if (jar.name.startsWith(authlib.version)) {
+                val nestedLibs = authlibArtifactDir.resolve("${authlib.version}/build/libs")
+                if (nestedLibs.isDirectory) {
+                    nestedLibs.listFiles(jarFilter)?.forEach { jar ->
                         jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
                         restored++
                     }
