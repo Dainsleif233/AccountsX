@@ -23,7 +23,7 @@ jobs:
   release:
     name: Build and Release
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Code
@@ -31,14 +31,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up JDK 25
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "25"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
 
       - name: Read Version
         id: version
@@ -71,20 +65,12 @@ jobs:
 
       - name: Build All Adapters and Universal JAR
         shell: bash
-        env:
-          # Multi-adapter Loom builds require a larger heap
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
         run: |
           set -euo pipefail
-          chmod +x gradlew
-          # Override the Chinese mirrors (gradle.properties) with the official
-          # endpoints, since GitHub-hosted runners cannot reach BMCLAPI/USTC.
-          ./gradlew --no-daemon --stacktrace \
-            -Ploom_libraries_base=https://libraries.minecraft.net/ \
-            -Ploom_resources_base=https://resources.download.minecraft.net/ \
-            -Ploom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest.json \
-            -Ploom_fabric_repository=https://maven.fabricmc.net/ \
-            build
+          # Mirrors and JVM args are handled by setup-build (appended to
+          # gradle.properties); build → universal produces the fat jar, and
+          # verifyUniversalJar checks its structure before we tag anything.
+          ./gradlew --no-daemon --stacktrace build verifyUniversalJar
 
       - name: Find Build Artifacts
         id: artifacts
