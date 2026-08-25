@@ -14,11 +14,14 @@ runs:
         cache-read-only: ${{ github.ref != 'refs/heads/dev' }}
         gradle-home-cache-cleanup: true
 
-    - name: Cache Loom (mappings / MC assets)
+    - name: Cache Loom project cache
       uses: actions/cache@v4
       with:
+        # Only the project-local cache needs its own layer. The other large
+        # Loom data (mappings / merged MC jars) lives under ~/.gradle/caches/
+        # and is already covered by setup-gradle's gradle-home cache, so
+        # caching it here too would restore and save it twice per run.
         path: |
-          ~/.gradle/caches/fabric-loom
           .gradle/loom-cache
         key: loom-${{ runner.os }}-${{ hashFiles('gradle/adapters.toml', 'gradle.properties') }}
         restore-keys: loom-${{ runner.os }}-
