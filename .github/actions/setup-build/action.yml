@@ -1,0 +1,39 @@
+name: Setup build environment
+description: JDK + Gradle + caches + official upstream mirrors
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: "25"
+
+    - uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: ${{ github.ref != 'refs/heads/dev' }}
+        gradle-home-cache-cleanup: true
+
+    - name: Cache Loom (mappings / MC assets)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches/fabric-loom
+          .gradle/loom-cache
+        key: loom-${{ runner.os }}-${{ hashFiles('gradle/adapters.toml', 'gradle.properties') }}
+        restore-keys: loom-${{ runner.os }}-
+
+    - name: Use official mirrors and set JVM args
+      shell: bash
+      run: |
+        chmod +x gradlew
+        # Append overrides to the END of gradle.properties — Gradle uses the
+        # last occurrence when a key is duplicated, so these take precedence
+        # over the Chinese mirror defaults already in the file.
+        {
+          echo "loom_libraries_base=https://libraries.minecraft.net/"
+          echo "loom_resources_base=https://resources.download.minecraft.net/"
+          echo "loom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest.json"
+          echo "loom_fabric_repository=https://maven.fabricmc.net/"
+          echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
+        } >> gradle.properties

@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Core (build + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-build
+      - run: ./gradlew :core:build :core:checkArchitecture :validateAdapterMatrix
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-test-results
+          path: core/build/reports/tests/
+
+  adapters:
+    name: MC ${{ matrix.mc }}
+    needs: core
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        mc:
+          - "1.20"
+          - "1.20.2"
+          - "1.20.3"
+          - "1.20.5"
+          - "1.21"
+          - "1.21.2"
+          - "1.21.4"
+          - "1.21.6"
+          - "1.21.9"
+          - "1.21.11"
+          - "26.1"
+          - "26.2"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-build
+      - run: ./gradlew ":adapters:mc:${{ matrix.mc }}:build"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adapter-mc-${{ matrix.mc }}
+          path: adapters/mc/${{ matrix.mc }}/build/libs/*.jar
+
+  authlib:
+    name: Authlib + Mod Menu adapters
+    needs: core
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-build
+      - run: >-
+          ./gradlew
+          :adapters:authlib:4.0.43:build
+          :adapters:authlib:5.0.47:build
+          :adapters:authlib:6.0.52:build
+          :adapters:authlib:6.0.54:build
+          :adapters:authlib:7.0.61:build
+          :adapters:modmenu:7.0.0:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adapter-authlib
+          path: adapters/authlib/*/build/libs/*.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adapter-modmenu-7.0.0
+          path: adapters/modmenu/7.0.0/build/libs/*.jar
+
+  package:
+    name: Universal jar
+    needs: [adapters, authlib]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-build
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: ./gradlew restoreAdapterArtifacts -PartifactsDir=artifacts
+      - run: ./gradlew packageUniversal
+      - run: ./gradlew verifyUniversalJar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AccountsX-universal
+          path: build/libs/AccountsX-*.jar
