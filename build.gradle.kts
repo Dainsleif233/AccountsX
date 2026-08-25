@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import java.io.FileFilter
 import java.net.URI
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -217,6 +218,7 @@ val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
 
         var restored = 0
         val matrix = AdapterMatrix.load(rootDir)
+        val jarFilter = FileFilter { it.isFile && it.name.endsWith(".jar") }
 
         // Restore MC adapters: artifact name "adapter-mc-<version>" → adapters/mc/<version>/build/libs/
         for (mc in matrix.mc) {
@@ -224,7 +226,7 @@ val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
             if (artifactDir.isDirectory) {
                 val targetDir = rootDir.resolve("adapters/mc/${mc.version}/build/libs")
                 targetDir.mkdirs()
-                artifactDir.listFiles { f -> f.isFile && f.extension == "jar" }?.forEach { jar ->
+                artifactDir.listFiles(jarFilter)?.forEach { jar ->
                     jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
                     restored++
                 }
@@ -238,7 +240,7 @@ val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
             for (authlib in matrix.authlib) {
                 val targetDir = rootDir.resolve("adapters/authlib/${authlib.version}/build/libs")
                 targetDir.mkdirs()
-                authlibArtifactDir.listFiles { f -> f.isFile && f.extension == "jar" }?.forEach { jar ->
+                authlibArtifactDir.listFiles(jarFilter)?.forEach { jar ->
                     // Match by version prefix: jar name is "<version>-<rootVersion>.jar"
                     if (jar.name.startsWith(authlib.version)) {
                         jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
@@ -254,7 +256,7 @@ val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
             if (artifactDir.isDirectory) {
                 val targetDir = rootDir.resolve("adapters/modmenu/${modmenu.version}/build/libs")
                 targetDir.mkdirs()
-                artifactDir.listFiles { f -> f.isFile && f.extension == "jar" }?.forEach { jar ->
+                artifactDir.listFiles(jarFilter)?.forEach { jar ->
                     jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
                     restored++
                 }
