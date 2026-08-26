@@ -45,7 +45,7 @@ class NetworkUtilsReadResponseTest {
     }
 
     /**
-     * charset=GBK 正确解析
+     * charset=GBK 正确解析为 "你好"
      */
     @Test
     void readResponse_charsetGbk() throws IOException {
@@ -54,13 +54,11 @@ class NetworkUtilsReadResponseTest {
         var response = fakeResponse(200, gbkBytes,
                 Map.of("Content-Type", List.of("text/html; charset=GBK")));
         var reader = NetworkUtils.readResponse(response, false);
-        String result = new String(gbkBytes, StandardCharsets.UTF_8); // 先构造期望
-        // readResponse 用 GBK charset 解码，结果应为 "你好"
-        char c1 = (char) reader.read();
-        char c2 = (char) reader.read();
-        // 验证读取了两个字符（GBK 中 "你好" 是两个双字节字符）
-        assertThat(c1).isNotEqualTo((char) -1);
-        assertThat(c2).isNotEqualTo((char) -1);
+        char[] buf = new char[2];
+        int n = reader.read(buf);
+        // readResponse 用 GBK charset 解码，结果应为 "你好"（两个字符）
+        assertThat(n).isEqualTo(2);
+        assertThat(new String(buf)).isEqualTo("你好");
     }
 
     /**

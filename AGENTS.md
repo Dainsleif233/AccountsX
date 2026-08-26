@@ -49,7 +49,7 @@ MC 26.1+ 是非混淆版本（无 ProGuard），Loom 没有 `remapJar` 任务，
 | 实例配置里的 `id` 是载荷文件的索引；账号数据在 `~/.accountsx/<id>.json` | 实例目录可能被同步、打包、提交，明文 token 不宜放其中                          | 混淆配置与载荷的职责                                 | 人工理解                                   |
 | 26.1+ 使用 `fabric-loom`（非 `fabric-loom-remap`）                      | 非混淆版本没有 `remapJar` 任务                                                 | 构建失败                                             | `adapters.toml` 的 `obfuscated` + 插件断言 |
 | `configId`（`AccountType` 枚举的第三个参数）是持久化契约                | 写入 `accounts.json`，迁移时按此识别类型                                       | 未知 type 导致整个账号集加载失败                     | `ConfigVersion.RENAME_ACCOUNT_TYPE`        |
-| i18n key 格式 `accountsx.account.type.<configId>.name` / `.using`       | `Translator` 通过拼接 `configId` 动态生成 key                                  | 缺译 key 显示原始 key 名                             | `:core:test`（P0.4）                       |
+| i18n key 格式 `accountsx.account.type.<type 名小写>.name` / `.using` | `Translator` 通过拼接 `AccountType.name().toLowerCase()` 生成 key（多数类型与 `configId` 相同，但 `AUTHLIB_INJECTOR` 的 enum name 是 `authlib_injector` 而 `configId` 是 `injector.authlib-injector`） | 缺译 key 显示原始 key 名                             | `:core:test`（P0.4）                       |
 
 ## 项目布局
 
@@ -184,7 +184,7 @@ MC/loader/API/authlib 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目
 
 ### i18n
 
-Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn.json`）。UI 字符串使用 `accountsx.account.*` 格式的 key。Type 相关 key 通过 `Translator` 拼接 `configId` 生成，格式为 `accountsx.account.type.<configId>.name` / `.using`。
+Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn.json`）。UI 字符串使用 `accountsx.account.*` 格式的 key。Type 相关 key 通过 `Translator` 拼接 `AccountType.name().toLowerCase()` 生成，格式为 `accountsx.account.type.<type 名小写>.name` / `.using`。注意多数类型与 `configId` 相同，但 `AUTHLIB_INJECTOR` 的 enum name 是 `authlib_injector` 而 `configId` 是 `injector.authlib-injector`。
 
 ## 命令与代价
 
@@ -241,7 +241,7 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 1. **`AccountType` 枚举**（`core/accounts/model/AccountType.java`）— 添加枚举值，传入 accountClass、provider 实例、configId 字符串（持久化契约，不可随意改）
 2. **Provider 实现**（`core/accounts/impl/`）— 实现 `AccountProvider<T>` 的 `configure` / `validate` / `login` / `refresh` / `createAccountContext`
 3. **账号模型**（`BaseAccount` 子类）— 定义账号数据结构，注册 Gson TypeAdapter（若需要自定义序列化）
-4. **i18n key**（`en_us.json` + `zh_cn.json`）— 添加 `accountsx.account.type.<configId>.name` 和 `.using`
+4. **i18n key**（`en_us.json` + `zh_cn.json`）— 添加 `accountsx.account.type.<type 名小写>.name` 和 `.using`（注意是 enum name 小写，不是 configId）
 5. **配置迁移**（`ConfigVersion.java`）— 如果 configId 是新增的，确保旧配置中的未知 type 不会导致整个加载失败
 6. **适配器 UI**（各 `adapters/mc/<ver>/ui/AccountScreen.java`）— 确保 `configure()` / `validate()` 在 `UIScreen` SPI 下工作
 

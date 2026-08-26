@@ -19,10 +19,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 验证每个 {@link AccountType} 和 {@link AccountState} 枚举值
  * 在 en_us.json 和 zh_cn.json 中都有对应的翻译 key。
  *
- * <p>翻译 key 格式（由 {@link Translator} 拼接 configId 生成）：
+ * <p>翻译 key 格式（由 {@link Translator} 拼接 {@code AccountType.name().toLowerCase(Locale.ROOT)} 生成；
+ * 注意多数类型与 {@code configId} 相同，但 {@code AUTHLIB_INJECTOR} 的 enum name 是
+ * {@code authlib_injector} 而 configId 是 {@code injector.authlib-injector}，二者不同）：
  * <ul>
- *   <li>{@code accountsx.account.type.<configId>.name}</li>
- *   <li>{@code accountsx.account.type.<configId>.using}</li>
+ *   <li>{@code accountsx.account.type.<type 名小写>.name}</li>
+ *   <li>{@code accountsx.account.type.<type 名小写>.using}</li>
  *   <li>{@code accountsx.account.state.<STATE>.name}</li>
  * </ul>
  */
