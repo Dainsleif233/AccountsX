@@ -36,6 +36,15 @@ dependencies {
     compileOnly(libs.guava)
     compileOnly(libs.slf4j.api)
     compileOnly(libs.asm)
+    // 测试依赖（P0.4）
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+    testImplementation(libs.gson) // 测试需要 Gson 运行时
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 tasks.processResources {
