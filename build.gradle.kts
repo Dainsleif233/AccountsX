@@ -1,4 +1,5 @@
 import accountsx.build.AdapterMatrix
+import accountsx.build.McAdapter
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
@@ -391,8 +392,216 @@ val verifyUniversalJar = tasks.register("verifyUniversalJar") {
     }
 }
 
+/**
+ * Scan the compiled core classes and verify that none reference Minecraft or
+ * authlib internals, preserving the platform-independent boundary between core
+ * and adapters (P0.5).
+ *
+ * Forbidden references:
+ * - `net/minecraft/` — Minecraft client code (must come from adapters at runtime)
+ * - `com/mojang/authlib/` — authlib internals (bridged by authlib adapters)
+ * - `java/awt/` — AWT (currently warn-only; enforce after P1.4 migrates avatars out of core)
+ * - `javax/imageio/` — ImageIO (same status as java/awt)
+ * - `net/fabricmc/` — Fabric internals (whitelisted: `net/fabricmc/loader/api/` for mod entrypoint)
+ *
+ * Depends on `compileJava` so classes exist when this runs.
+ */
+val checkArchitecture = tasks.register("checkArchitecture") {
+    group = "verification"
+    description = "Scan core compiled classes for forbidden platform references (MC / authlib / AWT)"
+    dependsOn(tasks.named("compileJava"))
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        val classesDir = project.layout.buildDirectory.dir("classes/java/main").get().asFile
+        require(classesDir.isDirectory) {
+            "Compiled classes not found: ${classesDir.absolutePath}. Run `compileJava` first."
+        }
+
+        val forbidden = listOf(
+            "net/minecraft/",
+            "com/mojang/authlib/",
+            "net/fabricmc/"
+        )
+
+        val warnOnly = listOf(
+            "java/awt/",
+            "javax/imageio/"
+        )
+
+        val whitelist = listOf(
+            "net/fabricmc/api/",      // Fabric API entrypoints (ClientModInitializer)
+            "net/fabricmc/loader/api/" // Fabric Loader API
+        )
+
+        // Scan a .class file's constant pool (UTF-8 entries) for forbidden references.
+        // Uses raw byte parsing instead of ASM to avoid needing the full class visitor pipeline.
+        fun scanClassFile(bytes: ByteArray): List<String> {
+            if (bytes.size < 8) return emptyList()
+            val magic = ((bytes[0].toInt() and 0xFF) shl 24) or ((bytes[1].toInt() and 0xFF) shl 16) or
+                ((bytes[2].toInt() and 0xFF) shl 8) or (bytes[3].toInt() and 0xFF)
+            if (magic != 0xCAFEBABE.toInt()) return emptyList()
+
+            val cpSize = ((bytes[8].toInt() and 0xFF) shl 8) or (bytes[9].toInt() and 0xFF)
+            var offset = 10
+            val hits = mutableListOf<String>()
+
+            var i = 1
+            while (i < cpSize && offset < bytes.size) {
+                val tag = bytes[offset].toInt() and 0xFF
+                offset++
+                when (tag) {
+                    1 -> { // CONSTANT_Utf8
+                        if (offset + 2 > bytes.size) break
+                        val len = ((bytes[offset].toInt() and 0xFF) shl 8) or (bytes[offset + 1].toInt() and 0xFF)
+                        offset += 2
+                        if (offset + len > bytes.size) break
+                        val str = String(bytes, offset, len, Charsets.UTF_8)
+                        if (whitelist.any { str.startsWith(it) }) {
+                            // whitelisted — skip
+                        } else if (forbidden.any { str.startsWith(it) }) {
+                            hits.add(str)
+                        } else if (warnOnly.any { str.startsWith(it) }) {
+                            hits.add("WARN:$str")
+                        }
+                        offset += len
+                    }
+                    7, 8, 16, 19, 20 -> { offset += 2 } // Class, String, MethodType, Module, Package
+                    3, 4, 9, 10, 11, 12, 17, 18 -> { offset += 4 } // Integer, Float, Fieldref, Methodref, InterfaceMethodref, NameAndType, Dynamic, InvokeDynamic
+                    5, 6 -> { offset += 8; i++ } // Long, Double (occupy 2 entries)
+                    15 -> { offset += 3 } // InvokeDynamic
+                    else -> break // Unknown tag — stop scanning
+                }
+                i++
+            }
+            return hits
+        }
+
+        val violations = mutableListOf<String>()
+        val warnings = mutableListOf<String>()
+        var scanned = 0
+
+        Files.walk(classesDir.toPath())
+            .filter { it.toString().endsWith(".class") }
+            .forEach { classFile ->
+                scanned++
+                val bytes = Files.readAllBytes(classFile)
+                val hits = scanClassFile(bytes)
+                val rel = classesDir.toPath().relativize(classFile).toString()
+                for (hit in hits) {
+                    if (hit.startsWith("WARN:")) {
+                        warnings.add("$rel references warn-only: ${hit.removePrefix("WARN:")}")
+                    } else {
+                        violations.add("$rel references forbidden: $hit")
+                    }
+                }
+            }
+
+        logger.lifecycle("checkArchitecture: scanned $scanned class files")
+        warnings.forEach { logger.warn("  WARN: $it") }
+        if (warnings.isNotEmpty()) {
+            logger.warn("  (${warnings.size} warnings — will become errors after P1.4 avatar migration)")
+        }
+
+        require(violations.isEmpty()) {
+            "checkArchitecture FAILED — core contains ${violations.size} forbidden reference(s):\n" +
+                violations.joinToString("\n") { "  $it" }
+        }
+        logger.lifecycle("checkArchitecture: PASSED")
+    }
+}
+
+/**
+ * Validate that `gradle/adapters.toml` matches disk and that Fabric Loader's
+ * adapter selection would be deterministic (P0.5).
+ *
+ * Checks:
+ * 1. toml ↔ disk directory correspondence (authlib + MC adapters)
+ * 2. No two MC adapters claim the same MC version
+ * 3. Simulates Loader's `>=` candidate filtering + version sorting to assert
+ *    each MC version selects the expected adapter
+ */
+val validateAdapterMatrix = tasks.register("validateAdapterMatrix") {
+    group = "verification"
+    description = "Validate adapters.toml ↔ disk consistency and simulate Fabric Loader selection"
+
+    doLast {
+        val matrix = AdapterMatrix.load(rootDir)
+        var errors = 0
+
+        fun fail(msg: String) {
+            logger.error("  FAIL: $msg")
+            errors++
+        }
+
+        fun pass(msg: String) {
+            logger.lifecycle("  OK: $msg")
+        }
+
+        // --- Check 1: toml ↔ disk ---
+        logger.lifecycle("Checking authlib adapter directories...")
+        for (authlib in matrix.authlib) {
+            val dir = rootDir.resolve("adapters/authlib/${authlib.version}")
+            if (dir.isDirectory) pass("authlib ${authlib.version}") else fail("authlib ${authlib.version}: directory not found at ${dir.path}")
+        }
+
+        logger.lifecycle("Checking MC adapter directories...")
+        for (mc in matrix.mc) {
+            val dir = rootDir.resolve("adapters/mc/${mc.version}")
+            if (dir.isDirectory) pass("MC ${mc.version}") else fail("MC ${mc.version}: directory not found at ${dir.path}")
+
+            // Verify authlib adapter referenced by this MC entry exists
+            val hasAuthlib = matrix.authlib.any { it.version == mc.authlib }
+            if (hasAuthlib) pass("MC ${mc.version} → authlib ${mc.authlib}") else fail("MC ${mc.version}: references missing authlib ${mc.authlib}")
+        }
+
+        // --- Check 2: no duplicate MC versions ---
+        logger.lifecycle("Checking for duplicate MC version declarations...")
+        val versions = matrix.mc.map { it.version }
+        val dupes = versions.groupingBy { it }.eachCount().filter { it.value > 1 }
+        if (dupes.isEmpty()) pass("No duplicate MC versions") else dupes.forEach { (v, c) -> fail("MC version $v declared $c times") }
+
+        // --- Check 3: simulate Loader selection ---
+        logger.lifecycle("Simulating Fabric Loader adapter selection...")
+        fun parseVersion(v: String): List<Int> = v.split(".").map { it.toInt() }
+
+        fun versionCompare(a: String, b: String): Int {
+            val pa = parseVersion(a)
+            val pb = parseVersion(b)
+            for (i in 0 until maxOf(pa.size, pb.size)) {
+                val ai = if (i < pa.size) pa[i] else 0
+                val bi = if (i < pb.size) pb[i] else 0
+                if (ai != bi) return ai.compareTo(bi)
+            }
+            return 0
+        }
+
+        fun findWinner(mcVersion: String): McAdapter? {
+            val candidates = matrix.mc.filter { versionCompare(mcVersion, it.version) >= 0 }
+            return candidates.ifEmpty { return null }
+                .maxWith(Comparator { a, b -> versionCompare(a.version, b.version) })
+        }
+
+        for (mc in matrix.mc) {
+            val winner = findWinner(mc.version)
+            if (winner == null) {
+                fail("MC ${mc.version}: no adapter covers this version")
+            } else if (winner.version != mc.version) {
+                fail("MC ${mc.version}: expected adapter ${mc.version}, but Loader would select ${winner.version}")
+            } else {
+                pass("MC ${mc.version}: selects adapter ${mc.version}")
+            }
+        }
+
+        logger.lifecycle("validateAdapterMatrix: ${if (errors == 0) "PASSED" else "FAILED ($errors errors)"}")
+        require(errors == 0) { "validateAdapterMatrix failed with $errors error(s)" }
+    }
+}
+
 tasks.build {
     dependsOn(universal)
+    dependsOn(checkArchitecture)
+    dependsOn(validateAdapterMatrix)
 }
 
 tasks.withType<JavaCompile> {
