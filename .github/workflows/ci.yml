@@ -18,16 +18,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-build
+      # Compute the CI build version: base version from gradle.properties with a
+      # `+build.<run_number>` SemVer build-metadata suffix, so every artifact is
+      # uniquely identifiable per CI run (e.g. AccountsX-2.0.0-beta.1+build.16.jar).
+      # It also flows into the nested adapter jars, because each adapter plugin
+      # sets `version = rootProject.version`.
+      - name: Compute build version
+        id: build-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="$(grep -E '^version=' gradle.properties | cut -d= -f2- | tr -d '[:space:]')"
+          if [[ -z "$BASE" ]]; then
+            echo "::error::Failed to read version from gradle.properties"
+            exit 1
+          fi
+          echo "version=${BASE}+build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          echo "Resolved CI build version: ${BASE}+build.${{ github.run_number }}"
       # One Gradle invocation on purpose: a per-adapter job matrix measured
       # ~7m40s wall clock versus ~3m for the full build, because each job pays
       # checkout + JDK + cache restore + buildSrc compile + configuration of
       # all 18 subprojects again (Loom configures every project even when only
       # one is built). `build` depends on `universal`, so this also produces
       # the nested fat jar; `verifyUniversalJar` then checks its structure.
-      - run: ./gradlew build verifyUniversalJar
-      - uses: actions/upload-artifact@v4
+      - name: Build
+        run: ./gradlew -Pversion="${{ steps.build-version.outputs.version }}" build verifyUniversalJar
+      - uses: actions/upload-artifact@v7
         with:
           name: AccountsX-universal
           path: build/libs/AccountsX-*.jar
+          archive: false
