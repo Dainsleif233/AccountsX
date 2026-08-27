@@ -80,24 +80,37 @@ val adapters: List<Adapter> = AdapterMatrix.load(rootDir).let { matrix ->
         matrix.modmenu.map { Adapter(it.projectPath, it.jarTask, "modmenu") }
 }
 
+// 配置期捕获的根项目引用，供下方任务 action（执行期）使用。
+// 在 doLast 内调用 project.* 会触发 `Task.project` 弃用（Gradle 9.7 起，Gradle 10 将报错，
+// 且破坏配置缓存），因此这里在配置期一次性解析，执行期只引用这些已捕获的值。
+val rootName = project.name
+val rootVersion = project.version
+val rootBuildDir = project.layout.buildDirectory
+val rootDirPath = rootDir
+
+// 配置期解析每个适配器产物 jar 的绝对路径。适配器 version 恒等于 rootVersion，
+// 故文件名用 rootVersion 而非 p.version，避免跨项目配置期读取子项目 version。
+data class AdapterJarSpec(val prefix: String, val jarFile: File)
+val adapterJarSpecs: List<AdapterJarSpec> = adapters.map { adapter ->
+    val p = project(adapter.project)
+    AdapterJarSpec(adapter.prefix, p.layout.buildDirectory.file("libs/${p.name}-${rootVersion}.jar").get().asFile)
+}
+
 fun packageUniversalJar() {
     // The universal fat jar is the deliverable and ships under the plain
     // `<name>-<version>.jar` name, replacing the core jar produced by `:jar`.
     // We package into a temporary copy and atomically move it over the output
     // so we never open the Gradle-tracked output file in place (which would hit
     // an exclusive file lock).
-    val outputFile = project.layout.buildDirectory.file("libs/${project.name}-${project.version}.jar").get().asFile
-    val coreJar = project.layout.buildDirectory.file("libs/${project.name}-core-${project.version}.jar").get().asFile
+    val outputFile = rootBuildDir.file("libs/${rootName}-${rootVersion}.jar").get().asFile
+    val coreJar = rootBuildDir.file("libs/${rootName}-core-${rootVersion}.jar").get().asFile
     require(coreJar.isFile) {
         "Core jar missing: ${coreJar.absolutePath}. Run `:jar` first."
     }
 
-    adapters.forEach { adapter ->
-        val p = project(adapter.project)
-        val fileName = "${p.name}-${p.version}.jar"
-        val adapterJar = p.layout.buildDirectory.file("libs/$fileName").get().asFile
-        require(adapterJar.isFile) {
-            "Adapter jar missing for ${adapter.project}: ${adapterJar.absolutePath}. Build `:${adapter.project}:${adapter.builder}` first."
+    adapterJarSpecs.forEach { spec ->
+        require(spec.jarFile.isFile) {
+            "Adapter jar missing for ${spec.prefix}: ${spec.jarFile.absolutePath}. Build the corresponding adapter first."
         }
     }
 
@@ -120,15 +133,14 @@ fun packageUniversalJar() {
                 e.add("jars", it)
             }
 
-            adapters.forEach { adapter ->
-                val p = project(adapter.project)
-                val fileName = "${p.name}-${p.version}.jar"
-                p.layout.buildDirectory.file("libs/$fileName").get().asFile.toPath().copyTo(
-                    fs.getPath("/META-INF/jars/adapter-${adapter.prefix}-$fileName")
+            adapterJarSpecs.forEach { spec ->
+                val fileName = spec.jarFile.name
+                spec.jarFile.toPath().copyTo(
+                    fs.getPath("/META-INF/jars/adapter-${spec.prefix}-$fileName")
                 )
 
                 JsonObject().also {
-                    it.addProperty("file", "META-INF/jars/adapter-${adapter.prefix}-$fileName")
+                    it.addProperty("file", "META-INF/jars/adapter-${spec.prefix}-$fileName")
                     jars.add(it)
                 }
             }
@@ -216,21 +228,21 @@ val packageUniversal = tasks.register("packageUniversal") {
 val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
     group = "build"
     description = "Restore adapter jar artifacts into each adapter's build/libs (for CI packaging)"
-    val artifactsDir = providers.gradleProperty("artifactsDir").map { rootProject.file(it) }
+    val artifactsDir = providers.gradleProperty("artifactsDir").map { rootDirPath.resolve(it) }
 
     doLast {
         val baseDir = artifactsDir.get()
         require(baseDir.isDirectory) { "Artifacts directory not found: ${baseDir.absolutePath}" }
 
         var restored = 0
-        val matrix = AdapterMatrix.load(rootDir)
+        val matrix = AdapterMatrix.load(rootDirPath)
         val jarFilter = FileFilter { it.isFile && it.name.endsWith(".jar") }
 
         // Restore MC adapters: artifact name "adapter-mc-<version>" → adapters/mc/<version>/build/libs/
         for (mc in matrix.mc) {
             val artifactDir = baseDir.resolve("adapter-mc-${mc.version}")
             if (artifactDir.isDirectory) {
-                val targetDir = rootDir.resolve("adapters/mc/${mc.version}/build/libs")
+                val targetDir = rootDirPath.resolve("adapters/mc/${mc.version}/build/libs")
                 targetDir.mkdirs()
                 artifactDir.listFiles(jarFilter)?.forEach { jar ->
                     jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
@@ -245,7 +257,7 @@ val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
         val authlibArtifactDir = baseDir.resolve("adapter-authlib")
         if (authlibArtifactDir.isDirectory) {
             for (authlib in matrix.authlib) {
-                val targetDir = rootDir.resolve("adapters/authlib/${authlib.version}/build/libs")
+                val targetDir = rootDirPath.resolve("adapters/authlib/${authlib.version}/build/libs")
                 targetDir.mkdirs()
                 val nestedLibs = authlibArtifactDir.resolve("${authlib.version}/build/libs")
                 if (nestedLibs.isDirectory) {
@@ -261,7 +273,7 @@ val restoreAdapterArtifacts = tasks.register("restoreAdapterArtifacts") {
         for (modmenu in matrix.modmenu) {
             val artifactDir = baseDir.resolve("adapter-modmenu-${modmenu.version}")
             if (artifactDir.isDirectory) {
-                val targetDir = rootDir.resolve("adapters/modmenu/${modmenu.version}/build/libs")
+                val targetDir = rootDirPath.resolve("adapters/modmenu/${modmenu.version}/build/libs")
                 targetDir.mkdirs()
                 artifactDir.listFiles(jarFilter)?.forEach { jar ->
                     jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
@@ -297,7 +309,7 @@ val verifyUniversalJar = tasks.register("verifyUniversalJar") {
     mustRunAfter(universal, packageUniversal)
 
     doLast {
-        val universalJar = file("build/libs/${project.name}-${project.version}.jar")
+        val universalJar = rootBuildDir.file("libs/${rootName}-${rootVersion}.jar").get().asFile
         require(universalJar.isFile) { "Universal jar not found: ${universalJar.absolutePath}" }
 
         val expectedAdapterCount = adapters.size
@@ -414,7 +426,7 @@ val checkArchitecture = tasks.register("checkArchitecture") {
     dependsOn(tasks.named("processResources"))
 
     doLast {
-        val classesDir = project.layout.buildDirectory.dir("classes/java/main").get().asFile
+        val classesDir = rootBuildDir.dir("classes/java/main").get().asFile
         require(classesDir.isDirectory) {
             "Compiled classes not found: ${classesDir.absolutePath}. Run `compileJava` first."
         }
@@ -527,7 +539,7 @@ val validateAdapterMatrix = tasks.register("validateAdapterMatrix") {
     description = "Validate adapters.toml ↔ disk consistency and simulate Fabric Loader selection"
 
     doLast {
-        val matrix = AdapterMatrix.load(rootDir)
+        val matrix = AdapterMatrix.load(rootDirPath)
         var errors = 0
 
         fun fail(msg: String) {
@@ -542,13 +554,13 @@ val validateAdapterMatrix = tasks.register("validateAdapterMatrix") {
         // --- Check 1: toml ↔ disk ---
         logger.lifecycle("Checking authlib adapter directories...")
         for (authlib in matrix.authlib) {
-            val dir = rootDir.resolve("adapters/authlib/${authlib.version}")
+            val dir = rootDirPath.resolve("adapters/authlib/${authlib.version}")
             if (dir.isDirectory) pass("authlib ${authlib.version}") else fail("authlib ${authlib.version}: directory not found at ${dir.path}")
         }
 
         logger.lifecycle("Checking MC adapter directories...")
         for (mc in matrix.mc) {
-            val dir = rootDir.resolve("adapters/mc/${mc.version}")
+            val dir = rootDirPath.resolve("adapters/mc/${mc.version}")
             if (dir.isDirectory) pass("MC ${mc.version}") else fail("MC ${mc.version}: directory not found at ${dir.path}")
 
             // Verify authlib adapter referenced by this MC entry exists
