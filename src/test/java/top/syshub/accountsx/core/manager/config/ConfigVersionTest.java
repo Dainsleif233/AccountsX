@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 现状快照测试：{@link ConfigVersion} 的每一跳迁移逻辑。
@@ -88,20 +87,22 @@ class ConfigVersionTest {
     }
 
     /**
-     * 未知 type 抛 IllegalStateException。
-     * <p>
-     * 现状 bug：P1.1 修复后改为跳过+警告，不再抛异常。
-     * </p>
+     * 未知 type 不再抛异常：跳过（移除）该账号 + 警告。
+     * P1.1 修复：避免未知 type 经外层 catch 走进 1.8 静默覆写空账号的路径。
      */
-    @Disabled("bug: 未知 type 导致整个账号集加载失败; 修复见 P1.1")
     @Test
-    void v1ToV2_unknownType_throws() {
+    void v1ToV2_unknownType_skippedWithWarning() {
         JsonObject config = makeConfig(1, accountsArray(
-                accountObj("UNKNOWN_TYPE", "p1")
+                accountObj("UNKNOWN_TYPE", "p1"),
+                accountObj("OFFLINE", "p2")
         ));
-        assertThatThrownBy(() -> ConfigVersion.RENAME_ACCOUNT_TYPE.upgrade(config))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("UNKNOWN_TYPE");
+
+        ConfigVersion.RENAME_ACCOUNT_TYPE.upgrade(config);
+
+        // 未知类型账号被移除，已知类型正常重命名
+        JsonArray accounts = config.getAsJsonArray("accounts");
+        assertThat(accounts).hasSize(1);
+        assertThat(accounts.get(0).getAsJsonObject().get("type").getAsString()).isEqualTo("offline");
     }
 
     /**

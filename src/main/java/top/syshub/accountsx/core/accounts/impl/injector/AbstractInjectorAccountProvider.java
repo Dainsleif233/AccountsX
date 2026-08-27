@@ -5,7 +5,6 @@ import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.AccountUUID;
 import top.syshub.accountsx.core.accounts.model.PlayerNoLongerExistedException;
 import top.syshub.accountsx.core.accounts.model.context.*;
-import top.syshub.accountsx.core.accounts.model.context.*;
 import top.syshub.accountsx.core.adapters.Adapters;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
@@ -301,7 +300,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             Adapters.getMinecraftAdapter().copyText(jp.getAsString());
         } else {
             Adapters.getMinecraftAdapter().copyText(userCode);
-            device.get("verification_uri").getAsString();
+            // 1.10 修复：原为取出来即丢弃的死语句，导致无 verification_uri_complete 时不打开浏览器
+            Adapters.getMinecraftAdapter().openBrowser(device.get("verification_uri").getAsString());
         }
         Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.title", "accountsx.account.oauth2.code.desc", userCode);
 

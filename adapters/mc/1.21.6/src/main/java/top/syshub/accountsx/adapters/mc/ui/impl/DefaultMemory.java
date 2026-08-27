@@ -27,7 +27,7 @@ public final class DefaultMemory implements Memory {
     }
 
     @Override
-    @Threading.Thread(Threading.WORKER)
+    @Threading.Thread(Threading.ThreadRole.WORKER)
     public boolean isScreenClosed() {
         Threading.checkAccountWorkerThread();
 

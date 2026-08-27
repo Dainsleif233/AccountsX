@@ -2,7 +2,7 @@ package top.syshub.accountsx.core.ui;
 
 /**
  * ScreenUI is an adapter between Minecraft's changing screen API and static codes.
- * Every time when Minecraft updates its screen API, we only need to update the implementation ofDomainVerifier ScreenUI.
+ * Every time when Minecraft updates its screen API, we only need to update the implementation of ScreenUI.
  */
 public interface UIScreen {
     void setTitle(String description);

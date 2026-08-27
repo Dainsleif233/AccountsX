@@ -17,6 +17,6 @@ public abstract class TextureUrlCheckerMixin {
             remap = false,
             cancellable = true)
     private static void checkUrl(String url, CallbackInfoReturnable<Boolean> cir) {
-        if (!selectedSecurity.checkSkinURL(url)) cir.setReturnValue(true);
+        if (!selectedSecurity().shouldBlockSkinUrl(url)) cir.setReturnValue(true);
     }
 }

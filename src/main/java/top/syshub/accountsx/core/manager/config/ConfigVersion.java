@@ -1,6 +1,8 @@
 package top.syshub.accountsx.core.manager.config;
 
 import com.google.gson.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import top.syshub.accountsx.core.utils.NetworkUtils;
 
 import java.util.UUID;
@@ -29,14 +31,22 @@ public enum ConfigVersion {
         @Override
         protected void upgrade(JsonObject config) {
             if (config.get("accounts") instanceof JsonArray accounts) {
-                for (JsonElement account : accounts) {
+                // 倒序遍历以便安全移除；未知类型跳过（移除）+ 警告，不再抛异常导致整个账号集加载失败（1.9 / P1.1）
+                for (int i = accounts.size() - 1; i >= 0; i--) {
+                    JsonElement account = accounts.get(i);
                     if (account instanceof JsonObject jo && jo.get("type") instanceof JsonPrimitive jp && jp.isString()) {
-                        jo.addProperty("type", switch (jp.getAsString()) {
+                        String renamed = switch (jp.getAsString()) {
                             case "OFFLINE" -> "offline";
                             case "MICROSOFT" -> "microsoft";
                             case "INJECTOR" -> "injector.authlib-injector";
-                            default -> throw new IllegalStateException("Unexpected account type: " + jp.getAsString());
-                        });
+                            default -> null;
+                        };
+                        if (renamed != null) {
+                            jo.addProperty("type", renamed);
+                        } else {
+                            LOGGER.warn("迁移时遇到未知账号类型 '{}'，已跳过该账号。", jp.getAsString());
+                            accounts.remove(i);
+                        }
                     }
                 }
             }
@@ -53,6 +63,8 @@ public enum ConfigVersion {
             config.remove("accounts");
         }
     };
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConfigVersion.class);
 
     public static final ConfigVersion[] VALUES = values();
 

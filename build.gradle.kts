@@ -41,6 +41,7 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testImplementation(libs.gson) // 测试需要 Gson 运行时
+    testRuntimeOnly(libs.slf4j.api) // core 大量使用 slf4j；单测运行时需要它（无 binding 时 slf4j 退化为 NOP）
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

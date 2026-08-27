@@ -97,7 +97,8 @@ public abstract class BaseAccount {
 
     private final String accountName;
 
-    private String avatar;
+    // 1.11 修复：worker 线程 setAvatar、客户端线程渲染读取，需 volatile 保证可见性
+    private volatile String avatar;
 
     protected BaseAccount(String accessToken, String playerName, UUID playerUUID, AccountType type, String accountName, String avatar) {
         this.storage = new AccountStorage(accessToken, playerName, playerUUID, AccountState.AUTHORIZED);
@@ -126,14 +127,14 @@ public abstract class BaseAccount {
         this.avatar = avatar;
     }
 
-    @Threading.Thread(Threading.WORKER)
+    @Threading.Thread(Threading.ThreadRole.WORKER)
     public final void setProfile(String accessToken, String playerName, UUID playerUUID) {
         Threading.checkAccountWorkerThread();
 
         this.storage = new AccountStorage(accessToken, playerName, playerUUID, AccountState.AUTHORIZED);
     }
 
-    @Threading.Thread(Threading.WORKER)
+    @Threading.Thread(Threading.ThreadRole.WORKER)
     public final void setProfileState(AccountState state) {
         Threading.checkAccountWorkerThread();
 

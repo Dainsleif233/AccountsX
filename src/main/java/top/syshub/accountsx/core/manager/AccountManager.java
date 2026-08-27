@@ -53,7 +53,7 @@ public final class AccountManager {
         save();
     }
 
-    @Threading.Thread(Threading.CLIENT)
+    @Threading.Thread(Threading.ThreadRole.CLIENT)
     public static void dropAccount(BaseAccount account) {
         Threading.checkMinecraftClientThread();
 
@@ -65,7 +65,7 @@ public final class AccountManager {
         save();
     }
 
-    @Threading.Thread(Threading.CLIENT)
+    @Threading.Thread(Threading.ThreadRole.CLIENT)
     public static void addAccount(BaseAccount account) {
         Threading.checkMinecraftClientThread();
 
@@ -73,7 +73,7 @@ public final class AccountManager {
         save();
     }
 
-    @Threading.Thread(Threading.CLIENT)
+    @Threading.Thread(Threading.ThreadRole.CLIENT)
     public static void moveAccount(BaseAccount account, int index) {
         Threading.checkMinecraftClientThread();
 
@@ -82,7 +82,7 @@ public final class AccountManager {
         save();
     }
 
-    @Threading.Thread(Threading.WORKER)
+    @Threading.Thread(Threading.ThreadRole.WORKER)
     public static AccountSession loginAccount(BaseAccount account) throws IOException {
         Threading.checkAccountWorkerThread();
 
@@ -99,7 +99,7 @@ public final class AccountManager {
         );
     }
 
-    @Threading.Thread(Threading.CLIENT)
+    @Threading.Thread(Threading.ThreadRole.CLIENT)
     public static void switchAccount(BaseAccount account, AccountSession session) {
         Threading.checkMinecraftClientThread();
 
@@ -107,7 +107,7 @@ public final class AccountManager {
         Adapters.getMinecraftAdapter().switchAccount(session);
     }
 
-    @Threading.Thread(Threading.WORKER)
+    @Threading.Thread(Threading.ThreadRole.WORKER)
     private static void refreshAccount(BaseAccount account, boolean thrown) throws IOException {
         if (Thread.currentThread().isInterrupted()) {
             account.setProfileState(AccountState.UNAUTHORIZED);
@@ -135,7 +135,7 @@ public final class AccountManager {
         }
     }
 
-    @Threading.Thread(Threading.WORKER)
+    @Threading.Thread(Threading.ThreadRole.WORKER)
     private static void refreshAccountsParallel(List<BaseAccount> toRefresh) {
         CountDownLatch latch = new CountDownLatch(toRefresh.size());
         List<Thread> threads = new ArrayList<>(toRefresh.size());

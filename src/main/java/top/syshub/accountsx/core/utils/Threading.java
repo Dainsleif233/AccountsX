@@ -8,8 +8,14 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
 public final class Threading {
-    public static final String WORKER = "Account Worker";
-    public static final String CLIENT = "Account Worker";
+    /**
+     * 线程角色。CLIENT 与 WORKER 是不同的枚举常量（1.3 修复：原先两者都是字符串
+     * "Account Worker"，导致 {@link Thread} 注解无法区分线程语义）。
+     */
+    public enum ThreadRole {
+        CLIENT,
+        WORKER
+    }
 
     private Threading() {
     }
@@ -29,6 +35,6 @@ public final class Threading {
     @Documented
     @Retention(RetentionPolicy.CLASS)
     public @interface Thread {
-        String value();
+        ThreadRole value();
     }
 }

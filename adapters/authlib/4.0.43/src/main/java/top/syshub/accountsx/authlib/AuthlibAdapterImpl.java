@@ -81,7 +81,7 @@ public final class AuthlibAdapterImpl implements AuthlibAdapter<AccountSessionIm
 
                     for (MinecraftProfileTexture entry : result.getTextures().values()) {
                         String url = entry.getUrl();
-                        if (context.security().checkSkinURL(url)) {
+                        if (context.security().shouldBlockSkinUrl(url)) {
                             LOGGER.error("Textures payload contains blocked domain: {}", url);
                             return new HashMap<>();
                         }

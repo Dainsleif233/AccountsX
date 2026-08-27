@@ -94,7 +94,8 @@ public class AvatarUtils {
 
             return drawAvatar(skin);
         } catch (Exception e) {
-            LOGGER.error("Loading avatar for profile: {} error: {}",profileUrl , e);
+            // 2.6 修复：异常作为 throwable 参数传入，保留堆栈（原写法把 e 当 {} 占位符丢失堆栈）
+            LOGGER.error("Loading avatar for profile: {} error", profileUrl, e);
             return null;
         }
     }

@@ -61,7 +61,8 @@ public final class MicrosoftConstants {
         }
 
         try {
-            return new AuthSecurityContext(parsePublicKeys(response.profilePropertyKeys), parsePublicKeys(response.profilePropertyKeys));
+            // 1.2 修复：第二个参数应为 playerCertificateKeys（聊天签名密钥校验），而非再次传 profilePropertyKeys
+            return new AuthSecurityContext(parsePublicKeys(response.profilePropertyKeys), parsePublicKeys(response.playerCertificateKeys));
         } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
             throw new IOException("Received malformed yggdrasil public key data.", e);
         }
