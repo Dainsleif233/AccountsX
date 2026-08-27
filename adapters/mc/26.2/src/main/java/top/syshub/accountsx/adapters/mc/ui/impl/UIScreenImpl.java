@@ -7,7 +7,7 @@ import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
 import top.syshub.accountsx.core.manager.AccountManager;
-import top.syshub.accountsx.core.manager.AccountWorker;
+import top.syshub.accountsx.core.task.TaskScheduler;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import top.syshub.accountsx.adapters.mc.ui.ButtonWidget;
 import java.util.LinkedHashMap;
@@ -125,7 +125,7 @@ public final class UIScreenImpl implements UIScreen {
                     default -> throw new IllegalArgumentException("Unknown state: " + state);
                 }
 
-                AccountWorker.submit(() -> {
+                TaskScheduler.submit(() -> {
                     BaseAccount account;
                     try {
                         account = this.provider.login(memory);

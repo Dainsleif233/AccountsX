@@ -5,7 +5,7 @@ import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.adapters.api.AccountSession;
 import top.syshub.accountsx.core.manager.AccountManager;
-import top.syshub.accountsx.core.manager.AccountWorker;
+import top.syshub.accountsx.core.task.TaskScheduler;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
@@ -56,7 +56,7 @@ public class AccountListWidget extends ObjectSelectionList<AccountListWidget.Acc
         if (entry != null) {
             BaseAccount account = entry.account;
             if (AccountManager.getCurrentAccount() != account) {
-                AccountWorker.submit(() -> {
+                TaskScheduler.submit(() -> {
                     if (AccountManager.getCurrentAccount() == account) {
                         return;
                     }

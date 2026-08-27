@@ -7,7 +7,7 @@ import net.minecraft.network.chat.Component;
 import top.syshub.accountsx.adapters.mc.ui.impl.UIScreenImpl;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.manager.AccountManager;
-import top.syshub.accountsx.core.manager.AccountWorker;
+import top.syshub.accountsx.core.task.TaskScheduler;
 
 public class AccountScreen extends Screen {
     private static final int LAYOUT_HORIZONTAL_SPACING = 16;
@@ -91,7 +91,7 @@ public class AccountScreen extends Screen {
         super.extractRenderState(context, mouseX, mouseY, delta);
         this.accountListWidget.extractRenderState(context, mouseX, mouseY, delta);
 
-        context.centeredText(this.font, AccountWorker.isRunning() ? WORKING : ACCOUNT_LIST, this.width / 2 + LAYOUT_ENTRY_X / 2, LAYOUT_VERTICAL_SPACING, 0xFFFFFFFF);
+        context.centeredText(this.font, TaskScheduler.isRunning() ? WORKING : ACCOUNT_LIST, this.width / 2 + LAYOUT_ENTRY_X / 2, LAYOUT_VERTICAL_SPACING, 0xFFFFFFFF);
         context.centeredText(this.font, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2 + LAYOUT_ENTRY_X / 2, this.height - LAYOUT_VERTICAL_SPACING, 0xFFFFFFFF);
 
         context.centeredText(
