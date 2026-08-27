@@ -12,7 +12,7 @@ runs:
     - uses: gradle/actions/setup-gradle@v4
       with:
         cache-read-only: ${{ github.ref != 'refs/heads/dev' }}
-        cache-cleanup: true
+        cache-cleanup: on-success
 
     - name: Cache Loom project cache
       uses: actions/cache@v4
