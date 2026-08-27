@@ -10,4 +10,5 @@ buildSrc/build/
 # Agent
 PERSONAL_HABITS.md
 .claude/
+CLAUDE.md
 REFACTORING/
