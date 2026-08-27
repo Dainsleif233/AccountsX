@@ -45,8 +45,13 @@ jobs:
       # the nested fat jar; `verifyUniversalJar` then checks its structure.
       - name: Build
         run: ./gradlew -Pversion="${{ steps.build-version.outputs.version }}" build verifyUniversalJar
+      # Upload exactly the universal fat jar. `archive: false` requires a single
+      # file, and `build/libs/AccountsX-*.jar` also matched the core jar
+      # (`AccountsX-core-*.jar`, produced by `:jar` with `archiveAppendix = "core"`),
+      # which made upload-artifact fail with "only a single file can be uploaded".
+      # Pin to the exact version computed above so only the universal jar matches.
       - uses: actions/upload-artifact@v7
         with:
           name: AccountsX-universal
-          path: build/libs/AccountsX-*.jar
+          path: build/libs/AccountsX-${{ steps.build-version.outputs.version }}.jar
           archive: false
