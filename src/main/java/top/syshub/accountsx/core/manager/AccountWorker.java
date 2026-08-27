@@ -1,15 +1,24 @@
 package top.syshub.accountsx.core.manager;
 
-import top.syshub.accountsx.core.AccountsX;
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.task.TaskScheduler;
 
-import java.util.Queue;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
+/**
+ * 任务调度的旧入口，已重写为 {@link TaskScheduler}（core/task，P1.2）。
+ *
+ * <p>保留本类仅为兼容仍 import 了 {@code AccountWorker} 的 MC 适配器；新代码请直接使用
+ * {@link TaskScheduler}。{@code registerWorkerThread}/{@code unregisterWorkerThread} 已从公开 API
+ * 删除——线程归属改由 {@link TaskScheduler} 内部的 {@link ThreadLocal} 打标。
+ *
+ * @deprecated 改用 {@link TaskScheduler}
+ */
+@Deprecated(since = "2.0.0", forRemoval = true)
 public final class AccountWorker {
+    /**
+     * @deprecated 改用 {@link TaskScheduler.Task}
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public interface Task {
         void run() throws Exception;
     }
@@ -17,76 +26,27 @@ public final class AccountWorker {
     private AccountWorker() {
     }
 
-    private static final int TASK_DISPLAY_DELAY_MS = 100;
-
-    private static final Queue<Task> taskQueue = new ConcurrentLinkedQueue<>();
-
-    private static final Set<Thread> workerThreads = ConcurrentHashMap.newKeySet();
-
-    private static volatile long taskStartTime = -1;
-
-    public static void submit(Task task) {
-        taskQueue.add(task);
+    /**
+     * @deprecated 改用 {@link TaskScheduler#submit(TaskScheduler.Task)}
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
+    public static CompletableFuture<Void> submit(Task task) {
+        return TaskScheduler.submit(() -> task.run());
     }
 
+    /**
+     * @deprecated 改用 {@link TaskScheduler#isRunning()}
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public static boolean isRunning() {
-        long t = taskStartTime;
-
-        return t != -1 && System.currentTimeMillis() - t >= TASK_DISPLAY_DELAY_MS;
+        return TaskScheduler.isRunning();
     }
 
+    /**
+     * @deprecated 改用 {@link TaskScheduler#isWorkerThread(Thread)}
+     */
+    @Deprecated(since = "2.0.0", forRemoval = true)
     public static boolean isWorkerThread(Thread t) {
-        return workerThreads.contains(t);
-    }
-
-    public static void registerWorkerThread(Thread t) {
-        workerThreads.add(t);
-    }
-
-    public static void unregisterWorkerThread(Thread t) {
-        workerThreads.remove(t);
-    }
-
-    private static final Thread WORKER = new Thread((ThreadGroup) null, "AccountsX Background Worker Thread") {
-        {
-            setDaemon(true);
-        }
-
-        @Override
-        public void run() {
-            try {
-                while (true) {
-                    Task element = taskQueue.poll();
-
-                    if (element != null) {
-                        taskStartTime = System.currentTimeMillis();
-
-                        try {
-                            element.run();
-                        } catch (InterruptedException e) {
-                            throw e;
-                        } catch (CancellationException e) {
-                            AccountsX.LOGGER.warn("Cancelled by user.", e);
-                        } catch (Throwable t) {
-                            AccountsX.LOGGER.warn("An exception has occurred in AccountsX Background Thread.", t);
-                            Adapters.getMinecraftAdapter().showToast("accountsx.account.fail.title", AccountManager.handleException(t));
-                        } finally {
-                            taskStartTime = -1;
-                        }
-                    }
-
-                    Thread.sleep(100);
-                }
-            } catch (Throwable t) {
-                AccountsX.LOGGER.warn("An fatal exception has occurred in the AccountsX Background Thread.", t);
-
-                Adapters.getMinecraftAdapter().crash(new IllegalStateException("AccountsX Background Thread has occurred an exception.", t));
-            }
-        }
-    };
-
-    static {
-        workerThreads.add(WORKER);
-        WORKER.start();
+        return TaskScheduler.isWorkerThread(t);
     }
 }

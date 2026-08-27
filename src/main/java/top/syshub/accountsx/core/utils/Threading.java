@@ -1,7 +1,7 @@
 package top.syshub.accountsx.core.utils;
 
 import top.syshub.accountsx.core.adapters.Adapters;
-import top.syshub.accountsx.core.manager.AccountWorker;
+import top.syshub.accountsx.core.task.TaskScheduler;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
@@ -27,7 +27,7 @@ public final class Threading {
     }
 
     public static void checkAccountWorkerThread() {
-        if (!AccountWorker.isWorkerThread(java.lang.Thread.currentThread())) {
+        if (!TaskScheduler.isWorkerThread(java.lang.Thread.currentThread())) {
             throw new IllegalStateException("Should in Account Worker Thread.");
         }
     }

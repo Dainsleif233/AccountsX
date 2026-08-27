@@ -71,7 +71,7 @@ AccountsX（根项目 / core）
 │   │   └── Adapters.java            # 反射加载适配器实现（memoize）
 │   ├── manager/
 │   │   ├── AccountManager.java      # 账号列表管理 + 刷新调度
-│   │   ├── AccountWorker.java       # 后台任务队列（daemon）
+│   │   ├── AccountWorker.java       # @Deprecated 转发到 TaskScheduler（兼容旧适配器）；register/unregister 已删除
 │   │   └── config/
 │   │       ├── ConfigHandle.java    # 配置读写（实例配置 + ~/.accountsx/ 载荷）
 │   │       └── ConfigVersion.java   # 迁移链（当前 v0 → v3）
@@ -124,7 +124,7 @@ universal 任务还会在嵌套的 core 元数据中添加 `fabric-api: *` 依�
 1. `AccountsX.onInitializeClient` → `AccountManager.initialize` + `MicrosoftConstants.initialize`
 2. Manager 用环境账号 + `ConfigHandle.load()` 填充列表，在 worker 上刷新非授权账号
 3. UI（各 MC 版本的 `AccountScreen`）在**客户端线程**上修改账号
-4. 登录/刷新/保存在 **AccountWorker**（daemon 队列）上运行；并行刷新使用额外注册的 worker 线程
+4. 登录/刷新/保存在 **`TaskScheduler`**（`core/task/`：串行阻塞队列 + 上限 4 的有界并行池）上运行；并行刷新由 `TaskScheduler.runParallel` 调度，不再用全局注册表登记 worker 线程
 5. `loginAccount` → authlib 适配器构建 `AccountSession` → 客户端线程 `switchAccount` 重连 MC session/sessionService/skin 等
 
 `@Threading.Thread` 文档标注预期线程；`Threading.checkMinecraftClientThread()` / `checkAccountWorkerThread()` 强制执行。不要在 worker 线程外调用 profile 修改 API。

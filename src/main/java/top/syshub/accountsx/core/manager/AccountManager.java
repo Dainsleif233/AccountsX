@@ -5,10 +5,10 @@ import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.model.AccountState;
 import top.syshub.accountsx.core.accounts.model.AccountType;
-import top.syshub.accountsx.core.accounts.model.PlayerNoLongerExistedException;
 import top.syshub.accountsx.core.adapters.Adapters;
 import top.syshub.accountsx.core.adapters.api.AccountSession;
 import top.syshub.accountsx.core.manager.config.ConfigHandle;
+import top.syshub.accountsx.core.task.TaskScheduler;
 import top.syshub.accountsx.core.utils.Threading;
 
 import java.io.IOException;
@@ -16,7 +16,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
 
 public final class AccountManager {
     private static final List<BaseAccount> accounts = new CopyOnWriteArrayList<>();
@@ -47,7 +46,15 @@ public final class AccountManager {
         }
 
         if (!toRefresh.isEmpty()) {
-            AccountWorker.submit(() -> refreshAccountsParallel(toRefresh));
+            List<TaskScheduler.Task> refreshTasks = new ArrayList<>(toRefresh.size());
+            for (BaseAccount account : toRefresh) {
+                refreshTasks.add(() -> refreshAccount(account, false));
+            }
+            TaskScheduler.runParallel(refreshTasks).whenComplete((ignored, t) -> {
+                if (t != null) {
+                    AccountsX.LOGGER.warn("Some accounts failed to refresh during startup.", t);
+                }
+            });
         }
 
         save();
@@ -135,56 +142,7 @@ public final class AccountManager {
         }
     }
 
-    @Threading.Thread(Threading.ThreadRole.WORKER)
-    private static void refreshAccountsParallel(List<BaseAccount> toRefresh) {
-        CountDownLatch latch = new CountDownLatch(toRefresh.size());
-        List<Thread> threads = new ArrayList<>(toRefresh.size());
-        for (BaseAccount account : toRefresh) {
-            final Thread t = getThread(account, latch);
-            threads.add(t);
-            t.start();
-        }
-
-        while (latch.getCount() > 0) {
-            try {
-                latch.await();
-            } catch (InterruptedException e) {
-                for (Thread t : threads) {
-                    t.interrupt();
-                }
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-    private static Thread getThread(BaseAccount account, CountDownLatch latch) {
-        Thread t = new Thread(null, () -> {
-            AccountWorker.registerWorkerThread(Thread.currentThread());
-            try {
-                try {
-                    refreshAccount(account, false);
-                } catch (Throwable t1) {
-                    AccountsX.LOGGER.warn("An exception has occurred in AccountsX Background Thread.", t1);
-                    Adapters.getMinecraftAdapter().showToast("accountsx.account.fail.title", AccountManager.handleException(t1));
-                }
-            } finally {
-                AccountWorker.unregisterWorkerThread(Thread.currentThread());
-                latch.countDown();
-            }
-        }, "AccountsX Background Worker Thread - parallel-" + account.getAccountName());
-        t.setDaemon(true);
-        return t;
-    }
-
-    public static String handleException(Throwable t) {
-        if (t instanceof PlayerNoLongerExistedException) {
-            return "accountsx.account.fail.player_no_longer_existed";
-        } else {
-            return "accountsx.account.fail.unknown";
-        }
-    }
-
     private static void save() {
-        AccountWorker.submit(ConfigHandle::write);
+        TaskScheduler.submit(ConfigHandle::write);
     }
 }
