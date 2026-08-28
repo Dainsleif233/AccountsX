@@ -3,13 +3,14 @@ package top.syshub.accountsx.core.accounts.impl.injector.impl;
 import top.syshub.accountsx.core.accounts.impl.injector.AbstractInjectorAccount;
 import top.syshub.accountsx.core.accounts.impl.injector.AbstractInjectorAccountProvider;
 import top.syshub.accountsx.core.accounts.model.AccountType;
+import top.syshub.accountsx.core.net.HttpGateway;
 
 import java.util.BitSet;
 import java.util.UUID;
 
 public final class UnitedInjectorAccountProvider extends AbstractInjectorAccountProvider<UnitedInjectorAccountProvider.UnitedInjectorAccount> {
-    public UnitedInjectorAccountProvider() {
-        super("accountsx.account.objects.server_id", "accountsx.account.objects.user_name", "United-Injector");
+    public UnitedInjectorAccountProvider(HttpGateway http) {
+        super("accountsx.account.objects.server_id", "accountsx.account.objects.user_name", "United-Injector", http);
     }
 
     private static final BitSet SAFE_SERVER_ID = new BitSet(128);

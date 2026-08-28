@@ -9,9 +9,9 @@ import top.syshub.accountsx.core.accounts.AccountUUID;
 import top.syshub.accountsx.core.adapters.Adapters;
 import top.syshub.accountsx.core.accounts.model.context.AccountContext;
 import top.syshub.accountsx.core.accounts.model.context.AuthPolicy;
+import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
-import top.syshub.accountsx.core.utils.NetworkUtils;
 
 import java.io.IOException;
 import java.util.Map;
@@ -29,12 +29,15 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
     private static final String TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
 
+    private final HttpGateway http;
+
     @Override
     public AccountContext createAccountContext(MicrosoftAccount account) throws IOException {
-        return new AccountContext(MicrosoftConstants.SERVER_CONTEXT, MicrosoftConstants.computeMicrosoftPublicKeys(), AuthPolicy.ONLINE);
+        return new AccountContext(MicrosoftConstants.SERVER_CONTEXT, MicrosoftConstants.computeMicrosoftPublicKeys(http), AuthPolicy.ONLINE);
     }
 
-    public MicrosoftAccountProvider() {
+    public MicrosoftAccountProvider(HttpGateway http) {
+        this.http = http;
     }
 
     @Override
@@ -55,7 +58,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
         Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.generating", null);
 
-        JsonObject device = NetworkUtils.postRequest(DEVICE_CODE_URL, Map.of(
+        JsonObject device = http.postForm(DEVICE_CODE_URL, Map.of(
                 "client_id", CLIENT_ID,
                 "scope", SCOPE
         ));
@@ -93,7 +96,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.title", "accountsx.account.oauth2.code.desc", device.get("user_code").getAsString());
 
             JsonObject token;
-            token = NetworkUtils.postRequest(TOKEN_URL, Map.of(
+            token = http.postForm(TOKEN_URL, Map.of(
                     "grant_type", "urn:ietf:params:oauth:grant-type:device_code",
                     "code", device.get("device_code").getAsString(),
                     "client_id", CLIENT_ID
@@ -139,7 +142,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             root.addProperty("RelyingParty", "http://auth.xboxlive.com");
             root.addProperty("TokenType", "JWT");
 
-            JsonObject json = NetworkUtils.postRequest("https://user.auth.xboxlive.com/user/authenticate", root);
+            JsonObject json = http.postJson("https://user.auth.xboxlive.com/user/authenticate", root);
             xblToken = json.get("Token").getAsString();
             userHash = json.get("DisplayClaims").getAsJsonObject().get("xui").getAsJsonArray().get(0).getAsJsonObject().get("uhs").getAsString();
         }
@@ -158,7 +161,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             root.addProperty("RelyingParty", "rp://api.minecraftservices.com/");
             root.addProperty("TokenType", "JWT");
 
-            xstsToken = NetworkUtils.postRequest("https://xsts.auth.xboxlive.com/xsts/authorize", root).get("Token").getAsString();
+            xstsToken = http.postJson("https://xsts.auth.xboxlive.com/xsts/authorize", root).get("Token").getAsString();
         }
 
         String accessToken;
@@ -166,15 +169,15 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             JsonObject root = new JsonObject();
             root.addProperty("identityToken", String.format("XBL3.0 x=%s;%s", userHash, xstsToken));
 
-            JsonObject json = NetworkUtils.postRequest(MicrosoftConstants.MS_LOGIN_XBOX, root);
+            JsonObject json = http.postJson(MicrosoftConstants.MS_LOGIN_XBOX, root);
             accessToken = json.get("access_token").getAsString();
         }
 
         String playerName, playerUUID;
         {
-            JsonObject json = NetworkUtils.postRequest(NetworkUtils.buildGet(MicrosoftConstants.MS_GAME_PROFILE, Map.of(
+            JsonObject json = http.get(MicrosoftConstants.MS_GAME_PROFILE, Map.of(
                     "Authorization", "Bearer " + accessToken
-            )));
+            ));
 
             if (json.has("error"))
                 throw new IOException("Failed to get UUID");
@@ -196,7 +199,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
     @Override
     public void refresh(MicrosoftAccount account) throws IOException {
         {
-            JsonObject token = NetworkUtils.postRequest(TOKEN_URL, Map.of(
+            JsonObject token = http.postForm(TOKEN_URL, Map.of(
                     "client_id", CLIENT_ID,
                     "refresh_token", account.getMicrosoftAccountRefreshToken(),
                     "grant_type", "refresh_token"
@@ -220,7 +223,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             root.addProperty("RelyingParty", "http://auth.xboxlive.com");
             root.addProperty("TokenType", "JWT");
 
-            JsonObject json = NetworkUtils.postRequest("https://user.auth.xboxlive.com/user/authenticate", root);
+            JsonObject json = http.postJson("https://user.auth.xboxlive.com/user/authenticate", root);
             xblToken = json.get("Token").getAsString();
             userHash = json.get("DisplayClaims").getAsJsonObject().get("xui").getAsJsonArray().get(0).getAsJsonObject().get("uhs").getAsString();
         }
@@ -239,7 +242,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             root.addProperty("RelyingParty", "rp://api.minecraftservices.com/");
             root.addProperty("TokenType", "JWT");
 
-            xstsToken = NetworkUtils.postRequest("https://xsts.auth.xboxlive.com/xsts/authorize", root).get("Token").getAsString();
+            xstsToken = http.postJson("https://xsts.auth.xboxlive.com/xsts/authorize", root).get("Token").getAsString();
         }
 
         String accessToken;
@@ -247,15 +250,15 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             JsonObject root = new JsonObject();
             root.addProperty("identityToken", String.format("XBL3.0 x=%s;%s", userHash, xstsToken));
 
-            JsonObject json = NetworkUtils.postRequest(MicrosoftConstants.MS_LOGIN_XBOX, root);
+            JsonObject json = http.postJson(MicrosoftConstants.MS_LOGIN_XBOX, root);
             accessToken = json.get("access_token").getAsString();
         }
 
         String playerName, playerUUID;
         {
-            JsonObject json = NetworkUtils.postRequest(NetworkUtils.buildGet(MicrosoftConstants.MS_GAME_PROFILE, Map.of(
+            JsonObject json = http.get(MicrosoftConstants.MS_GAME_PROFILE, Map.of(
                     "Authorization", "Bearer " + accessToken
-            )));
+            ));
 
             if (json.has("error"))
                 throw new IOException("Failed to get UUID");

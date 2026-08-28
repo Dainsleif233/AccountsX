@@ -4,6 +4,8 @@ import com.google.gson.annotations.SerializedName;
 import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.accounts.model.context.AuthSecurityContext;
 import top.syshub.accountsx.core.accounts.model.context.AuthServerContext;
+import top.syshub.accountsx.core.net.HttpGateway;
+import top.syshub.accountsx.core.net.JdkHttpGateway;
 import top.syshub.accountsx.core.utils.NetworkUtils;
 
 import java.io.IOException;
@@ -50,9 +52,20 @@ public final class MicrosoftConstants {
         return new String(Base64.getDecoder().decode(value), StandardCharsets.ISO_8859_1);
     }
 
+    /**
+     * 默认实现，使用生产网关 {@link JdkHttpGateway#INSTANCE}。
+     * 供 authlib 适配器（7.0.61）原样调用，适配器不在 P1 改动范围内。
+     */
     public static AuthSecurityContext computeMicrosoftPublicKeys() throws IOException {
+        return computeMicrosoftPublicKeys(JdkHttpGateway.INSTANCE);
+    }
+
+    /**
+     * 可注入实现（P1.3）：从 {@link HttpGateway} 取 Microsoft 公钥，使认证流程可在单测中用假网关驱动。
+     */
+    public static AuthSecurityContext computeMicrosoftPublicKeys(HttpGateway http) throws IOException {
         KeySetResponse response = NetworkUtils.GSON.fromJson(
-                NetworkUtils.postRequest(NetworkUtils.buildGet(SERVICES + "/publickeys"), false),
+                http.get(SERVICES + "/publickeys"),
                 KeySetResponse.class
         );
 

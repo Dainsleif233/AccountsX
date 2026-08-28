@@ -42,6 +42,7 @@ dependencies {
     testImplementation(libs.assertj.core)
     testImplementation(libs.gson) // 测试需要 Gson 运行时
     testRuntimeOnly(libs.slf4j.api) // core 大量使用 slf4j；单测运行时需要它（无 binding 时 slf4j 退化为 NOP）
+    testRuntimeOnly(libs.guava) // Adapters 类加载即用 Guava（Suppliers.memoize）；AccountType 枚举在类加载时调用 Adapters.getHttpGateway()，故单测运行时也需要 Guava
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

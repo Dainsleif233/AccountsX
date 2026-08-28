@@ -5,6 +5,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import top.syshub.accountsx.core.net.JdkHttpGateway;
+
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -68,8 +70,12 @@ public class AvatarUtils {
     }
 
     private static String getSkinUrl(String profileUrl) {
+        // P1.3：头像网络请求走默认 JdkHttpGateway.INSTANCE，未做构造注入。
+        // 这是刻意延后到 P1.4（头像迁出 core）的范围边界——届时整个头像逻辑
+        // 会搬到非 core 模块，注入点随之消失；现在注入即会被 P1.4 推翻。
+        // 头像加载失败被外层 catch 吞掉，不影响登录/刷新主路径，因此不阻塞 P1.3 的可测目标。
         try {
-            JsonObject skinJson = NetworkUtils.postRequest(NetworkUtils.buildGet(profileUrl));
+            JsonObject skinJson = JdkHttpGateway.INSTANCE.get(profileUrl);
             JsonArray properties = skinJson.getAsJsonArray("properties");
 
             Optional<JsonObject> textureProperty = properties.asList().stream()

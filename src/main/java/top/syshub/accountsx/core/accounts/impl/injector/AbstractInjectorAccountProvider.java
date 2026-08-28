@@ -6,10 +6,10 @@ import top.syshub.accountsx.core.accounts.AccountUUID;
 import top.syshub.accountsx.core.accounts.model.PlayerNoLongerExistedException;
 import top.syshub.accountsx.core.accounts.model.context.*;
 import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
 import top.syshub.accountsx.core.utils.AvatarUtils;
-import top.syshub.accountsx.core.utils.NetworkUtils;
 
 import java.io.IOException;
 import java.net.URI;
@@ -32,10 +32,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     private final String accountContextName;
 
-    protected AbstractInjectorAccountProvider(String serverBaseTranslationKey, String userBaseTranslationKey, String accountContextName) {
+    protected final HttpGateway http;
+
+    protected AbstractInjectorAccountProvider(String serverBaseTranslationKey, String userBaseTranslationKey, String accountContextName, HttpGateway http) {
         this.serverBaseTranslationKey = serverBaseTranslationKey;
         this.accountContextName = accountContextName;
         this.userBaseTranslationKey = userBaseTranslationKey;
+        this.http = http;
     }
 
     protected void validateServerBaseURL(String server) throws IllegalArgumentException {}
@@ -51,7 +54,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         List<PublicKey> publicKeys;
         List<String> skinDomains = new ArrayList<>();
 
-        JsonObject response = NetworkUtils.postRequest(NetworkUtils.buildGet(url));
+        JsonObject response = http.get(url);
         if (response.get("signaturePublickey") instanceof JsonPrimitive jp && jp.isString()) {
             try {
                 publicKeys = List.of(parseSignaturePublicKey(jp.getAsString()));
@@ -136,7 +139,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         root.addProperty("username", memory.get(GUID_USER_NAME, String.class));
         root.addProperty("password", memory.get(GUID_PASSWORD, String.class));
 
-        JsonObject json = NetworkUtils.postRequest(loginUrl, root);
+        JsonObject json = http.postJson(loginUrl, root);
         if (json.has("error")) {
             throw new IOException("Cannot auth this injector: " + json.get("errorMessage").getAsString());
         }
@@ -194,7 +197,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         JsonObject root = new JsonObject();
         root.addProperty("accessToken", account.getLoginToken());
 
-        JsonObject json = NetworkUtils.postRequest(refreshUrl, root);
+        JsonObject json = http.postJson(refreshUrl, root);
         if (json.has("error")) {
             throw new IOException("Cannot auth this injector: " + json.get("errorMessage").getAsString());
         }
@@ -224,7 +227,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     private String getAccountName(String baseUrl) {
         try {
-            JsonObject ygg = NetworkUtils.postRequest(NetworkUtils.buildGet(baseUrl));
+            JsonObject ygg = http.get(baseUrl);
             return ygg.get("meta").getAsJsonObject().get("serverName").getAsString();
         } catch (Exception ignored) {
             return null;
@@ -261,13 +264,13 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         String profileUrl = yggUrl + "/sessionserver/session/minecraft/profile/";
 
         String openidConfigurationUrl;
-        JsonObject ygg = NetworkUtils.postRequest(NetworkUtils.buildGet(yggUrl));
+        JsonObject ygg = http.get(yggUrl);
         if (ygg.get("meta") instanceof JsonObject meta &&
                 meta.get("feature.openid_configuration_url") instanceof JsonPrimitive jp1 &&
                 jp1.isString()) openidConfigurationUrl = jp1.getAsString();
         else throw new IOException("Invalid openid configuration url!");
 
-        JsonObject config = NetworkUtils.postRequest(NetworkUtils.buildGet(openidConfigurationUrl));
+        JsonObject config = http.get(openidConfigurationUrl);
         String deviceAuthorizationEndpoint = config.get("device_authorization_endpoint").getAsString();
         String tokenEndpoint = config.get("token_endpoint").getAsString();
         String clientId;
@@ -284,7 +287,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 "client_id", clientId,
                 "scope", "openid offline_access Yggdrasil.PlayerProfiles.Select Yggdrasil.Server.Join"
         );
-        JsonObject device = NetworkUtils.postRequest(deviceAuthorizationEndpoint, form1);
+        JsonObject device = http.postForm(deviceAuthorizationEndpoint, form1);
         String deviceCode = device.get("device_code").getAsString();
         String userCode = device.get("user_code").getAsString();
         int interval;
@@ -318,7 +321,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                     "grant_type", "urn:ietf:params:oauth:grant-type:device_code",
                     "device_code", deviceCode
             );
-            JsonObject token = NetworkUtils.postRequest(tokenEndpoint, form2, true);
+            JsonObject token = http.postForm(tokenEndpoint, form2, true);
 
             JsonElement err = token.get("error");
             if (err == null) {
@@ -374,7 +377,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 "grant_type", "refresh_token",
                 "refresh_token", refreshToken
         );
-        JsonObject token = NetworkUtils.postRequest(tokenEndpoint, form);
+        JsonObject token = http.postForm(tokenEndpoint, form);
 
         JsonElement err = token.get("error");
         if (err !=null) throw new IOException("Unknown error: " + err.getAsString());

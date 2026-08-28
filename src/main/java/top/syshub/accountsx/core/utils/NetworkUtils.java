@@ -2,17 +2,12 @@ package top.syshub.accountsx.core.utils;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import top.syshub.accountsx.core.accounts.AccountUUID;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -22,43 +17,25 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * 网络相关纯工具（P1.3 后仅保留不发送 HTTP 的辅助方法）。
+ *
+ * <p>P1.3 前本类还包含 {@code buildGet}、{@code headRequest}、{@code postRequest}（多重载）、
+ * {@code encodeForm}、{@code CLIENT} 等 HTTP 发送方法，现已迁至
+ * {@link top.syshub.accountsx.core.net.JdkHttpGateway}（经 {@link top.syshub.accountsx.core.net.HttpGateway}
+ * 抽象后可注入）。本类保留的成员仅用于该实现的底层解析与 provider 的头部处理：</p>
+ * <ul>
+ *   <li>{@link #GSON}：跨认证/存储共用的序列化实例（带 {@code UUIDTypeAdapter} + pretty printing）</li>
+ *   <li>{@link #readResponse}：响应体 charset 解析（{@link top.syshub.accountsx.core.net.JdkHttpGateway} 内部调用）</li>
+ *   <li>{@link #getHeaderIgnoreCase}：响应头大小写无关查找（{@code AuthlibInjectorAccountProvider.transformServerBaseURL} 调用）</li>
+ *   <li>{@link #resolveLocation}：重定向位置解析（同上）</li>
+ * </ul>
+ */
 public class NetworkUtils {
     public static final Gson GSON = new GsonBuilder()
             .registerTypeAdapter(UUID.class, new AccountUUID.UUIDTypeAdapter())
             .setPrettyPrinting()
             .create();
-
-    private static final HttpClient CLIENT = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
-
-    public static HttpRequest buildGet(String url) {
-        return HttpRequest.newBuilder(URI.create(url))
-                .GET()
-                .build();
-    }
-
-    public static HttpRequest buildGet(String url, Map<String, String> headers) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
-        for (Map.Entry<String, String> e : headers.entrySet()) {
-            builder.header(e.getKey(), e.getValue());
-        }
-        return builder.build();
-    }
-
-    public static Map<String, List<String>> headRequest(String url) throws IOException {
-        URI uri = URI.create(url);
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .method("HEAD", HttpRequest.BodyPublishers.noBody())
-                .build();
-        try {
-            HttpResponse<Void> response = CLIENT.send(request, HttpResponse.BodyHandlers.discarding());
-            return response.headers().map();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted.", e);
-        }
-    }
 
     public static List<String> getHeaderIgnoreCase(Map<String, List<String>> headers, String name) {
         for (Map.Entry<String, List<String>> e : headers.entrySet()) {
@@ -78,54 +55,6 @@ public class NetworkUtils {
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid redirect location", e);
         }
-    }
-
-    public static JsonObject postRequest(HttpRequest request) throws IOException {
-        return postRequest(request, false);
-    }
-
-    public static JsonObject postRequest(HttpRequest request, boolean ignoreHttpStatus) throws IOException {
-        try {
-            HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            try (Reader reader = NetworkUtils.readResponse(response, ignoreHttpStatus)) {
-                return NetworkUtils.GSON.fromJson(reader, JsonObject.class);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted.", e);
-        }
-    }
-
-    public static JsonObject postRequest(String url, JsonElement json) throws IOException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(NetworkUtils.GSON.toJson(json)))
-                .build();
-        return postRequest(request);
-    }
-
-    public static JsonObject postRequest(String url, Map<String, String> formData, boolean ignoreHttpStatus) throws IOException {
-        String body = encodeForm(formData);
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
-        return postRequest(request, ignoreHttpStatus);
-    }
-
-    public static JsonObject postRequest(String url, Map<String, String> formData) throws IOException {
-        return postRequest(url, formData, false);
-    }
-
-    private static String encodeForm(Map<String, String> formData) {
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, String> entry : formData.entrySet()) {
-            if (!sb.isEmpty()) sb.append('&');
-            sb.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8));
-            sb.append('=');
-            sb.append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
-        }
-        return sb.toString();
     }
 
     public static Reader readResponse(HttpResponse<byte[]> response, boolean ignoreHttpStatus) throws IOException {

@@ -5,6 +5,8 @@ import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.adapters.api.AccountSession;
 import top.syshub.accountsx.core.adapters.api.AuthlibAdapter;
 import top.syshub.accountsx.core.adapters.api.MinecraftAdapter;
+import top.syshub.accountsx.core.net.HttpGateway;
+import top.syshub.accountsx.core.net.JdkHttpGateway;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.metadata.CustomValue;
 
@@ -62,6 +64,19 @@ public final class Adapters {
 
     public static MinecraftAdapter<AccountSession> getMinecraftAdapter() {
         return INSTANCE.get().minecraftAdapter();
+    }
+
+    /**
+     * 网络层网关（P1.3）。生产实现为 {@link JdkHttpGateway#INSTANCE}，纯 JDK、不依赖 MC 适配器。
+     * 测试可注入假实现以驱动认证流程，无需真实网络。
+     *
+     * <p><b>⚠️ 安全约束</b>：本方法必须直接返回 {@link JdkHttpGateway#INSTANCE}，
+     * 不得改为 {@code INSTANCE.get().httpGateway()} 之类会触发 {@link #INSTANCE}
+     * （{@code Suppliers.memoize}）懒加载的实现。否则在非游戏环境（单测 / 非 Fabric 运行时）
+     * 中会因 {@code FabricLoader} 不可用而崩溃——而 {@code AccountType} 枚举在类加载时即调用本方法。</p>
+     */
+    public static HttpGateway getHttpGateway() {
+        return JdkHttpGateway.INSTANCE;
     }
 
 

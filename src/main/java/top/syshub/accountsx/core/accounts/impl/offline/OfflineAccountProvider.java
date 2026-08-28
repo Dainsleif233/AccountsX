@@ -4,6 +4,7 @@ import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.AccountUUID;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.model.context.AccountContext;
+import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
 
@@ -12,6 +13,10 @@ import java.util.UUID;
 public class OfflineAccountProvider implements AccountProvider<OfflineAccount> {
     private static final String GUID_PLAYER_NAME = "guid:as.login.offline.widgets.player_name";
     private static final String GUID_PLAYER_UUID = "guid:as.login.offline.widgets.player_uuid";
+
+    // 离线账号不发起网络请求；构造器接收网关仅为统一所有 provider 的构造形态（P1.3）。
+    public OfflineAccountProvider(HttpGateway http) {
+    }
 
     @Override
     public AccountContext createAccountContext(OfflineAccount account) {

@@ -3,6 +3,7 @@ package top.syshub.accountsx.core.accounts.impl.injector.impl;
 import top.syshub.accountsx.core.accounts.impl.injector.AbstractInjectorAccount;
 import top.syshub.accountsx.core.accounts.impl.injector.AbstractInjectorAccountProvider;
 import top.syshub.accountsx.core.accounts.model.AccountType;
+import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.utils.NetworkUtils;
 
 import java.io.IOException;
@@ -12,8 +13,8 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccountProvider<AuthlibInjectorAccountProvider.AuthlibInjectorAccount> {
-    public AuthlibInjectorAccountProvider() {
-        super("accountsx.account.objects.server_domain", "accountsx.account.objects.user_id", "Authlib-Injector");
+    public AuthlibInjectorAccountProvider(HttpGateway http) {
+        super("accountsx.account.objects.server_domain", "accountsx.account.objects.user_id", "Authlib-Injector", http);
     }
 
     @Override
@@ -24,7 +25,7 @@ public final class AuthlibInjectorAccountProvider extends AbstractInjectorAccoun
             try {
                 if (redirects > 10)
                     throw new IOException("Too many redirects (" + redirects + ") while resolving API location, last URL: " + api);
-                Map<String, List<String>> headers = NetworkUtils.headRequest(api);
+                Map<String, List<String>> headers = http.head(api);
                 List<String> apiLocations = NetworkUtils.getHeaderIgnoreCase(headers, "X-Authlib-Injector-API-Location");
                 List<String> locations = NetworkUtils.getHeaderIgnoreCase(headers, "Location");
                 if (apiLocations != null && !apiLocations.isEmpty()) {
