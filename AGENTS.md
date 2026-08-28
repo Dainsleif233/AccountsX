@@ -76,6 +76,7 @@ AccountsX（根项目 / core）
 │   │       ├── ConfigHandle.java    # 配置读写（实例配置 + ~/.accountsx/ 载荷）
 │   │       └── ConfigVersion.java   # 迁移链（当前 v0 → v3）
 │   ├── ui/                          # 版本无关的 UIScreen / Memory / Translator
+│   ├── net/                         # HttpGateway 接口 + JdkHttpGateway（可注入网络层，P1.3）
 │   └── utils/                       # Threading / NetworkUtils / UnsafeVM / AvatarUtils
 ├── adapters/
 │   ├── authlib/<ver>/               # authlib API 桥接（5 个版本）
