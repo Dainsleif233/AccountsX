@@ -18,6 +18,7 @@
     ]
   },
   "depends": {
+    "minecraft": ">=1.20",
     "accountsx-adapter-mc": "*",
     "accountsx-adapter-authlib": "*",
     "accountsx-adapter-modmenu": "*"
