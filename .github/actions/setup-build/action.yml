@@ -9,13 +9,13 @@ runs:
         distribution: temurin
         java-version: "25"
 
-    - uses: gradle/actions/setup-gradle@v4
+    - uses: gradle/actions/setup-gradle@v6
       with:
         cache-read-only: ${{ github.ref != 'refs/heads/dev' }}
         cache-cleanup: on-success
 
     - name: Cache Loom project cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         # Only the project-local cache needs its own layer. The other large
         # Loom data (mappings / merged MC jars) lives under ~/.gradle/caches/
