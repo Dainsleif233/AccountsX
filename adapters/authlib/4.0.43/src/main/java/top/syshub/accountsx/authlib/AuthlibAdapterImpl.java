@@ -23,7 +23,7 @@ import com.mojang.util.UUIDTypeAdapter;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.model.context.AccountContext;
 import top.syshub.accountsx.core.accounts.model.context.AuthSecurityContext;
-import top.syshub.accountsx.core.adapters.api.AuthlibAdapter;
+import top.syshub.accountsx.core.adapters.api.AuthlibBridge;
 import top.syshub.accountsx.core.utils.UnsafeVM;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.util.*;
 
-public final class AuthlibAdapterImpl implements AuthlibAdapter<AccountSessionImpl> {
+public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImpl> {
     @Override
     public AccountSessionImpl createAccountProfile(BaseAccount.AccountStorage storage, AccountContext context, Proxy proxy) throws IOException {
         if (context == null) {

@@ -9,7 +9,7 @@ import top.syshub.accountsx.adapters.mc.mixins.mixins.MinecraftClientAccessor;
 import top.syshub.accountsx.authlib.AccountSessionImpl;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.impl.env.EnvironmentAccount;
-import top.syshub.accountsx.core.adapters.api.MinecraftAdapter;
+import top.syshub.accountsx.core.adapters.api.MinecraftPlatform;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.client.gui.components.toasts.SystemToast;
@@ -27,7 +27,7 @@ import java.net.Proxy;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
-public class MinecraftAdapterImpl implements MinecraftAdapter<AccountSessionImpl> {
+public class MinecraftAdapterImpl implements MinecraftPlatform<AccountSessionImpl> {
     @Override
     public EnvironmentAccount fromCurrentClient() {
         User session = Minecraft.getInstance().getUser();
@@ -35,7 +35,7 @@ public class MinecraftAdapterImpl implements MinecraftAdapter<AccountSessionImpl
     }
 
     @Override
-    public <T extends BaseAccount> void switchAccount(AccountSessionImpl session) {
+    public void switchAccount(AccountSessionImpl session) {
         UserApiService userAPIService = session.userAPIService();
         BaseAccount.AccountStorage storage = session.storage();
         UserApiService.UserProperties properties = session.properties();

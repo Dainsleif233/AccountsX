@@ -1,6 +1,6 @@
 package top.syshub.accountsx.core.utils;
 
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.adapters.Platforms;
 import top.syshub.accountsx.core.task.TaskScheduler;
 
 import java.lang.annotation.Documented;
@@ -21,7 +21,7 @@ public final class Threading {
     }
 
     public static void checkMinecraftClientThread() {
-        if (Adapters.getMinecraftAdapter().getMinecraftClientThread() != java.lang.Thread.currentThread()) {
+        if (Platforms.getMinecraftPlatform().getMinecraftClientThread() != java.lang.Thread.currentThread()) {
             throw new IllegalStateException("Should in Minecraft Client Thread.");
         }
     }

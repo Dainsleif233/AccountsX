@@ -1,8 +1,8 @@
 package top.syshub.accountsx.core.adapters.api;
 
 /**
- * AccountSession is a middle aware between MinecraftAdapter and MinecraftAdapter.
- * It's implementation have to be a record which directly implements this interface.
+ * AccountSession is a middle layer between MinecraftPlatform and AuthlibBridge.
+ * Its implementation has to be a record which directly implements this interface.
  */
 public interface AccountSession {
 }

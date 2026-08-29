@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.accounts.impl.injector.impl.UnitedInjectorAccountProvider;
 import top.syshub.accountsx.core.accounts.impl.injector.impl.UnitedInjectorAccountProvider.UnitedInjectorAccount;
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.adapters.Platforms;
 import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.net.JdkHttpGateway;
 import top.syshub.accountsx.core.task.TaskScheduler;
@@ -127,7 +127,7 @@ class HttpGatewayInjectionTest {
 
     @Test
     void productionGatewayWired() {
-        HttpGateway gateway = Adapters.getHttpGateway();
+        HttpGateway gateway = Platforms.getHttpGateway();
         assertThat(gateway).isNotNull();
         assertThat(gateway).isInstanceOf(JdkHttpGateway.class);
     }

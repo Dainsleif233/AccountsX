@@ -5,7 +5,7 @@ import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.AccountUUID;
 import top.syshub.accountsx.core.accounts.model.PlayerNoLongerExistedException;
 import top.syshub.accountsx.core.accounts.model.context.*;
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.adapters.Platforms;
 import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
@@ -281,12 +281,12 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         String clientId;
 
         String host = URI.create(yggUrl).getHost();
-        if (OAuthConstants.list.containsKey(host)) clientId = OAuthConstants.list.get(host);
+        if (OAuthConstants.OAUTH_CLIENT_IDS.containsKey(host)) clientId = OAuthConstants.OAUTH_CLIENT_IDS.get(host);
         else if (config.get("shared_client_id") instanceof JsonPrimitive jp2 &&
                 jp2.isString()) clientId = jp2.getAsString();
         else throw new IOException("Invalid client id!");
 
-        Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.generating", null);
+        Platforms.getMinecraftPlatform().showToast("accountsx.account.oauth2.code.generating", null);
 
         Map<String, String> form1 = Map.of(
                 "client_id", clientId,
@@ -304,14 +304,14 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 jp.isNumber()) expires = jp.getAsInt();
         else expires = 300;
         if (device.get("verification_uri_complete") instanceof JsonPrimitive jp && jp.isString()) {
-            Adapters.getMinecraftAdapter().openBrowser(jp.getAsString());
-            Adapters.getMinecraftAdapter().copyText(jp.getAsString());
+            Platforms.getMinecraftPlatform().openBrowser(jp.getAsString());
+            Platforms.getMinecraftPlatform().copyText(jp.getAsString());
         } else {
-            Adapters.getMinecraftAdapter().copyText(userCode);
+            Platforms.getMinecraftPlatform().copyText(userCode);
             // 1.10 修复：原为取出来即丢弃的死语句，导致无 verification_uri_complete 时不打开浏览器
-            Adapters.getMinecraftAdapter().openBrowser(device.get("verification_uri").getAsString());
+            Platforms.getMinecraftPlatform().openBrowser(device.get("verification_uri").getAsString());
         }
-        Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.title", "accountsx.account.oauth2.code.desc", userCode);
+        Platforms.getMinecraftPlatform().showToast("accountsx.account.oauth2.code.title", "accountsx.account.oauth2.code.desc", userCode);
 
         String accessToken = null, refreshToken = null, idToken = null;
         for (int i = 0; i < expires; i += interval) {

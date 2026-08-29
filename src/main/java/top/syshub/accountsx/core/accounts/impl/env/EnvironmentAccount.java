@@ -2,7 +2,7 @@ package top.syshub.accountsx.core.accounts.impl.env;
 
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.accounts.BaseAccount;
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.adapters.Platforms;
 import top.syshub.accountsx.core.utils.AvatarService;
 
 import java.util.UUID;
@@ -30,7 +30,7 @@ public final class EnvironmentAccount extends BaseAccount {
     // 失败（离线 / 无网络）时静默返回 null key，UI 回退默认头像（与原行为一致）。
     private static AvatarService.AvatarKey avatarOf(UUID playerUUID) {
         return AvatarService.fetch(
-                Adapters.getHttpGateway(),
+                Platforms.getHttpGateway(),
                 "https://sessionserver.mojang.com" + "/session/minecraft/profile/",
                 playerUUID.toString()
         );

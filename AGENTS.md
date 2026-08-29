@@ -42,7 +42,7 @@ MC 26.1+ 是非混淆版本（无 ProGuard），Loom 没有 `remapJar` 任务，
 | 不变量                                                                                        | 为什么                                                                                                                                                                                                 | 违反后的症状                                                        | 强制机制                                                                  |
 |-----------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|---------------------------------------------------------------------------|
 | core 不得 import `net/minecraft/*`、`com/mojang/authlib/*`、`java/awt/*` 或 `javax/imageio/*` | core 被 12 个不同 MC 版本共用编译；AWT 渲染已迁到独立 `:core-image` 模块（P1.4 / 决策 D4），core 自身不得引用                                                                                          | 编译失败（`checkArchitecture` 拒绝）或运行时 ClassNotFoundException | `:checkArchitecture`（P0.5，P1.4 起 `java.awt`/`javax.imageio` 硬性禁止） |
-| `MinecraftAdapterImpl`（或 `MinecraftAdapaterImpl`）类名是数据契约                            | 写在各适配器 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里                                                                                                                                      | 12 个适配器中找不到实现，模组崩溃                                   | 人工校验 + fabric.mod.json 校验                                           |
+| `MinecraftAdapterImpl` 类名是数据契约                                                         | 写在各适配器 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里                                                                                                                                      | 12 个适配器中找不到实现，模组崩溃                                   | 人工校验 + fabric.mod.json 校验                                           |
 | `~/.accountsx/` 下的文件含明文 token                                                          | 所有日志、报错、提交都不得包含其内容                                                                                                                                                                   | token 泄露                                                          | 人工 review                                                               |
 | `depends.minecraft` 使用 `>=` 无上界                                                          | Loader 在候选中取版本号最大者；适配器版本为 `${minecraft}-${version}`，MC 版本是最左的版本核心段（数字逐位比较，短者补 0），而 CI 注入的 `+build.N` 落在被忽略的 build 段，不会破坏排序                | 版本排序被破坏时选错适配器 → mixin 目标不存在 → 崩溃                | `:validateAdapterMatrix`（P0.5）                                          |
 | 载荷读失败时**不得**写回配置                                                                  | `initialize()` 末尾的无条件 `save()` 会把文件覆写成 `[]`，静默丢失用户全部账号                                                                                                                         | 一次瞬时 I/O 错误永久删除所有账号                                   | P1 修复（只读降级模式）                                                   |
@@ -67,8 +67,9 @@ AccountsX（根项目 / core）
 │   │   ├── impl/offline/            # 离线账号
 │   │   └── model/                   # AccountType 枚举、AccountState、Auth* 上下文
 │   ├── adapters/
-│   │   ├── api/                     # MinecraftAdapter / AuthlibAdapter / AccountSession 接口
-│   │   └── Adapters.java            # 反射加载适配器实现（memoize）
+│   │   ├── api/                     # MinecraftPlatform / AuthlibBridge / AccountSession 接口
+│   │   ├── Adapters.java            # @Deprecated 转发壳（兼容旧适配器）
+│   │   └── Platforms.java           # 反射加载适配器实现（memoize）
 │   ├── manager/
 │   │   ├── AccountManager.java      # 账号列表管理 + 刷新调度
 │   │   ├── AccountWorker.java       # @Deprecated 转发到 TaskScheduler（兼容旧适配器）；register/unregister 已删除
@@ -95,12 +96,12 @@ AccountsX（根项目 / core）
 
 运行时平台代码在 **adapters** 中，由 Fabric Loader 从已安装的适配器集中选择。Core 通过 `fabric.mod.json` 的自定义值发现实现：
 
-| Mod ID                      | 自定义键                                           | 接口               |
-|-----------------------------|----------------------------------------------------|--------------------|
-| `accountsx-adapter-authlib` | `accountsx:adapter.authlib` → `{ "class": "..." }` | `AuthlibAdapter`   |
-| `accountsx-adapter-mc`      | `accountsx:adapter.mc` → `{ "class": "..." }`      | `MinecraftAdapter` |
+| Mod ID                      | 自定义键                                           | 接口                |
+|-----------------------------|----------------------------------------------------|---------------------|
+| `accountsx-adapter-authlib` | `accountsx:adapter.authlib` → `{ "class": "..." }` | `AuthlibBridge`     |
+| `accountsx-adapter-mc`      | `accountsx:adapter.mc` → `{ "class": "..." }`      | `MinecraftPlatform` |
 
-`Adapters`（`core/adapters/Adapters.java`）通过反射加载两者，使用 `Suppliers.memoize` 缓存，并断言它们共享相同的 `AccountSession` 类型参数。始终通过 `Adapters.getMinecraftAdapter()` / `Adapters.getAuthlibAdpater()` 访问，不要直接引用 MC/authlib 类型。
+`Platforms`（`core/adapters/Platforms.java`）通过反射加载两者，使用 `Suppliers.memoize` 缓存，并断言它们共享相同的 `AccountSession` 类型参数。始终通过 `Platforms.getMinecraftPlatform()` / `Platforms.authlibBridge()` 访问，不要直接引用 MC/authlib 类型。旧的 `Adapters` 类保留为 `@Deprecated` 转发壳，适配器不需改动。
 
 Core `fabric.mod.json` 依赖全部三个适配器 mod id（`accountsx-adapter-mc`、`accountsx-adapter-authlib`、`accountsx-adapter-modmenu`），并注册 MethodHandles lookup accessor 到 `accountsx:impl-lookup-accessor` 供 `UnsafeVM` 使用。
 
@@ -142,7 +143,7 @@ universal 任务还会在嵌套的 core 元数据中添加 `fabric-api: *` 依�
 
 每个版本是独立的 Loom 项目。典型布局：
 
-- `MinecraftAdapterImpl`（或历史拼写 `MinecraftAdapaterImpl`）— 实现 `MinecraftAdapter`
+- `MinecraftAdapterImpl` — 实现 `MinecraftPlatform`
 - `ui/` — `AccountScreen`、列表控件、`UIScreenImpl` / `DefaultMemory` 桥接 core `UIScreen`/`Memory`
 - `mixins/` — 标题屏按钮、session/skin accessor、Yggdrasil hook；多数版本嵌套在 `mixins/mixins/` 下（1.20 较扁平）
 
@@ -274,8 +275,7 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 - Java 17、UTF-8、4 空格缩进
 - 注释解释「为什么」而非「做什么」
 - 历史拼写错误保留以维持兼容性：
-  - `getAuthlibAdpater()`（应为 `getAuthlibAdapter()`）— 纯 Java 符号，新代码可加 `@Deprecated` 转发
-  - `MinecraftAdapaterImpl`（应为 `MinecraftAdapterImpl`）— **类名写在 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里**，属于数据契约。26.2 已改为正确拼写，其余 11 个版本仍为旧拼写
+  - `getAuthlibAdpater()`（应为 `getAuthlibAdapter()`）— 纯 Java 符号，旧适配器仍引用；`Platforms` 已用正确方法名 `authlibBridge()`
 - `AccountProvider.validate` 返回 `int` 常量（`STATE_IMMEDIATE_CLOSE=0` / `STATE_HANDLE=1`），而非枚举
 
 ## Commit 规范

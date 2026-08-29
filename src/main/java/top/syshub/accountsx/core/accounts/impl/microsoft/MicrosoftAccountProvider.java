@@ -6,7 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.AccountUUID;
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.adapters.Platforms;
 import top.syshub.accountsx.core.accounts.model.context.AccountContext;
 import top.syshub.accountsx.core.accounts.model.context.AuthPolicy;
 import top.syshub.accountsx.core.net.HttpGateway;
@@ -56,7 +56,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             throw new CancellationException("Screen has been closed.");
         }
 
-        Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.generating", null);
+        Platforms.getMinecraftPlatform().showToast("accountsx.account.oauth2.code.generating", null);
 
         JsonObject device = http.postForm(DEVICE_CODE_URL, Map.of(
                 "client_id", CLIENT_ID,
@@ -67,10 +67,10 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             throw new CancellationException("Screen has been closed.");
         }
 
-        Adapters.getMinecraftAdapter().copyText(device.get("user_code").getAsString());
+        Platforms.getMinecraftPlatform().copyText(device.get("user_code").getAsString());
 
         String url = device.get("verification_uri").getAsString();
-        Adapters.getMinecraftAdapter().openBrowser(url);
+        Platforms.getMinecraftPlatform().openBrowser(url);
 
         String microsoftAccessToken = null, microsoftRefreshToken = null;
 
@@ -93,7 +93,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             if (memory.isScreenClosed()) {
                 throw new CancellationException("Screen has been closed.");
             }
-            Adapters.getMinecraftAdapter().showToast("accountsx.account.oauth2.code.title", "accountsx.account.oauth2.code.desc", device.get("user_code").getAsString());
+            Platforms.getMinecraftPlatform().showToast("accountsx.account.oauth2.code.title", "accountsx.account.oauth2.code.desc", device.get("user_code").getAsString());
 
             JsonObject token;
             token = http.postForm(TOKEN_URL, Map.of(

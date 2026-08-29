@@ -11,7 +11,7 @@ import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.impl.microsoft.MicrosoftConstants;
 import top.syshub.accountsx.core.accounts.model.context.AccountContext;
 import top.syshub.accountsx.core.accounts.model.context.AuthSecurityContext;
-import top.syshub.accountsx.core.adapters.api.AuthlibAdapter;
+import top.syshub.accountsx.core.adapters.api.AuthlibBridge;
 import top.syshub.accountsx.core.utils.UnsafeVM;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +23,7 @@ import java.security.*;
 import java.util.Base64;
 import java.util.List;
 
-public final class AuthlibAdapterImpl implements AuthlibAdapter<AccountSessionImpl> {
+public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImpl> {
 
     // 1.1 修复：原先在 static 块里做网络 I/O，联网失败（断网/被墙/Mojang 抖动）会抛
     // ExceptionInInitializerError 导致整个模组不可用（连离线账号都用不了）。改为懒加载 +

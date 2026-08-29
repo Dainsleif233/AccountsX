@@ -21,7 +21,7 @@
   },
   "custom": {
     "accountsx:adapter.mc": {
-      "class": "top.syshub.accountsx.adapters.mc.MinecraftAdapaterImpl"
+      "class": "top.syshub.accountsx.adapters.mc.MinecraftAdapterImpl"
     },
     "modmenu": {
       "parent": {

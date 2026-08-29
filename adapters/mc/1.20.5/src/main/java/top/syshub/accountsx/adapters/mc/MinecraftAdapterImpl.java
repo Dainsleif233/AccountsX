@@ -11,7 +11,7 @@ import top.syshub.accountsx.adapters.mc.mixins.mixins.SplashTextResourceSupplier
 import top.syshub.accountsx.authlib.AccountSessionImpl;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.impl.env.EnvironmentAccount;
-import top.syshub.accountsx.core.adapters.api.MinecraftAdapter;
+import top.syshub.accountsx.core.adapters.api.MinecraftPlatform;
 import java.net.Proxy;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -27,7 +27,7 @@ import net.minecraft.client.resources.SkinManager;
 import net.minecraft.client.telemetry.ClientTelemetryManager;
 import net.minecraft.network.chat.Component;
 
-public class MinecraftAdapaterImpl implements MinecraftAdapter<AccountSessionImpl> {
+public class MinecraftAdapterImpl implements MinecraftPlatform<AccountSessionImpl> {
     @Override
     public EnvironmentAccount fromCurrentClient() {
         User session = Minecraft.getInstance().getUser();
@@ -35,7 +35,7 @@ public class MinecraftAdapaterImpl implements MinecraftAdapter<AccountSessionImp
     }
 
     @Override
-    public <T extends BaseAccount> void switchAccount(AccountSessionImpl session) {
+    public void switchAccount(AccountSessionImpl session) {
         MinecraftSessionService sessionService = session.sessionService();
         UserApiService userAPIService = session.userAPIService();
         BaseAccount.AccountStorage storage = session.storage();

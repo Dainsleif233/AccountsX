@@ -1,5 +1,6 @@
 package top.syshub.accountsx.adapters.mc;
 
+import com.mojang.authlib.minecraft.MinecraftSessionService;
 import com.mojang.authlib.minecraft.UserApiService;
 import com.mojang.authlib.yggdrasil.ProfileResult;
 import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;
@@ -10,7 +11,11 @@ import top.syshub.accountsx.adapters.mc.mixins.mixins.SplashTextResourceSupplier
 import top.syshub.accountsx.authlib.AccountSessionImpl;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.impl.env.EnvironmentAccount;
-import top.syshub.accountsx.core.adapters.api.MinecraftAdapter;
+import top.syshub.accountsx.core.adapters.api.MinecraftPlatform;
+import java.net.Proxy;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.client.gui.components.toasts.SystemToast;
@@ -21,14 +26,8 @@ import net.minecraft.client.multiplayer.chat.report.ReportingContext;
 import net.minecraft.client.resources.SkinManager;
 import net.minecraft.client.telemetry.ClientTelemetryManager;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.Services;
-import net.minecraft.util.Util;
 
-import java.net.Proxy;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-
-public class MinecraftAdapaterImpl implements MinecraftAdapter<AccountSessionImpl> {
+public class MinecraftAdapterImpl implements MinecraftPlatform<AccountSessionImpl> {
     @Override
     public EnvironmentAccount fromCurrentClient() {
         User session = Minecraft.getInstance().getUser();
@@ -36,18 +35,19 @@ public class MinecraftAdapaterImpl implements MinecraftAdapter<AccountSessionImp
     }
 
     @Override
-    public <T extends BaseAccount> void switchAccount(AccountSessionImpl session) {
+    public void switchAccount(AccountSessionImpl session) {
+        MinecraftSessionService sessionService = session.sessionService();
         UserApiService userAPIService = session.userAPIService();
         BaseAccount.AccountStorage storage = session.storage();
         UserApiService.UserProperties properties = session.properties();
         ProfileResult profileResult = session.profileResult();
         YggdrasilAuthenticationService authenticationService = session.authenticationService();
 
-        User s = new User(storage.getPlayerName(), storage.getPlayerUUID(), storage.getAccessToken(), Optional.empty(), Optional.empty());
+        User s = new User(storage.getPlayerName(), storage.getPlayerUUID(), storage.getAccessToken(), Optional.empty(), Optional.empty(), User.Type.MOJANG);
 
         Minecraft client = Minecraft.getInstance();
-        Services apiServices = Services.create(authenticationService, client.gameDirectory);
-        ((MinecraftClientAccessor) client).setApiServices(apiServices);
+        ((MinecraftClientAccessor) client).setAuthenticationService(authenticationService);
+        ((MinecraftClientAccessor) client).setSessionService(sessionService);
         ((MinecraftClientAccessor) client).setSession(s);
         ((MinecraftClientAccessor) client).setGameProfileFuture(CompletableFuture.completedFuture(profileResult));
         ((MinecraftClientAccessor) client).setUserAPIService(userAPIService);
@@ -59,8 +59,7 @@ public class MinecraftAdapaterImpl implements MinecraftAdapter<AccountSessionImp
         ((MinecraftClientAccessor) client).setAbuseReportContext(ReportingContext.create(ReportEnvironment.local(), userAPIService));
         ((MinecraftClientAccessor) client).setSkinProvider(new SkinManager(
                 ((PlayerSkinProviderAccessor) client.getSkinManager()).accountsX$getDirectory(),
-                apiServices,
-                ((PlayerSkinProviderAccessor) client.getSkinManager()).accountsX$getDownloader(),
+                sessionService,
                 ((PlayerSkinProviderAccessor) client.getSkinManager()).accountsX$getExecutor()
         ));
     }
@@ -91,7 +90,7 @@ public class MinecraftAdapaterImpl implements MinecraftAdapter<AccountSessionImp
     public void copyText(String text) {
         Minecraft client = Minecraft.getInstance();
         if (client.isSameThread()) {
-            new ClipboardManager().setClipboard(client.getWindow(), text);
+            new ClipboardManager().setClipboard(client.getWindow().getWindow(), text);
         } else {
             client.schedule(() -> copyText(text));
         }

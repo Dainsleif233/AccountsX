@@ -14,7 +14,7 @@ import top.syshub.accountsx.core.accounts.impl.microsoft.MicrosoftAccount;
 import top.syshub.accountsx.core.accounts.impl.microsoft.MicrosoftAccountProvider;
 import top.syshub.accountsx.core.accounts.impl.offline.OfflineAccount;
 import top.syshub.accountsx.core.accounts.impl.offline.OfflineAccountProvider;
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.adapters.Platforms;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -24,11 +24,11 @@ import java.util.stream.Collectors;
 
 @JsonAdapter(AccountType.AccountTypeAdapter.class)
 public enum AccountType {
-    ENV_DEFAULT(EnvironmentAccount.class, new EnvironmentAccountProvider(Adapters.getHttpGateway()), null),
-    OFFLINE(OfflineAccount.class, new OfflineAccountProvider(Adapters.getHttpGateway()), "offline"),
-    MICROSOFT(MicrosoftAccount.class, new MicrosoftAccountProvider(Adapters.getHttpGateway()), "microsoft"),
-    AUTHLIB_INJECTOR(AuthlibInjectorAccountProvider.AuthlibInjectorAccount.class, new AuthlibInjectorAccountProvider(Adapters.getHttpGateway()), "injector.authlib-injector"),
-    UNITED_INJECTOR(UnitedInjectorAccountProvider.UnitedInjectorAccount.class, new UnitedInjectorAccountProvider(Adapters.getHttpGateway()), "injector.united");
+    ENV_DEFAULT(EnvironmentAccount.class, new EnvironmentAccountProvider(Platforms.getHttpGateway()), null),
+    OFFLINE(OfflineAccount.class, new OfflineAccountProvider(Platforms.getHttpGateway()), "offline"),
+    MICROSOFT(MicrosoftAccount.class, new MicrosoftAccountProvider(Platforms.getHttpGateway()), "microsoft"),
+    AUTHLIB_INJECTOR(AuthlibInjectorAccountProvider.AuthlibInjectorAccount.class, new AuthlibInjectorAccountProvider(Platforms.getHttpGateway()), "injector.authlib-injector"),
+    UNITED_INJECTOR(UnitedInjectorAccountProvider.UnitedInjectorAccount.class, new UnitedInjectorAccountProvider(Platforms.getHttpGateway()), "injector.united");
 
     public static final AccountType[] VALUES = values();
 

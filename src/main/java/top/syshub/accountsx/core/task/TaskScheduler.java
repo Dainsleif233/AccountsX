@@ -2,7 +2,7 @@ package top.syshub.accountsx.core.task;
 
 import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.accounts.model.PlayerNoLongerExistedException;
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.adapters.Platforms;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -187,7 +187,7 @@ public final class TaskScheduler {
             future.completeExceptionally(e);
             AccountsX.LOGGER.warn("An exception has occurred in AccountsX Background Thread.", e);
             try {
-                Adapters.getMinecraftAdapter().showToast("accountsx.account.fail.title", failureMessage(e));
+                Platforms.getMinecraftPlatform().showToast("accountsx.account.fail.title", failureMessage(e));
             } catch (Throwable t) {
                 // 适配器不可用（如单元测试环境）；上面已记录日志。
             }

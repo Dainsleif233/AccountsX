@@ -5,7 +5,7 @@ import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.model.AccountState;
 import top.syshub.accountsx.core.accounts.model.AccountType;
-import top.syshub.accountsx.core.adapters.Adapters;
+import top.syshub.accountsx.core.adapters.Platforms;
 import top.syshub.accountsx.core.adapters.api.AccountSession;
 import top.syshub.accountsx.core.manager.config.ConfigHandle;
 import top.syshub.accountsx.core.task.TaskScheduler;
@@ -34,7 +34,7 @@ public final class AccountManager {
     }
 
     public static void initialize() {
-        accounts.add(current = Adapters.getMinecraftAdapter().fromCurrentClient());
+        accounts.add(current = Platforms.getMinecraftPlatform().fromCurrentClient());
 
         accounts.addAll(ConfigHandle.load());
 
@@ -99,10 +99,10 @@ public final class AccountManager {
             save();
         }
 
-        return Adapters.getAuthlibAdpater().createAccountProfile(
+        return Platforms.authlibBridge().createAccountProfile(
                 account.getAccountStorage(),
                 AccountProvider.getProvider(account).createAccountContext(account),
-                Adapters.getMinecraftAdapter().getGameProxy()
+                Platforms.getMinecraftPlatform().getGameProxy()
         );
     }
 
@@ -111,7 +111,7 @@ public final class AccountManager {
         Threading.checkMinecraftClientThread();
 
         current = account;
-        Adapters.getMinecraftAdapter().switchAccount(session);
+        Platforms.getMinecraftPlatform().switchAccount(session);
     }
 
     @Threading.Thread(Threading.ThreadRole.WORKER)
