@@ -190,23 +190,26 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 
 ## 命令与代价
 
+> **所有 Gradle 调用都必须带 `--no-daemon --stacktrace`。**
+> CI（`ci.yml` / `release.yml`）的构建命令已经带这两个参数；本地构建、调试构建失败时也应带上，以保证失败时打印完整堆栈，且不在后台残留 daemon 进程（CI runner 上残留 daemon 会拖慢后续步骤甚至卡死）。
+
 ```bash
 # 全量构建
-./gradlew build                    # 输出：build/libs/AccountsX-<version>.jar
+./gradlew --no-daemon --stacktrace build                    # 输出：build/libs/AccountsX-<version>.jar
 
 # Core 模块
-./gradlew :core:build              # ~1 min（热缓存）
+./gradlew --no-daemon --stacktrace :core:build              # ~1 min（热缓存）
 
 # 单个适配器（冒号分隔的项目路径）
-./gradlew :adapters:mc:1.21.4:remapJar       # ~4 min（热缓存）
-./gradlew :adapters:authlib:6.0.54:jar
-./gradlew :adapters:modmenu:7.0.0:remapJar
+./gradlew --no-daemon --stacktrace :adapters:mc:1.21.4:remapJar       # ~4 min（热缓存）
+./gradlew --no-daemon --stacktrace :adapters:authlib:6.0.54:jar
+./gradlew --no-daemon --stacktrace :adapters:modmenu:7.0.0:remapJar
 
 # 快速校验元数据/架构约束
-./gradlew checkArchitecture validateAdapterMatrix
+./gradlew --no-daemon --stacktrace checkArchitecture validateAdapterMatrix
 
 # 清理
-./gradlew clean
+./gradlew --no-daemon --stacktrace clean
 ```
 
 - Windows 上等效使用 `gradlew.bat`。

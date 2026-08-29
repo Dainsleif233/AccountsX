@@ -44,7 +44,7 @@ jobs:
       # one is built). `build` depends on `universal`, so this also produces
       # the nested fat jar; `verifyUniversalJar` then checks its structure.
       - name: Build
-        run: ./gradlew -Pversion="${{ steps.build-version.outputs.version }}" build verifyUniversalJar
+        run: ./gradlew --no-daemon --stacktrace -Pversion="${{ steps.build-version.outputs.version }}" build verifyUniversalJar
       # Upload exactly the universal fat jar. `archive: false` requires a single
       # file, and `build/libs/AccountsX-*.jar` also matched the core jar
       # (`AccountsX-core-*.jar`, produced by `:jar` with `archiveAppendix = "core"`),
