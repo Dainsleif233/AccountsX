@@ -10,8 +10,8 @@ public final class MicrosoftAccount extends BaseAccount {
 
     private volatile String microsoftAccountRefreshToken;
 
-    public MicrosoftAccount(String accessToken, String playerName, UUID playerUUID, String microsoftAccountAccessToken, String microsoftAccountRefreshToken, String avatar) {
-        super(accessToken, playerName, playerUUID, AccountType.MICROSOFT, null, avatar);
+    public MicrosoftAccount(String accessToken, String playerName, UUID playerUUID, String microsoftAccountAccessToken, String microsoftAccountRefreshToken, String avatarKey, long avatarCachedAt) {
+        super(accessToken, playerName, playerUUID, AccountType.MICROSOFT, null, avatarKey, avatarCachedAt);
         this.microsoftAccountAccessToken = microsoftAccountAccessToken;
         this.microsoftAccountRefreshToken = microsoftAccountRefreshToken;
     }

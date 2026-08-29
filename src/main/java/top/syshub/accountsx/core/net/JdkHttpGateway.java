@@ -94,6 +94,24 @@ public final class JdkHttpGateway implements HttpGateway {
         }
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public byte[] getBinary(String url) throws IOException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
+        try {
+            HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            // 校验状态码：非 2xx 抛 IOException，与 JSON 路径一致。
+            int statusCode = response.statusCode();
+            if (statusCode / 100 != 2) {
+                throw new IOException("HTTP " + statusCode);
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted.", e);
+        }
+    }
+
     private JsonObject sendJson(HttpRequest request, boolean ignoreHttpStatus) throws IOException {
         try {
             HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());

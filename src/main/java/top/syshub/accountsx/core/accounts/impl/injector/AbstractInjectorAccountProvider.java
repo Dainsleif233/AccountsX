@@ -9,7 +9,7 @@ import top.syshub.accountsx.core.adapters.Adapters;
 import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
-import top.syshub.accountsx.core.utils.AvatarUtils;
+import top.syshub.accountsx.core.utils.AvatarService;
 
 import java.io.IOException;
 import java.net.URI;
@@ -45,7 +45,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
     protected abstract String transformServerBaseURL(String server);
 
-    protected abstract T createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String accountName, String avatar);
+    protected abstract T createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String accountName, String avatarKey, long avatarCachedAt);
 
     @Override
     public final AccountContext createAccountContext(T account) throws IOException {
@@ -157,17 +157,20 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 }
             }
 
+            AvatarService.AvatarKey avatar = AvatarService.fetch(http, profileUrl, profile.playerUUID);
             return createAccount(
                     accessToken, profile.playerName,
                     AccountUUID.parse(profile.playerUUID),
                     baseUrl,
                     profile.playerUUID,
                     getAccountName(baseUrl),
-                    AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
+                    avatar == null ? null : avatar.key,
+                    avatar == null ? 0L : avatar.cachedAt
             );
         } else {
             for (Profile profile : profiles) {
                 if (playerName.equals(profile.playerName)) {
+                    AvatarService.AvatarKey avatar = AvatarService.fetch(http, profileUrl, profile.playerUUID);
                     return createAccount(
                             accessToken,
                             profile.playerName,
@@ -175,7 +178,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                             baseUrl,
                             profile.playerUUID,
                             getAccountName(baseUrl),
-                            AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
+                            avatar == null ? null : avatar.key,
+                            avatar == null ? 0L : avatar.cachedAt
                     );
                 }
             }
@@ -216,7 +220,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 if (profile.playerUUID.equals(preferredPlayerUUID)) {
                     account.setLoginProfile(accessToken, profile.playerUUID);
                     account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
-                    account.setAvatar(AvatarUtils.getAvatar(profileUrl, profile.playerUUID));
+                    AvatarService.AvatarKey avatar = AvatarService.fetch(http, profileUrl, profile.playerUUID);
+                    account.setAvatar(avatar == null ? null : avatar.key, avatar == null ? 0L : avatar.cachedAt);
                     return;
                 }
             }
@@ -351,6 +356,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         OAuth.addProperty("refresh_token", refreshToken);
         OAuth.addProperty("client_id", clientId);
 
+        AvatarService.AvatarKey avatar = AvatarService.fetch(http, profileUrl, profile.playerUUID);
         T account = createAccount(
                 accessToken,
                 profile.playerName,
@@ -358,7 +364,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 yggUrl,
                 profile.playerUUID,
                 getAccountName(yggUrl),
-                AvatarUtils.getAvatar(profileUrl, profile.playerUUID)
+                avatar == null ? null : avatar.key,
+                avatar == null ? 0L : avatar.cachedAt
         );
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
         return account;
@@ -396,6 +403,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
 
         account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
-        account.setAvatar(AvatarUtils.getAvatar(profileUrl, profile.playerUUID));
+        AvatarService.AvatarKey avatar = AvatarService.fetch(http, profileUrl, profile.playerUUID);
+        account.setAvatar(avatar == null ? null : avatar.key, avatar == null ? 0L : avatar.cachedAt);
     }
 }

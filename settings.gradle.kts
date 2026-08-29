@@ -38,3 +38,8 @@ include(
         check(isNotEmpty()) { "gradle/adapters.toml declares no adapters" }
     }.toTypedArray()
 )
+
+// core-image：独立的 JDK 库模块，承载 AWT / ImageIO 头像渲染（P1.4 / 决策 D4）。
+// 它不是适配器，故不来自 gradle/adapters.toml，而是显式 include，并随 universal
+// jar 作为嵌套库 jar 分发。
+include(":core-image")

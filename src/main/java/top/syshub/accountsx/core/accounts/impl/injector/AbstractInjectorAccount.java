@@ -13,8 +13,8 @@ public abstract class AbstractInjectorAccount extends BaseAccount {
 
     private volatile String preferredPlayerUUID;
 
-    public AbstractInjectorAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, AccountType type, String accountName, String avatar) {
-        super(accessToken, playerName, playerUUID, type, accountName, avatar);
+    public AbstractInjectorAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, AccountType type, String accountName, String avatarKey, long avatarCachedAt) {
+        super(accessToken, playerName, playerUUID, type, accountName, avatarKey, avatarCachedAt);
         this.server = server;
         this.loginToken = accessToken;
         this.preferredPlayerUUID = preferredPlayerUUID;

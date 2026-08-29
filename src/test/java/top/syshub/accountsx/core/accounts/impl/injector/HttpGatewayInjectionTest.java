@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>用 {@link UnitedInjectorAccountProvider#refresh} 的非 OAuth 单 profile 路径：
  * 该路径只调用一次 {@link HttpGateway#postJson(String, JsonElement)} 且不涉及
- * {@code Adapters} / {@code AvatarUtils}，因此可在假网关下独立验证刷新逻辑与注入缝。</p>
+ * {@code Adapters} / {@code AvatarService}，因此可在假网关下独立验证刷新逻辑与注入缝。</p>
  */
 class HttpGatewayInjectionTest {
 
@@ -94,6 +94,11 @@ class HttpGatewayInjectionTest {
         public Map<String, List<String>> head(String url) {
             throw new UnsupportedOperationException("fake: head not expected");
         }
+
+        @Override
+        public byte[] getBinary(String url) {
+            throw new UnsupportedOperationException("fake: getBinary not expected");
+        }
     }
 
     @Test
@@ -104,7 +109,7 @@ class HttpGatewayInjectionTest {
         // 非 OAuth 登录令牌（不含 "OAuth " 前缀），走非 OAuth 刷新路径。
         UnitedInjectorAccount account = new UnitedInjectorAccount(
                 "old-injector-token", "OldName", UUID.randomUUID(),
-                SERVER, UUID.randomUUID().toString(), null, null
+                SERVER, UUID.randomUUID().toString(), null, null, 0L
         );
 
         // refresh 内的 setLoginProfile/setProfile 要求 worker 线程，故经调度器在 worker 线程上执行。

@@ -2,6 +2,7 @@
 .gradle/
 /build/
 adapters/**/build/
+core-image/build/
 buildSrc/build/
 
 # IDE

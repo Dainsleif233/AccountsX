@@ -11,7 +11,6 @@ import org.jetbrains.annotations.Nullable;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -23,6 +22,7 @@ import net.minecraft.resources.ResourceLocation;
 import static top.syshub.accountsx.core.AccountsX.LOGGER;
 
 import com.mojang.blaze3d.platform.NativeImage;
+import top.syshub.accountsx.image.AvatarCache;
 
 public class AccountListWidget extends ObjectSelectionList<AccountListWidget.AccountEntry> {
     public AccountListWidget(Minecraft client, int left, int right, int top, int bottom, int entryHeight) {
@@ -98,12 +98,10 @@ public class AccountListWidget extends ObjectSelectionList<AccountListWidget.Acc
 
         private ResourceLocation avatarTextureId;
 
-        private static final String ALEX_AVATAR = "iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAAFHklEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a/e+RWvZf4T7Nx4Pf9ZVrt3859hfvx6/rPs3Xk3/xn6Tf7TzI9fz3+GvTvv5j8Jlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qP0m/+sMh/wnuZv/bYZD/hPdzX+GnRuv5z8Jlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8dVP6T7N15N/9Z+k3+UwyH/KcZXun9+F/nT76D/xx385+EylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8d6Ow3v5b5X2Y45D9F/3ofw3+WunGM/wzT0SX+txl+46v4T0Llqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8dVK666v8OKldd9X8Hlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVV/4Y/jOcfqm34j/Lw9/vEfxn+PO3OMb/Nq/8tR/Pf5anfMeT+c9wjv80VK666v8OKldd9X8Hlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7vQBef9Fvmqqv+b6By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8dVK666v8OKldd9X8Hlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVc/2jD3+13nQDv/bTEeX+E9C5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fQeWqq/7voHLVVf93ULnqqv87qFx11f8dVK666v8O6nR0if8MdeMY/+s8aIernm06usR/hoODPf6TULnqqv87qFx11f8dVK666v8OKldd9X8Hlauu+r+DylVX/d9B5aqr/u+gctVV/3dQueqq/zuoXHXV/x1Urrrq/w4qV131fweVq676v4PKVVf930Hlqqv+76By1VX/d1C56qr/O6hcddX/HVSuuur/DipXXfV/B5Wrrvq/g8pVV/3fwT8C13lAqg0KKHQAAAAASUVORK5CYII=";
-
         public AccountEntry(BaseAccount account) {
             this.account = account;
-            this.avatarTextureId = loadAvatar(account.getAvatar());
-            if (this.avatarTextureId == null) this.avatarTextureId = loadAvatar(ALEX_AVATAR);
+            this.avatarTextureId = loadAvatar(account.getAvatarKey() != null ? AvatarCache.load(account.getAvatarKey()) : null);
+            if (this.avatarTextureId == null) this.avatarTextureId = loadAvatar(AvatarCache.loadDefaultAvatar());
         }
 
         @Override
@@ -171,12 +169,12 @@ public class AccountListWidget extends ObjectSelectionList<AccountListWidget.Acc
             return Component.nullToEmpty("");
         }
 
-        private ResourceLocation loadAvatar(String avatarBase64) {
+        private ResourceLocation loadAvatar(byte[] imageBytes) {
             try {
-                if (avatarBase64 == null || avatarBase64.isEmpty())
+                if (imageBytes == null || imageBytes.length == 0)
                     return null;
 
-                byte[] imageBytes = Base64.getDecoder().decode(avatarBase64);
+
                 NativeImage nativeImage = NativeImage.read(new ByteArrayInputStream(imageBytes));
                 DynamicTexture texture = new DynamicTexture(nativeImage);
 

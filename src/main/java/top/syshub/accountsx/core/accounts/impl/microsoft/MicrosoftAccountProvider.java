@@ -17,8 +17,8 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 
-import static top.syshub.accountsx.core.utils.AvatarUtils.getAvatar;
 import static top.syshub.accountsx.core.accounts.impl.microsoft.MicrosoftConstants.SESSION;
+import top.syshub.accountsx.core.utils.AvatarService;
 
 public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccount> {
     private static final String SCOPE = "XboxLive.signin offline_access";
@@ -186,13 +186,15 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
             playerUUID = json.get("id").getAsString();
         }
 
+        AvatarService.AvatarKey avatar = AvatarService.fetch(http, SESSION + "/session/minecraft/profile/", playerUUID);
         return new MicrosoftAccount(
                 accessToken,
                 playerName,
                 AccountUUID.parse(playerUUID),
                 microsoftAccessToken,
                 microsoftRefreshToken,
-                getAvatar(SESSION + "/session/minecraft/profile/", playerUUID)
+                avatar == null ? null : avatar.key,
+                avatar == null ? 0L : avatar.cachedAt
         );
     }
 
@@ -268,6 +270,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
         }
 
         account.setProfile(accessToken, playerName, AccountUUID.parse(playerUUID));
-        account.setAvatar(getAvatar(SESSION + "/session/minecraft/profile/", playerUUID));
+        AvatarService.AvatarKey avatar = AvatarService.fetch(http, SESSION + "/session/minecraft/profile/", playerUUID);
+        account.setAvatar(avatar == null ? null : avatar.key, avatar == null ? 0L : avatar.cachedAt);
     }
 }

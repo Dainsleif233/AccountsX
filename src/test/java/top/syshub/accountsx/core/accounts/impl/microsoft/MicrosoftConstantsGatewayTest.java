@@ -69,6 +69,11 @@ class MicrosoftConstantsGatewayTest {
         public Map<String, List<String>> head(String url) {
             throw new UnsupportedOperationException("fake: head not expected");
         }
+
+        @Override
+        public byte[] getBinary(String url) {
+            throw new UnsupportedOperationException("fake: getBinary not expected");
+        }
     }
 
     /** 构造一份带合法 RSA 公钥的 Microsoft 公钥响应（公钥在测试内生成，不硬编码）。 */

@@ -35,4 +35,7 @@ public interface HttpGateway {
 
     /** HEAD，返回原始响应头（大小写无关查找请用 {@code NetworkUtils.getHeaderIgnoreCase}）。 */
     Map<String, List<String>> head(String url) throws IOException;
+
+    /** GET，返回原始响应体字节（用于下载非 JSON 资源，如皮肤 PNG）。校验状态码。 */
+    byte[] getBinary(String url) throws IOException;
 }

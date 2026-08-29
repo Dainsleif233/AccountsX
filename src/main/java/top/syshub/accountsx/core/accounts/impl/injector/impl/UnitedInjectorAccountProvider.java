@@ -42,13 +42,13 @@ public final class UnitedInjectorAccountProvider extends AbstractInjectorAccount
 
     @Override
     // 1.16 修复：保留 accountName，使联合通行证账号在列表里显示服务器名而非类型名
-    protected UnitedInjectorAccount createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID,String accountName, String avatar) {
-        return new UnitedInjectorAccount(accessToken, playerName, playerUUID, server, preferredPlayerUUID, accountName, avatar);
+    protected UnitedInjectorAccount createAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID,String accountName, String avatarKey, long avatarCachedAt) {
+        return new UnitedInjectorAccount(accessToken, playerName, playerUUID, server, preferredPlayerUUID, accountName, avatarKey, avatarCachedAt);
     }
 
     public static class UnitedInjectorAccount extends AbstractInjectorAccount {
-        public UnitedInjectorAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String accountName, String avatar) {
-            super(accessToken, playerName, playerUUID, server, preferredPlayerUUID, AccountType.UNITED_INJECTOR, accountName, avatar);
+        public UnitedInjectorAccount(String accessToken, String playerName, UUID playerUUID, String server, String preferredPlayerUUID, String accountName, String avatarKey, long avatarCachedAt) {
+            super(accessToken, playerName, playerUUID, server, preferredPlayerUUID, AccountType.UNITED_INJECTOR, accountName, avatarKey, avatarCachedAt);
         }
     }
 }

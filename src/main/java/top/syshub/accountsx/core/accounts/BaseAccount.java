@@ -97,14 +97,19 @@ public abstract class BaseAccount {
 
     private final String accountName;
 
-    // 1.11 修复：worker 线程 setAvatar、客户端线程渲染读取，需 volatile 保证可见性
-    private volatile String avatar;
+    // 1.11 修复：worker 线程 setAvatar、客户端线程渲染读取，需 volatile 保证可见性。
+    // P1.4：头像 base64 不再进配置；只保留内容哈希 key 与缓存时间戳，PNG 落盘
+    // ~/.cache/accountsx/avatars/<avatarKey>.png（见 top.syshub.accountsx.image.AvatarCache）。
+    private volatile String avatarKey;
 
-    protected BaseAccount(String accessToken, String playerName, UUID playerUUID, AccountType type, String accountName, String avatar) {
+    private volatile long avatarCachedAt;
+
+    protected BaseAccount(String accessToken, String playerName, UUID playerUUID, AccountType type, String accountName, String avatarKey, long avatarCachedAt) {
         this.storage = new AccountStorage(accessToken, playerName, playerUUID, AccountState.AUTHORIZED);
         this.type = type;
         this.accountName = accountName;
-        this.avatar = avatar;
+        this.avatarKey = avatarKey;
+        this.avatarCachedAt = avatarCachedAt;
     }
 
     public AccountStorage getAccountStorage() {
@@ -119,12 +124,24 @@ public abstract class BaseAccount {
         return this.accountName;
     }
 
-    public String getAvatar() {
-        return this.avatar;
+    /**
+     * 头像 PNG 的内容哈希 key（SHA-256 hex），用于从
+     * {@code ~/.cache/accountsx/avatars/<avatarKey>.png} 读取头像。null 表示尚无头像。
+     */
+    public String getAvatarKey() {
+        return this.avatarKey;
     }
 
-    public void setAvatar(String avatar) {
-        this.avatar = avatar;
+    /**
+     * 头像缓存写入时间戳（{@code System.currentTimeMillis()}），0 表示未缓存。
+     */
+    public long getAvatarCachedAt() {
+        return this.avatarCachedAt;
+    }
+
+    public void setAvatar(String avatarKey, long avatarCachedAt) {
+        this.avatarKey = avatarKey;
+        this.avatarCachedAt = avatarCachedAt;
     }
 
     @Threading.Thread(Threading.ThreadRole.WORKER)
