@@ -13,7 +13,7 @@ slf4j = "2.0.18"
 asm = "9.6"
 # 编译 core 与所有适配器所用的 Fabric Loader；适配器可在 adapters.toml 里
 # 用可选的 `loader` 字段单独覆盖（目前 12 个版本都用这一个）。
-fabric-loader = "0.19.3"
+fabric-loader = "0.19.4"
 # 混淆路径（1.20 – 1.21.11）：由 Loom 走 modRuntimeOnly 重映射。
 mixinextras = "0.3.5"
 # 非混淆路径（26.1+）：无重映射，且需要显式带上 sponge-mixin
