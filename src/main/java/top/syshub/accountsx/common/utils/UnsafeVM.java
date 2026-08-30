@@ -67,7 +67,7 @@ public final class UnsafeVM {
                     ClassWriter cw = new ClassWriter(0);
                     cw.visit(
                             Opcodes.V17, Opcodes.ACC_PUBLIC,
-                            "top/syshub/accountsx/core/utils/UnsafeVM$" + Integer.toHexString(INDEX.getAndIncrement()),
+                            "top/syshub/accountsx/common/utils/UnsafeVM$" + Integer.toHexString(INDEX.getAndIncrement()),
                             null, "java/lang/Object", null
                     );
                     {
