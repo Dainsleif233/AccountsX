@@ -10,7 +10,7 @@ Accounts X 是一个**客户端 Fabric 模组**，用于 Minecraft 多账号切�
 - Java **25**（`sourceCompatibility` / `targetCompatibility`）
 - Gradle **9.7.0**（wrapper），Fabric Loom **1.17-SNAPSHOT**
 - Fabric Loader：**0.19.3**（各适配器固定版本；core 使用 `compileOnly`）
-- 版本号：`gradle.properties`（当前 `2.0.0-beta.1`）
+- 版本号：`gradle.properties`
 - 许可：GPL-3.0
 - 仓库：https://github.com/Dainsleif233/AccountsX
 
