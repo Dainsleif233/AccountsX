@@ -18,8 +18,10 @@ import java.io.IOException;
  * from a 64x64 (or higher, scaled) skin into a 64x64 avatar with a small
  * margin and nearest-neighbor scaling to preserve the pixel look.</p>
  *
- * <p>This class references {@code java.awt} / {@code javax.imageio} and
- * therefore must remain outside core (enforced by {@code :checkArchitecture}).</p>
+ * <p>This class references {@code java.awt} / {@code javax.imageio}; since the
+ * avatar module was moved back into core (reverting P1.4), those types are
+ * allowed in core's {@code image} package (recorded as a warning by
+ * {@code :checkArchitecture}, no longer a hard error).</p>
  */
 public final class AwtAvatarRenderer implements AvatarRenderer {
 

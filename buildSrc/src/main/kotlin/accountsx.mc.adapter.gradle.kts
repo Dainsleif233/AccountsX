@@ -64,10 +64,6 @@ dependencies {
 
     add("minecraft", "com.mojang:minecraft:${adapter.version}")
     add("implementation", project(":adapters:authlib:${adapter.authlib}"))
-
-    // P1.4：MC 适配器的 AccountListWidget 通过 AvatarCache 读取落盘头像，故需要
-    // core-image 的编译 classpath（AWT 渲染在 core-image 内，适配器只做纹理注册）。
-    add("implementation", project(":core-image"))
 }
 
 java.withSourcesJar()

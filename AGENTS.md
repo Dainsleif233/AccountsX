@@ -41,7 +41,7 @@ MC 26.1+ 是非混淆版本（无 ProGuard），Loom 没有 `remapJar` 任务，
 
 | 不变量                                                                                        | 为什么                                                                                                                                                                                                 | 违反后的症状                                                        | 强制机制                                                                  |
 |-----------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|---------------------------------------------------------------------------|
-| core 不得 import `net/minecraft/*`、`com/mojang/authlib/*`、`java/awt/*` 或 `javax/imageio/*` | core 被 12 个不同 MC 版本共用编译；AWT 渲染已迁到独立 `:core-image` 模块（P1.4 / 决策 D4），core 自身不得引用                                                                                          | 编译失败（`checkArchitecture` 拒绝）或运行时 ClassNotFoundException | `:checkArchitecture`（P0.5，P1.4 起 `java.awt`/`javax.imageio` 硬性禁止） |
+| core 不得 import `net/minecraft/*` 或 `com/mojang/authlib/*`；`java/awt/*`、`javax/imageio/*` 仅允许位于 `image` 包（头像渲染，warn-only） | core 被 12 个不同 MC 版本共用编译；AWT 头像渲染已迁回 core 的 `image` 包（曾迁出到独立 `:core-image` 模块，P1.4 / 决策 D4），core 自身除 `image` 包外不得引用 | 编译失败（`checkArchitecture` 拒绝 net/minecraft / com/mojang/authlib） | `:checkArchitecture`（P0.5：net/minecraft、com/mojang/authlib 硬性禁止；java.awt/javax.imageio 仅 warn） |
 | `MinecraftAdapterImpl` 类名是数据契约                                                         | 写在各适配器 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里                                                                                                                                      | 12 个适配器中找不到实现，模组崩溃                                   | 人工校验 + fabric.mod.json 校验                                           |
 | `~/.accountsx/` 下的文件含明文 token                                                          | 所有日志、报错、提交都不得包含其内容                                                                                                                                                                   | token 泄露                                                          | 人工 review                                                               |
 | `depends.minecraft` 使用 `>=` 无上界                                                          | Loader 在候选中取版本号最大者；适配器版本为 `${minecraft}-${version}`，MC 版本是最左的版本核心段（数字逐位比较，短者补 0），而 CI 注入的 `+build.N` 落在被忽略的 build 段，不会破坏排序                | 版本排序被破坏时选错适配器 → mixin 目标不存在 → 崩溃                | `:validateAdapterMatrix`（P0.5）                                          |
@@ -55,31 +55,32 @@ MC 26.1+ 是非混淆版本（无 ProGuard），Loom 没有 `remapJar` 任务，
 
 ```
 AccountsX（根项目 / core）
-├── src/main/java/top/syshub/accountsx/core/
-│   ├── AccountsX.java              # ClientModInitializer，入口
-│   ├── accounts/                    # 账号模型 + 提供者
-│   │   ├── AccountProvider.java     # 接口：configure / validate / login / refresh
-│   │   ├── AccountUUID.java
-│   │   ├── BaseAccount.java         # 基类，含嵌套 AccountStorage
-│   │   ├── impl/env/                # 环境账号（启动器会话）
-│   │   ├── impl/injector/           # Authlib-Injector + United-Injector
-│   │   ├── impl/microsoft/          # Microsoft device-code OAuth
-│   │   ├── impl/offline/            # 离线账号
-│   │   └── model/                   # AccountType 枚举、AccountState、Auth* 上下文
-│   ├── adapters/
-│   │   ├── api/                     # MinecraftPlatform / AuthlibBridge / AccountSession 接口
-│   │   ├── Adapters.java            # @Deprecated 转发壳（兼容旧适配器）
-│   │   └── Platforms.java           # 反射加载适配器实现（memoize）
-│   ├── manager/
-│   │   ├── AccountManager.java      # 账号列表管理 + 刷新调度
-│   │   ├── AccountWorker.java       # @Deprecated 转发到 TaskScheduler（兼容旧适配器）；register/unregister 已删除
-│   │   └── config/
-│   │       ├── ConfigHandle.java    # 配置读写（实例配置 + ~/.accountsx/ 载荷）
-│   │       └── ConfigVersion.java   # 迁移链（当前 v0 → v3）
-│   ├── ui/                          # 版本无关的 UIScreen / Memory / Translator
-│   ├── net/                         # HttpGateway 接口 + JdkHttpGateway（可注入网络层，P1.3）
-│   └── utils/                       # Threading / NetworkUtils / UnsafeVM / AvatarService（头像获取+落盘编排，无 AWT）
-├── core-image/                      # 独立库模块（P1.4 / 决策 D4）：AvatarRenderer(AWT) + AvatarCache(落盘)；默认头像 PNG 不再打包在本模块，改从 core 的 assets/accountsx/textures/gui/alex_avatar.png 读取
+├── src/main/java/top/syshub/accountsx/
+│   ├── core/
+│   │   ├── AccountsX.java              # ClientModInitializer，入口
+│   │   ├── accounts/                    # 账号模型 + 提供者
+│   │   │   ├── AccountProvider.java     # 接口：configure / validate / login / refresh
+│   │   │   ├── AccountUUID.java
+│   │   │   ├── BaseAccount.java         # 基类，含嵌套 AccountStorage
+│   │   │   ├── impl/env/                # 环境账号（启动器会话）
+│   │   │   ├── impl/injector/           # Authlib-Injector + United-Injector
+│   │   │   ├── impl/microsoft/          # Microsoft device-code OAuth
+│   │   │   ├── impl/offline/            # 离线账号
+│   │   │   └── model/                   # AccountType 枚举、AccountState、Auth* 上下文
+│   │   ├── adapters/
+│   │   │   ├── api/                     # MinecraftPlatform / AuthlibBridge / AccountSession 接口
+│   │   │   ├── Adapters.java            # @Deprecated 转发壳（兼容旧适配器）
+│   │   │   └── Platforms.java           # 反射加载适配器实现（memoize）
+│   │   ├── manager/
+│   │   │   ├── AccountManager.java      # 账号列表管理 + 刷新调度
+│   │   │   ├── AccountWorker.java       # @Deprecated 转发到 TaskScheduler（兼容旧适配器）；register/unregister 已删除
+│   │   │   └── config/
+│   │   │       ├── ConfigHandle.java    # 配置读写（实例配置 + ~/.accountsx/ 载荷）
+│   │   │       └── ConfigVersion.java   # 迁移链（当前 v0 → v3）
+│   │   ├── ui/                          # 版本无关的 UIScreen / Memory / Translator
+│   │   ├── net/                         # HttpGateway 接口 + JdkHttpGateway（可注入网络层，P1.3）
+│   │   └── utils/                       # Threading / NetworkUtils / UnsafeVM / AvatarService（头像获取+落盘编排，无 AWT）
+│   └── image/                           # 头像渲染+落盘（AvatarRenderer / AwtAvatarRenderer / AvatarCache；AWT 在 core 内允许，仅 warn）
 ├── adapters/
 │   ├── authlib/<ver>/               # authlib API 桥接（5 个版本）
 │   ├── mc/<mc-ver>/                 # MC 客户端 API + UI + Mixins（12 个版本）

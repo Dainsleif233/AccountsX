@@ -17,10 +17,10 @@ import static top.syshub.accountsx.core.AccountsX.LOGGER;
  * 头像获取与落盘编排（P1.4 / 决策 D4）。
  *
  * <p>把原 {@code AvatarUtils} 的「取 profile → 下载皮肤 → AWT 裁剪 → base64 存配置」
- * 流程改造为「取 profile → 下载皮肤字节 → 交给 {@code core-image} 裁剪 → 按内容哈希
+ * 流程改造为「取 profile → 下载皮肤字节 → 交给 {@code image} 包裁剪 → 按内容哈希
  * 落盘 {@code ~/.cache/accountsx/avatars/<hash>.png} → 返回哈希 key」。网络走可注入的
- * {@link HttpGateway}（P1.3），AWT 渲染与磁盘缓存在 {@code core-image} 模块完成，core
- * 自身不再 import {@code java.awt} / {@code javax.imageio}。</p>
+ * {@link HttpGateway}（P1.3），AWT 渲染与磁盘缓存在 core 的 {@code image} 包完成
+ * （P1.4 曾迁出到独立 {@code core-image} 模块，后迁回 core）。</p>
  *
  * <p>本方法是「可重建缓存」的最佳努力路径：任何失败都 {@code LOGGER.error} 吞掉并返回
  * {@code null}，不影响登录 / 刷新主流程（原 {@code AvatarUtils.getAvatar} 行为一致）。</p>

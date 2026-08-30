@@ -50,10 +50,6 @@ dependencies {
     compileOnly(libs.guava)
     compileOnly(libs.slf4j.api)
     compileOnly(libs.asm)
-    // P1.4：头像渲染 / 缓存逻辑迁到独立 core-image 模块（AWT 留在那里，core 不得 import）。
-    implementation(project(":core-image"))
-    // 测试直接引用 core-image 的 AvatarCache（AWT-free，可在 headless 测试 JVM 跑）。
-    testImplementation(project(":core-image"))
     // 测试依赖（P0.4）
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
@@ -110,7 +106,6 @@ val rootDirPath = rootDir
 // 输入/输出路径，供任务注册块捕获。配置缓存禁止任务 action 引用脚本对象，
 // 也弃用 Task.project，因此所有 project 派生值都在此解析后作为可序列化值传入任务属性。
 val universalCoreJar = layout.buildDirectory.file("libs/${rootName}-core-${rootVersion}.jar")
-val universalCoreImageJar = project(":core-image").layout.buildDirectory.file("libs/core-image-${rootVersion}.jar")
 val universalOutput = layout.buildDirectory.file("libs/${rootName}-${rootVersion}.jar")
 val universalAdapterPaths: List<String> = adapters.map { a ->
     val p = project(":${a.project}")
@@ -123,7 +118,7 @@ val rootProjectDir = layout.projectDirectory
 val artifactsDirProp = providers.gradleProperty("artifactsDir")
 
 /**
- * Nests core + all adapter jars (+ core-image library) into the universal fat jar.
+ * Nests core + all adapter jars into the universal fat jar.
  *
  * Implemented as a proper task type (rather than a `doLast { }` closure that
  * captured script-scope references) so its action is configuration-cache
@@ -134,14 +129,11 @@ val artifactsDirProp = providers.gradleProperty("artifactsDir")
 abstract class PackageUniversalJar : DefaultTask() {
 
     // @InputFiles (not @InputFile) so the jars are resolved lazily at execution
-    // time — they are produced by dependency tasks (`:jar`, `:core-image:jar`)
+    // time — they are produced by dependency tasks (`:jar`)
     // and do not exist yet at configuration time. Existence is asserted in the
     // action via `require`, matching the previous behavior.
     @get:InputFiles
     val coreJar: ConfigurableFileCollection = project.objects.fileCollection()
-
-    @get:InputFiles
-    val coreImageJar: ConfigurableFileCollection = project.objects.fileCollection()
 
     // adapter prefixes and their absolute jar paths, kept in matching order so
     // each nested entry can be named `adapter-<prefix>-<filename>`. (Keying by
@@ -185,11 +177,6 @@ abstract class PackageUniversalJar : DefaultTask() {
             }
         }
 
-        val coreImageFile = coreImageJar.singleFile
-        require(coreImageFile.isFile) {
-            "Core-image jar missing: ${coreImageFile.absolutePath}. Run :core-image:jar first."
-        }
-
         val tmp = File(out.parentFile, "universal-${System.nanoTime()}.jar")
         coreJarFile.copyTo(tmp)
 
@@ -223,14 +210,7 @@ abstract class PackageUniversalJar : DefaultTask() {
                     }
                 }
 
-                // core-image 库（P1.4）：嵌套为独立库 jar，无 accountsx:adapter.* 类，
-                // verifyUniversalJar 的类检查会跳过它。
-                val coreImageName = coreImageFile.name
-                coreImageFile.toPath().copyTo(fs.getPath("/META-INF/jars/$coreImageName"))
-                JsonObject().also {
-                    it.addProperty("file", "META-INF/jars/$coreImageName")
-                    jars.add(it)
-                }
+
 
                 fs.getPath("/fabric.mod.json").bufferedWriter().use {
                     GsonBuilder().setPrettyPrinting().create().toJson(e, it)
@@ -254,8 +234,8 @@ abstract class PackageUniversalJar : DefaultTask() {
  * Forbidden references:
  * - `net/minecraft/` — Minecraft client code (must come from adapters at runtime)
  * - `com/mojang/authlib/` — authlib internals (bridged by authlib adapters)
- * - `java/awt/` — AWT（P1.4 起硬性禁止：头像渲染已迁出到独立 core-image 模块）
- * - `javax/imageio/` — ImageIO（同 java/awt，P1.4 起硬性禁止）
+ * - `java/awt/` — AWT（warn-only：头像渲染已迁回 core 的 image 包，允许位于 core）
+ * - `javax/imageio/` — ImageIO（同 java/awt，warn-only，允许位于 core）
  * - `net/fabricmc/` — Fabric internals (whitelisted: `net/fabricmc/loader/api/` for mod entrypoint)
  *
  * Depends on `compileJava` so classes exist when this runs.
@@ -275,7 +255,10 @@ abstract class CheckArchitecture : DefaultTask() {
         val forbidden = listOf(
             "net/minecraft/",
             "com/mojang/authlib/",
-            "net/fabricmc/",
+            "net/fabricmc/"
+        )
+
+        val warnOnly = listOf(
             "java/awt/",
             "javax/imageio/"
         )
@@ -310,6 +293,8 @@ abstract class CheckArchitecture : DefaultTask() {
                         val str = String(bytes, offset, len, Charsets.UTF_8)
                         if (whitelist.any { str.startsWith(it) }) {
                             // whitelisted — skip
+                        } else if (warnOnly.any { str.startsWith(it) }) {
+                            hits.add("WARN:$str")
                         } else if (forbidden.any { str.startsWith(it) }) {
                             hits.add(str)
                         }
@@ -348,9 +333,8 @@ abstract class CheckArchitecture : DefaultTask() {
 
         logger.lifecycle("checkArchitecture: scanned $scanned class files")
         warnings.forEach { logger.warn("  WARN: $it") }
-        require(warnings.isEmpty()) {
-            "checkArchitecture: ${warnings.size} warn-only reference(s) present (unexpected):\n" +
-                warnings.joinToString("\n") { "  $it" }
+        if (warnings.isNotEmpty()) {
+            logger.warn("  (${warnings.size} warnings — AWT/ImageIO 允许位于 core 的 image 包，仅记录)")
         }
 
         require(violations.isEmpty()) {
@@ -500,11 +484,9 @@ abstract class VerifyUniversalJar : DefaultTask() {
             // 3. Check jars array
             val jarsArray = rootMod.getAsJsonArray("jars")
             require(jarsArray != null) { "Root fabric.mod.json missing 'jars' array" }
-            // +1 来自 P1.4 的 core-image 库 jar（承载 AWT 头像渲染），它通过 shared
-            // classpath 供 core 与所有适配器使用，但不是适配器（无 accountsx:adapter.* 类）。
-            require(jarsArray.size() == expectedAdapterCount + 1) {
+            require(jarsArray.size() == expectedAdapterCount) {
                 "Nested jar count mismatch: fabric.mod.json declares ${jarsArray.size()}, " +
-                    "but adapter matrix defines $expectedAdapterCount adapters + 1 core-image library"
+                    "but adapter matrix defines $expectedAdapterCount"
             }
 
             // 4. Verify each nested jar exists and has valid class references
@@ -538,13 +520,6 @@ abstract class VerifyUniversalJar : DefaultTask() {
                         }
 
                         // Check custom adapter class reference
-                        // The core-image library is not an adapter and carries no `custom`
-                        // block (it is the +1 library, not one of the adapters); skip it.
-                        if (filePath.contains("core-image-")) {
-                            logger.lifecycle("  ✓ $filePath (library, skipped)")
-                            continue
-                        }
-
                         val custom = nestedMod.getAsJsonObject("custom")
                         require(custom != null) {
                             "Nested jar '$filePath' missing 'custom' in fabric.mod.json"
@@ -667,7 +642,7 @@ abstract class RestoreAdapterArtifacts : DefaultTask() {
 }
 
 // universal / packageUniversal 的注册见下方，输入/输出路径由脚本作用域的
-// universalCoreJar / universalCoreImageJar / universalOutput / universalAdapterMap 提供。
+// universalCoreJar / universalOutput / universalAdapterMap 提供。
 
 /**
  * Build every adapter, then nest them into the universal fat jar.
@@ -679,10 +654,8 @@ val universal = tasks.register<PackageUniversalJar>("universal") {
 
     adapters.forEach { adapter -> dependsOn(":${adapter.project}:${adapter.builder}") }
     dependsOn(tasks.named("jar"))
-    dependsOn(":core-image:jar")
 
     coreJar.from(universalCoreJar)
-    coreImageJar.from(universalCoreImageJar)
     adapterPrefixes.set(universalAdapterPrefixes)
     adapterPaths.set(universalAdapterPaths)
     adapterJars.from(universalAdapterPaths)
@@ -702,10 +675,8 @@ val packageUniversal = tasks.register<PackageUniversalJar>("packageUniversal") {
     description = "Package core + nested adapter jars into a universal fat jar (no adapter rebuild)"
 
     dependsOn(tasks.named("jar"))
-    dependsOn(":core-image:jar")
 
     coreJar.from(universalCoreJar)
-    coreImageJar.from(universalCoreImageJar)
     adapterPrefixes.set(universalAdapterPrefixes)
     adapterPaths.set(universalAdapterPaths)
     adapterJars.from(universalAdapterPaths)
