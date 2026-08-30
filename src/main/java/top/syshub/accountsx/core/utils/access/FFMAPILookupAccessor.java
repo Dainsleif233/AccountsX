@@ -16,7 +16,7 @@ public final class FFMAPILookupAccessor {
 
     public static MethodHandles.Lookup get() throws Throwable {
         // UnsafeLookupAccessor may stop working when JEP 471 memory-access methods
-        // are removed. A FFM-based workaround exists but requires Java 22+ sources
+        // are removed. AN FFM-based workaround exists but requires Java 22+ sources
         // (or a multi-release jar), which this module does not target yet.
         throw new IllegalStateException(
                 "FFMAPI lookup accessor is not implemented for Java 17-targeted builds. " +

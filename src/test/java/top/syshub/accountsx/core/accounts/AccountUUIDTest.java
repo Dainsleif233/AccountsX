@@ -63,7 +63,7 @@ class AccountUUIDTest {
 
     /**
      * 36 字符但 '-' 不在 8/13/18/23 位置（dash 位置错误），走 36 分支的 else 抛异常。
-     * 输入是合法 UUID 把第一个 '-' 从位置 8 移到 9，长度仍为 36。
+     * 输入是合法的 UUID 把第一个 '-' 从位置 8 移到 9，长度仍为 36。
      */
     @Test
     void parse_illegalDashes_throws() {

@@ -50,7 +50,16 @@ class TaskSchedulerTest {
         CountDownLatch release = new CountDownLatch(1);
         CompletableFuture<Void> future = TaskScheduler.submit(() -> {
             started.countDown();
-            release.await(2, TimeUnit.SECONDS);
+            // 阻塞直到 release.countDown()（L68 主动释放）；2s 超时仅作兜底，正常路径不会触发。
+            // 循环等待可抵御虚假唤醒，并将 await 的布尔返回值纳入处理而非丢弃。
+            boolean released = false;
+            try {
+                while (!released) {
+                    released = release.await(2, TimeUnit.SECONDS);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         });
 
         assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();

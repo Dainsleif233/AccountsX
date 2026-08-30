@@ -28,21 +28,23 @@ public final class ConfigHandle {
 
     private static final String CONFIG_LOCATION = "accountsx/accounts.json";
 
-    private static final class Config {
-        public static final int CURRENT_VERSION = ConfigVersion.VALUES[ConfigVersion.VALUES.length - 1].getVersion();
+    /**
+     * 实例配置的序列化载体：仅含 version 与 id，由 Gson 通过 record 访问器反射读写。
+     * 账号载荷本身另存于 {@code ~/.accountsx/<id>.json}，不在此处。
+     */
+    private record Config(int version, String id) {
+        static final int CURRENT_VERSION = ConfigVersion.VALUES[ConfigVersion.VALUES.length - 1].getVersion();
+    }
 
-        private final int version;
-
-        private final String id;
-
-        private Config(List<BaseAccount> accounts) {
-            this.version = CURRENT_VERSION;
-            if (ConfigHandle.id == null)
-                ConfigHandle.id = UUID.randomUUID().toString();
-
-            id = ConfigHandle.id;
-            writeAccounts(id, NetworkUtils.GSON.toJson(accounts));
-        }
+    /**
+     * 写入一份默认实例配置（version + id）并落盘空的账号载荷。
+     * 配置文件缺失或被非法占用（非普通文件）时调用，副作用与 {@link #write()} 保持一致。
+     */
+    private static void createDefaultConfig(Path configFile) throws IOException {
+        if (id == null)
+            id = UUID.randomUUID().toString();
+        writeAccounts(id, NetworkUtils.GSON.toJson(List.of()));
+        Files.writeString(configFile, NetworkUtils.GSON.toJson(new Config(Config.CURRENT_VERSION, id)));
     }
 
     public static List<? extends BaseAccount> load() {
@@ -51,13 +53,13 @@ public final class ConfigHandle {
         try {
             if (!Files.exists(configFile)) {
                 Files.createDirectories(configFile.getParent());
-                Files.writeString(configFile, NetworkUtils.GSON.toJson(new Config(List.of())));
+                createDefaultConfig(configFile);
                 return List.of();
             }
 
             if (!Files.isRegularFile(configFile)) {
                 Files.delete(configFile);
-                Files.writeString(configFile, NetworkUtils.GSON.toJson(new Config(List.of())));
+                createDefaultConfig(configFile);
                 return List.of();
             }
 
@@ -104,8 +106,12 @@ public final class ConfigHandle {
             }
         }
 
+        if (id == null)
+            id = UUID.randomUUID().toString();
+        writeAccounts(id, NetworkUtils.GSON.toJson(accounts));
+
         try (Writer writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
-            NetworkUtils.GSON.toJson(new Config(accounts), writer);
+            NetworkUtils.GSON.toJson(new Config(Config.CURRENT_VERSION, id), writer);
         }
     }
 

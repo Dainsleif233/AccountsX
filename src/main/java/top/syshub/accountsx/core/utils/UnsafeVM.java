@@ -23,7 +23,6 @@ public final class UnsafeVM {
 
     private static final MethodHandles.Lookup GENERAL_LOOKUP = MethodHandles.lookup();
 
-    @SuppressWarnings("deprecation")
     private static final Supplier<MethodHandles.Lookup> IMPL_LOOKUP = Suppliers.memoize(() -> {
         CustomValue.CvArray impls = FabricLoader.getInstance().getModContainer(AccountsX.MOD_ID).orElseThrow(
                 () -> new IllegalStateException("I should be loaded.")

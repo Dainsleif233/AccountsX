@@ -13,7 +13,7 @@ public final class UnsafeLookupAccessor {
      * Obtain {@code MethodHandles.Lookup.IMPL_LOOKUP} via {@code sun.misc.Unsafe}.
      * Memory-access methods used here are deprecated for removal (JEP 471).
      */
-    @SuppressWarnings({"deprecation", "removal"})
+    @SuppressWarnings({"removal"})
     public static MethodHandles.Lookup get() throws Throwable {
         Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
         theUnsafe.setAccessible(true);

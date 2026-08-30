@@ -28,7 +28,7 @@ public final class AvatarCache {
     private AvatarCache() {
     }
 
-    /** Resolves the cache root directory, honouring the override property. */
+    /** Resolves the cache root directory, honoring the override property. */
     public static Path root() {
         String override = System.getProperty(DEFAULT_ROOT_PROPERTY);
         if (override != null && !override.isEmpty()) {

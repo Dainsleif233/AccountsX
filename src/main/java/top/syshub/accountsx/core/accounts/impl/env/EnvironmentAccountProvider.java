@@ -6,9 +6,12 @@ import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
 
+import java.util.Objects;
+
 public final class EnvironmentAccountProvider implements AccountProvider<EnvironmentAccount> {
     // 环境账号不发起网络请求；构造器接收网关仅为统一所有 provider 的构造形态（P1.3）。
     public EnvironmentAccountProvider(HttpGateway http) {
+        Objects.requireNonNull(http, "http gateway");
     }
     @Override
     public AccountContext createAccountContext(EnvironmentAccount account) {

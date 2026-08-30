@@ -5,8 +5,9 @@ import top.syshub.accountsx.core.net.HttpGateway;
 /**
  * @deprecated Use {@link Platforms} instead. This class is retained only for
  * {@link #getHttpGateway()} which is used by tests. The adapter-forwarding methods
- * ({@link #getMinecraftAdapter()}, {@link #getAuthlibAdpater()}) have been removed
- * as no core code references them after P1.5.
+ * have been removed as no core code references them after P1.5; obtain the
+ * platform/authlib bridges via {@link Platforms#getMinecraftPlatform()} and
+ * {@link Platforms#authlibBridge()} instead.
  */
 @Deprecated(forRemoval = true)
 public final class Adapters {

@@ -16,7 +16,7 @@ import java.io.IOException;
  * <p>Moved verbatim from the old core {@code AvatarUtils.drawAvatar} (P1.4):
  * crops the 8x8 face region {@code (8,8)} and the 8x8 hat layer {@code (40,8)}
  * from a 64x64 (or higher, scaled) skin into a 64x64 avatar with a small
- * margin and nearest-neighbour scaling to preserve the pixel look.</p>
+ * margin and nearest-neighbor scaling to preserve the pixel look.</p>
  *
  * <p>This class references {@code java.awt} / {@code javax.imageio} and
  * therefore must remain outside core (enforced by {@code :checkArchitecture}).</p>

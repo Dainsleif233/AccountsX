@@ -3,6 +3,7 @@ package top.syshub.accountsx.core.utils;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -16,7 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * 作为 P1–P3 重构的安全网。
  *
  * <p>通过构造 {@code HttpResponse<byte[]>} 的匿名实现来隔离网络层，
- * 只测试 charset 提取逻辑。</p>
+ * 只测试 charset 提取逻辑。所有 Reader 均经 {@link #readAll} 统一以
+ * try-with-resources 关闭，消除「Reader 未关闭」的资源泄漏告警。</p>
  */
 class NetworkUtilsReadResponseTest {
 
@@ -28,9 +30,7 @@ class NetworkUtilsReadResponseTest {
     @Test
     void readResponse_utf8ByDefault() throws IOException {
         var response = fakeResponse(200, new byte[]{0x48, 0x69}, Map.of());
-        var reader = NetworkUtils.readResponse(response, false);
-        assertThat(reader.read()).isEqualTo('H');
-        assertThat(reader.read()).isEqualTo('i');
+        assertThat(readAll(response, false)).isEqualTo("Hi");
     }
 
     /**
@@ -40,8 +40,7 @@ class NetworkUtilsReadResponseTest {
     void readResponse_charsetFromContentType() throws IOException {
         var response = fakeResponse(200, "Hello".getBytes(StandardCharsets.UTF_8),
                 Map.of("Content-Type", List.of("application/json; charset=UTF-8")));
-        var reader = NetworkUtils.readResponse(response, false);
-        assertThat(reader.read()).isEqualTo('H');
+        assertThat(readAll(response, false)).isEqualTo("Hello");
     }
 
     /**
@@ -53,12 +52,8 @@ class NetworkUtilsReadResponseTest {
         byte[] gbkBytes = "你好".getBytes(Charset.forName("GBK"));
         var response = fakeResponse(200, gbkBytes,
                 Map.of("Content-Type", List.of("text/html; charset=GBK")));
-        var reader = NetworkUtils.readResponse(response, false);
-        char[] buf = new char[2];
-        int n = reader.read(buf);
         // readResponse 用 GBK charset 解码，结果应为 "你好"（两个字符）
-        assertThat(n).isEqualTo(2);
-        assertThat(new String(buf)).isEqualTo("你好");
+        assertThat(readAll(response, false)).isEqualTo("你好");
     }
 
     /**
@@ -68,8 +63,7 @@ class NetworkUtilsReadResponseTest {
     void readResponse_charsetQuoted() throws IOException {
         var response = fakeResponse(200, "OK".getBytes(StandardCharsets.UTF_8),
                 Map.of("Content-Type", List.of("application/json; charset=\"UTF-8\"")));
-        var reader = NetworkUtils.readResponse(response, false);
-        assertThat(reader.read()).isEqualTo('O');
+        assertThat(readAll(response, false)).isEqualTo("OK");
     }
 
     /**
@@ -79,8 +73,7 @@ class NetworkUtilsReadResponseTest {
     void readResponse_charsetWithTrailingSemicolon() throws IOException {
         var response = fakeResponse(200, "X".getBytes(StandardCharsets.UTF_8),
                 Map.of("Content-Type", List.of("multipart/form-data; charset=UTF-8; boundary=abc")));
-        var reader = NetworkUtils.readResponse(response, false);
-        assertThat(reader.read()).isEqualTo('X');
+        assertThat(readAll(response, false)).isEqualTo("X");
     }
 
     /**
@@ -90,8 +83,7 @@ class NetworkUtilsReadResponseTest {
     void readResponse_invalidCharset_fallbackToUtf8() throws IOException {
         var response = fakeResponse(200, "Test".getBytes(StandardCharsets.UTF_8),
                 Map.of("Content-Type", List.of("text/plain; charset=NOT_A_REAL_CHARSET")));
-        var reader = NetworkUtils.readResponse(response, false);
-        assertThat(reader.read()).isEqualTo('T');
+        assertThat(readAll(response, false)).isEqualTo("Test");
     }
 
     // ── HTTP 状态码 ───────────────────────────────────────────────────
@@ -102,7 +94,8 @@ class NetworkUtilsReadResponseTest {
     @Test
     void readResponse_httpError_throws() {
         var response = fakeResponse(404, new byte[0], Map.of());
-        assertThatThrownBy(() -> NetworkUtils.readResponse(response, false))
+        // readAll 内部以 try-with-resources 关闭 Reader；404 在构造 Reader 前抛 IOException，语义不变
+        assertThatThrownBy(() -> readAll(response, false))
                 .isInstanceOf(IOException.class)
                 .hasMessage("HTTP 404");
     }
@@ -113,8 +106,7 @@ class NetworkUtilsReadResponseTest {
     @Test
     void readResponse_ignoreHttpStatus_noThrow() throws IOException {
         var response = fakeResponse(500, "error".getBytes(StandardCharsets.UTF_8), Map.of());
-        var reader = NetworkUtils.readResponse(response, true);
-        assertThat(reader.read()).isEqualTo('e');
+        assertThat(readAll(response, true)).isEqualTo("error");
     }
 
     /**
@@ -123,12 +115,27 @@ class NetworkUtilsReadResponseTest {
     @Test
     void readResponse_2xx_ok() throws IOException {
         var response = fakeResponse(200, "OK".getBytes(StandardCharsets.UTF_8), Map.of());
-        var reader = NetworkUtils.readResponse(response, false);
-        assertThat(reader.read()).isEqualTo('O');
-        assertThat(reader.read()).isEqualTo('K');
+        assertThat(readAll(response, false)).isEqualTo("OK");
     }
 
     // ── 辅助方法 ──────────────────────────────────────────────────────
+
+    /**
+     * 以 try-with-resources 打开 {@link NetworkUtils#readResponse} 返回的 Reader，
+     * 读完整个响应体后自动关闭，统一消除「Reader 未关闭」的资源泄漏告警。
+     * 返回解码后的完整字符串供断言使用。
+     */
+    private static String readAll(java.net.http.HttpResponse<byte[]> response, boolean ignoreHttpStatus)
+            throws IOException {
+        try (Reader reader = NetworkUtils.readResponse(response, ignoreHttpStatus)) {
+            StringBuilder sb = new StringBuilder();
+            int ch;
+            while ((ch = reader.read()) != -1) {
+                sb.append((char) ch);
+            }
+            return sb.toString();
+        }
+    }
 
     /**
      * 构造一个最小化的 HttpResponse 实现，只提供 statusCode、headers 和 body。

@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import top.syshub.accountsx.core.accounts.model.context.AuthSecurityContext;
 import top.syshub.accountsx.core.net.HttpGateway;
 
-import java.io.IOException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;

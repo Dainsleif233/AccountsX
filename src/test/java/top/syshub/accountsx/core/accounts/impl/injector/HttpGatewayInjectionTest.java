@@ -3,7 +3,6 @@ package top.syshub.accountsx.core.accounts.impl.injector;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
-import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.accounts.impl.injector.impl.UnitedInjectorAccountProvider;
 import top.syshub.accountsx.core.accounts.impl.injector.impl.UnitedInjectorAccountProvider.UnitedInjectorAccount;
 import top.syshub.accountsx.core.adapters.Platforms;
@@ -11,7 +10,6 @@ import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.net.JdkHttpGateway;
 import top.syshub.accountsx.core.task.TaskScheduler;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

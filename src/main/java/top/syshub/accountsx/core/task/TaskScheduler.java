@@ -1,5 +1,6 @@
 package top.syshub.accountsx.core.task;
 
+import org.jspecify.annotations.NonNull;
 import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.accounts.model.PlayerNoLongerExistedException;
 import top.syshub.accountsx.core.adapters.Platforms;
@@ -79,7 +80,7 @@ public final class TaskScheduler {
         private final AtomicInteger counter = new AtomicInteger();
 
         @Override
-        public Thread newThread(Runnable r) {
+        public Thread newThread(@NonNull Runnable r) {
             Thread t = new Thread(null, r, "AccountsX Parallel Refresh " + counter.incrementAndGet());
             t.setDaemon(true);
             return t;
@@ -141,7 +142,7 @@ public final class TaskScheduler {
     }
 
     /**
-     * 批量并行执行相互独立的任务，全部完成后整体 future 才完成。任一任务失败会让整体 future 异常完成，
+     * 批量并行执行相互独立的任务，全部完成后整体 future 才完成。任一个任务失败会让整体 future 异常完成，
      * 但每个失败任务已各自 toast（见 {@link #executeWrapped}）。
      */
     public static CompletableFuture<Void> runParallel(Collection<? extends Task> tasks) {

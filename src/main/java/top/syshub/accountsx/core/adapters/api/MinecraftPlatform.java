@@ -1,6 +1,5 @@
 package top.syshub.accountsx.core.adapters.api;
 
-import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.impl.env.EnvironmentAccount;
 
 import java.net.Proxy;

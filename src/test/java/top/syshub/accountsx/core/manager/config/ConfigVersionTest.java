@@ -136,7 +136,7 @@ class ConfigVersionTest {
 
         // accounts 被移除
         assertThat(config.has("accounts")).isFalse();
-        // id 被添加且是合法 UUID
+        // id 被添加且是合法的 UUID
         String id = config.get("id").getAsString();
         assertThat(UUID.fromString(id)).isNotNull();
     }

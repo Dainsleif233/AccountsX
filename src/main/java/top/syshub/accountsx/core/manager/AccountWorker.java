@@ -31,7 +31,7 @@ public final class AccountWorker {
      */
     @Deprecated(since = "2.0.0", forRemoval = true)
     public static CompletableFuture<Void> submit(Task task) {
-        return TaskScheduler.submit(() -> task.run());
+        return TaskScheduler.submit(task::run);
     }
 
     /**

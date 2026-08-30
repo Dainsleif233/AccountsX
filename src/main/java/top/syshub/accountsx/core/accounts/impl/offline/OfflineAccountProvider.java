@@ -8,6 +8,7 @@ import top.syshub.accountsx.core.net.HttpGateway;
 import top.syshub.accountsx.core.ui.Memory;
 import top.syshub.accountsx.core.ui.UIScreen;
 
+import java.util.Objects;
 import java.util.UUID;
 
 public class OfflineAccountProvider implements AccountProvider<OfflineAccount> {
@@ -15,7 +16,9 @@ public class OfflineAccountProvider implements AccountProvider<OfflineAccount> {
     private static final String GUID_PLAYER_UUID = "guid:as.login.offline.widgets.player_uuid";
 
     // 离线账号不发起网络请求；构造器接收网关仅为统一所有 provider 的构造形态（P1.3）。
+    // 即便不使用，也校验注入的网关非空，与依赖注入契约保持一致。
     public OfflineAccountProvider(HttpGateway http) {
+        Objects.requireNonNull(http, "http gateway");
     }
 
     @Override
