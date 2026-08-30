@@ -13,7 +13,9 @@ import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.impl.env.EnvironmentAccount;
 import top.syshub.accountsx.core.adapters.api.MinecraftPlatform;
 import java.net.Proxy;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
@@ -37,7 +39,12 @@ public class MinecraftAdapterImpl implements MinecraftPlatform<AccountSessionImp
         BaseAccount.AccountStorage storage = session.storage();
         YggdrasilAuthenticationService authenticationService = session.authenticationService();
 
-        User s = new User(storage.getPlayerName(), AccountUUID.toMinecraftStyleString(storage.getPlayerUUID()), storage.getAccessToken(), Optional.empty(), Optional.empty(), User.Type.MOJANG);
+        // switchAccount 只在已登录（AUTHORIZED）账号上调用，storage 三件套必然非空。
+        // 用 requireNonNull 显式声明该不变量，同时满足 User 构造器对 @NotNull 形参的要求。
+        String playerName = Objects.requireNonNull(storage.getPlayerName(), "playerName");
+        UUID playerUUID = Objects.requireNonNull(storage.getPlayerUUID(), "playerUUID");
+        String accessToken = Objects.requireNonNull(storage.getAccessToken(), "accessToken");
+        User s = new User(playerName, AccountUUID.toMinecraftStyleString(playerUUID), accessToken, Optional.empty(), Optional.empty(), User.Type.MOJANG);
 
         Minecraft client = Minecraft.getInstance();
         ((MinecraftClientAccessor) client).setSession(s);

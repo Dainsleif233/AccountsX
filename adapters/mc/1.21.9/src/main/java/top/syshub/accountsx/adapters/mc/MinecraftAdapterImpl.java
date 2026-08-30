@@ -12,7 +12,9 @@ import top.syshub.accountsx.core.accounts.BaseAccount;
 import top.syshub.accountsx.core.accounts.impl.env.EnvironmentAccount;
 import top.syshub.accountsx.core.adapters.api.MinecraftPlatform;
 import java.net.Proxy;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
@@ -42,7 +44,12 @@ public class MinecraftAdapterImpl implements MinecraftPlatform<AccountSessionImp
         ProfileResult profileResult = session.profileResult();
         YggdrasilAuthenticationService authenticationService = session.authenticationService();
 
-        User s = new User(storage.getPlayerName(), storage.getPlayerUUID(), storage.getAccessToken(), Optional.empty(), Optional.empty());
+        // switchAccount 只在已登录（AUTHORIZED）账号上调用，storage 三件套必然非空。
+        // 用 requireNonNull 显式声明该不变量，同时满足 User 构造器对 @NotNull 形参的要求。
+        String playerName = Objects.requireNonNull(storage.getPlayerName(), "playerName");
+        UUID playerUUID = Objects.requireNonNull(storage.getPlayerUUID(), "playerUUID");
+        String accessToken = Objects.requireNonNull(storage.getAccessToken(), "accessToken");
+        User s = new User(playerName, playerUUID, accessToken, Optional.empty(), Optional.empty());
 
         Minecraft client = Minecraft.getInstance();
         Services apiServices = Services.create(authenticationService, client.gameDirectory);

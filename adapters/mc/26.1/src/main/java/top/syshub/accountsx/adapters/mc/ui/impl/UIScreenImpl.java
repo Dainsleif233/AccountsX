@@ -1,5 +1,6 @@
 package top.syshub.accountsx.adapters.mc.ui.impl;
 
+import org.jspecify.annotations.NonNull;
 import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.BaseAccount;
@@ -86,15 +87,11 @@ public final class UIScreenImpl implements UIScreen {
 
         @Override
         public void onClose() {
-            assert this.minecraft != null;
-
             this.minecraft.setScreen(parent);
         }
 
         @Override
         protected void init() {
-            assert this.minecraft != null;
-
             super.init();
 
             int widgetsTop = this.height / 2 - (UIScreenImpl.this.inputs.size() + 1) * 25 / 2;
@@ -162,9 +159,7 @@ public final class UIScreenImpl implements UIScreen {
         }
 
         @Override
-        public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
-            assert this.minecraft != null;
-
+        public void extractRenderState(@NonNull GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
             super.extractRenderState(context, mouseX, mouseY, delta);
 
             int textTop = this.height / 2 - (UIScreenImpl.this.inputs.size() + 1) * 25 / 2 + 5;

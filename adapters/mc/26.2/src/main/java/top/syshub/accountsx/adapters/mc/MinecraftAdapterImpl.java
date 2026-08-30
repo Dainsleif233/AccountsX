@@ -1,6 +1,7 @@
 package top.syshub.accountsx.adapters.mc;
 
 import com.mojang.authlib.minecraft.UserApiService;
+import com.mojang.authlib.yggdrasil.FriendsService;
 import com.mojang.authlib.yggdrasil.ProfileResult;
 import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;
 import com.mojang.blaze3d.platform.ClipboardManager;
@@ -14,6 +15,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.social.PlayerSocialManager;
+import net.minecraft.client.gui.screens.social.RemoteFriendListUpdateHandler;
 import net.minecraft.client.multiplayer.ProfileKeyPairManager;
 import net.minecraft.client.multiplayer.chat.report.ReportEnvironment;
 import net.minecraft.client.multiplayer.chat.report.ReportingContext;
@@ -24,7 +26,9 @@ import net.minecraft.server.Services;
 import net.minecraft.util.Util;
 
 import java.net.Proxy;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class MinecraftAdapterImpl implements MinecraftPlatform<AccountSessionImpl> {
@@ -42,7 +46,12 @@ public class MinecraftAdapterImpl implements MinecraftPlatform<AccountSessionImp
         ProfileResult profileResult = session.profileResult();
         YggdrasilAuthenticationService authenticationService = session.authenticationService();
 
-        User s = new User(storage.getPlayerName(), storage.getPlayerUUID(), storage.getAccessToken(), Optional.empty(), Optional.empty());
+        // switchAccount 只在已登录（AUTHORIZED）账号上调用，storage 三件套必然非空。
+        // 用 requireNonNull 显式声明该不变量，同时满足 User 构造器对 @NotNull 形参的要求。
+        String playerName = Objects.requireNonNull(storage.getPlayerName(), "playerName");
+        UUID playerUUID = Objects.requireNonNull(storage.getPlayerUUID(), "playerUUID");
+        String accessToken = Objects.requireNonNull(storage.getAccessToken(), "accessToken");
+        User s = new User(playerName, playerUUID, accessToken, Optional.empty(), Optional.empty());
 
         Minecraft client = Minecraft.getInstance();
         Services apiServices = Services.create(authenticationService, client.gameDirectory);
@@ -51,7 +60,11 @@ public class MinecraftAdapterImpl implements MinecraftPlatform<AccountSessionImp
         ((MinecraftClientAccessor) client).setGameProfileFuture(CompletableFuture.completedFuture(profileResult));
         ((MinecraftClientAccessor) client).setUserAPIService(userAPIService);
         ((MinecraftClientAccessor) client).setUserPropertiesFuture(CompletableFuture.completedFuture(properties));
-        ((MinecraftClientAccessor) client).setSocialInteractionManager(new PlayerSocialManager(client, userAPIService, null, null));
+        // 26.2 起 PlayerSocialManager 构造器要求 FriendsService 与 RemoteFriendListUpdateHandler
+        // 两个 @NotNull 实参；按新账号重建，使好友 / 在线状态功能在切号后仍可用。
+        FriendsService friendsService = authenticationService.createFriendsService(accessToken);
+        RemoteFriendListUpdateHandler friendListUpdateHandler = new RemoteFriendListUpdateHandler(friendsService, client);
+        ((MinecraftClientAccessor) client).setSocialInteractionManager(new PlayerSocialManager(client, userAPIService, friendsService, friendListUpdateHandler));
         ((MinecraftClientAccessor) client).setTelemetryManager(new ClientTelemetryManager(client, userAPIService, s));
         ((MinecraftClientAccessor) client).setProfileKeys(ProfileKeyPairManager.create(userAPIService, s, client.gameDirectory.toPath()));
         ((MinecraftClientAccessor) client).setAbuseReportContext(ReportingContext.create(ReportEnvironment.local(), userAPIService));

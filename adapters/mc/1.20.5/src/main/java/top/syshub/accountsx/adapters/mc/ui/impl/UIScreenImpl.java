@@ -1,5 +1,6 @@
 package top.syshub.accountsx.adapters.mc.ui.impl;
 
+import org.jetbrains.annotations.NotNull;
 import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.accounts.AccountProvider;
 import top.syshub.accountsx.core.accounts.BaseAccount;
@@ -94,15 +95,20 @@ public final class UIScreenImpl implements UIScreen {
 
         @Override
         protected void init() {
-            assert this.minecraft != null;
-
             super.init();
+
+            // 将 minecraft 捕获到局部变量：保证 TaskScheduler 回调（在 worker 线程上执行）
+            // 时引用非空，也让静态分析能推断出 tell / screen 访问不会产生 NullPointerException。
+            final Minecraft minecraft = this.minecraft;
+            if (minecraft == null) {
+                return;
+            }
 
             int widgetsTop = this.height / 2 - (UIScreenImpl.this.inputs.size() + 1) * 25 / 2;
             int widgetsLeft = this.width / 2 - 50;
 
             for (ValuedWidget<EditBox> widget : UIScreenImpl.this.inputs.values()) {
-                EditBox tf = new EditBox(this.minecraft.font, widgetsLeft, widgetsTop, 200, 20, Component.empty());
+                EditBox tf = new EditBox(minecraft.font, widgetsLeft, widgetsTop, 200, 20, Component.empty());
                 tf.setMaxLength(128);
                 widget.widget = this.addField(tf);
 
@@ -134,8 +140,8 @@ public final class UIScreenImpl implements UIScreen {
                     try {
                         account = this.provider.login(memory);
                     } catch (Throwable t) {
-                        this.minecraft.tell(() -> {
-                            if (this.minecraft.screen == this) {
+                        minecraft.tell(() -> {
+                            if (minecraft.screen == this) {
                                 this.onClose();
                             }
                         });
@@ -143,8 +149,8 @@ public final class UIScreenImpl implements UIScreen {
                         throw t;
                     }
 
-                    this.minecraft.tell(() -> {
-                        if (this.minecraft.screen == this) {
+                    minecraft.tell(() -> {
+                        if (minecraft.screen == this) {
                             this.onClose();
                         }
 
@@ -163,7 +169,7 @@ public final class UIScreenImpl implements UIScreen {
         }
 
         @Override
-        public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+        public void render(@NotNull GuiGraphics context, int mouseX, int mouseY, float delta) {
             assert this.minecraft != null;
 
             super.renderBackground(context, mouseX, mouseY, delta);

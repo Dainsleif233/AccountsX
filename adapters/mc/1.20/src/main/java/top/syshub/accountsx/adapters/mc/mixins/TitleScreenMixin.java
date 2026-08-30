@@ -8,6 +8,7 @@ import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.ImageButton;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
@@ -39,10 +40,15 @@ public class TitleScreenMixin extends Screen {
 
     @Inject(method = "createNormalMenuOptions", at = @At("RETURN"))
     protected void init(CallbackInfo ci) {
-        assert this.minecraft != null;
+        // 将 minecraft 实例捕获到局部变量：既保证按钮 OnPress 回调执行时引用非空，
+        // 也让静态分析能推断出 setScreen 调用不会产生 NullPointerException。
+        Minecraft minecraft = this.minecraft;
+        if (minecraft == null) {
+            return;
+        }
         this.addRenderableWidget((AbstractWidget) new ImageButton(
                 this.width / 2 + 104, this.height / 4 + 72, 20, 20, 0, 0, 20, SWITCH_ACCOUNT_ICON_TEXTURE, 32, 64,
-                (buttonWidget) -> this.minecraft.setScreen(new AccountScreen(this)), Component.translatable("accountsx.account.general.add_account")
+                (buttonWidget) -> minecraft.setScreen(new AccountScreen(this)), Component.translatable("accountsx.account.general.add_account")
         ));
     }
 

@@ -1,5 +1,6 @@
 package top.syshub.accountsx.adapters.mc.ui;
 
+import org.jetbrains.annotations.NotNull;
 import top.syshub.accountsx.core.accounts.impl.injector.AbstractInjectorAccount;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.accounts.BaseAccount;
@@ -166,7 +167,7 @@ public class AccountListWidget extends ObjectSelectionList<AccountListWidget.Acc
         }
 
         @Override
-        public Component getNarration() {
+        public @NotNull Component getNarration() {
             return Component.nullToEmpty("");
         }
 

@@ -1,5 +1,6 @@
 package top.syshub.accountsx.adapters.mc.ui;
 
+import org.jspecify.annotations.NonNull;
 import top.syshub.accountsx.core.accounts.impl.injector.AbstractInjectorAccount;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.accounts.BaseAccount;
@@ -85,7 +86,7 @@ public class AccountListWidget extends ObjectSelectionList<AccountListWidget.Acc
     }
 
     @Override
-    public boolean keyPressed(KeyEvent input) {
+    public boolean keyPressed(@NonNull KeyEvent input) {
         AccountEntry entry = this.getSelected();
         return entry != null && entry.keyPressed(input) || super.keyPressed(input);
     }
@@ -175,7 +176,7 @@ public class AccountListWidget extends ObjectSelectionList<AccountListWidget.Acc
         }
 
         @Override
-        public Component getNarration() {
+        public @NonNull Component getNarration() {
             return Component.nullToEmpty("");
         }
 

@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.jspecify.annotations.NonNull;
 import top.syshub.accountsx.adapters.mc.ui.impl.UIScreenImpl;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.manager.AccountManager;
@@ -35,8 +36,6 @@ public class AccountScreen extends Screen {
     }
 
     public void onClose() {
-        assert this.minecraft != null;
-
         this.minecraft.setScreen(this.parent);
     }
 
@@ -75,11 +74,7 @@ public class AccountScreen extends Screen {
                     LAYOUT_HORIZONTAL_SPACING, y,
                     LAYOUT_TOOL_BAR_W, LAYOUT_BUTTON_H,
                     I18N.TRANSLATOR.translate(type),
-                    button -> {
-                        assert this.minecraft != null;
-
-                        UIScreenImpl.login(this.minecraft, this, type.getAccountProvider());
-                    }
+                    button -> UIScreenImpl.login(this.minecraft, this, type.getAccountProvider())
             ));
 
             y += LAYOUT_BUTTON_H;
@@ -87,7 +82,7 @@ public class AccountScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void render(@NonNull GuiGraphics context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
         this.accountListWidget.render(context, mouseX, mouseY, delta);
 

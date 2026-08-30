@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.NotNull;
 import top.syshub.accountsx.adapters.mc.ui.impl.UIScreenImpl;
 import top.syshub.accountsx.core.accounts.model.AccountType;
 import top.syshub.accountsx.core.manager.AccountManager;
@@ -87,7 +88,7 @@ public class AccountScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
+    public void render(@NotNull GuiGraphics context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
         this.accountListWidget.render(context, mouseX, mouseY, delta);
 
