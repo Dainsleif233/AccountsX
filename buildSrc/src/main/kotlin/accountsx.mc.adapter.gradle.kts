@@ -1,6 +1,7 @@
 import accountsx.build.AdapterMatrix
 import accountsx.build.Catalog
 import accountsx.build.Loom
+import accountsx.build.MixinDeps
 
 plugins {
     java
@@ -38,7 +39,7 @@ dependencies {
 
     if (adapter.obfuscated) {
         // ── Classic path (pre-26.1) — Loom handles remapping via mod* configs ──
-        add("modRuntimeOnly", Catalog.notation(project, "mixinextras-fabric"))
+        add("modRuntimeOnly", MixinDeps.MIXINEXTRAS_FABRIC)
         add("modImplementation", Catalog.notation(project, "fabric-loader", loaderVersion))
 
         // Fabric API resource-loader module. Resolved lazily on purpose: the
@@ -56,8 +57,8 @@ dependencies {
         // creating modImplementation / modRuntimeOnly. sponge-mixin &
         // mixinextras are bundled inside fabric-loader's JAR (not in its Maven
         // POM), so we add them explicitly.
-        add("implementation", Catalog.notation(project, "mixinextras-fabric-plain"))
-        add("implementation", Catalog.notation(project, "sponge-mixin"))
+        add("implementation", MixinDeps.MIXINEXTRAS_FABRIC_PLAIN)
+        add("implementation", MixinDeps.SPONGE_MIXIN)
         add("implementation", Catalog.notation(project, "fabric-loader", loaderVersion))
     }
 

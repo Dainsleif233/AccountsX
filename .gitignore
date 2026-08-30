@@ -4,6 +4,7 @@
 adapters/**/build/
 core-image/build/
 buildSrc/build/
+.kotlin/
 
 # IDE
 .idea/

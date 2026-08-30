@@ -159,10 +159,10 @@ MC/loader/API/authlib 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目
 
 ### 构建期单一数据源（P0.2）
 
-| 文件                        | 内容                                                                                                   | 消费者                                                                                                                                    |
-|-----------------------------|--------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
-| `gradle/libs.versions.toml` | 与 MC 版本无关的依赖版本（gson / guava / slf4j / asm / fabric-loader / mixinextras ×2 / sponge-mixin） | 根项目用 `libs.*` 访问器；buildSrc 三个插件通过 `accountsx.build.Catalog` 读取（预编译脚本插件没有 `libs` 访问器）                        |
-| `gradle/adapters.toml`      | 适配器矩阵：每个 MC 版本的 authlib / Fabric API / `obfuscated`，以及 authlib 与 Mod Menu 适配器清单    | `settings.gradle.kts`（决定 `include` 哪些子项目）、三个 buildSrc 插件（按目录名查条目）、根 `build.gradle.kts`（universal 打包的任务名） |
+| 文件                        | 内容                                                                                                | 消费者                                                                                                                                                                                                                                                                                 |
+|-----------------------------|-----------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `gradle/libs.versions.toml` | 与 MC 版本无关的依赖版本（gson / guava / slf4j / asm / fabric-loader）                              | 根项目用 `libs.*` 访问器；buildSrc 三个插件通过 `accountsx.build.Catalog` 读取（预编译脚本插件没有 `libs` 访问器）。mixin 系列（mixinextras ×2 / sponge-mixin）仅被 buildSrc 动态 `findLibrary` 消费、Gradle 静态检查误报为"未使用"，故集中放在 `accountsx.build.MixinDeps` 而非本目录 |
+| `gradle/adapters.toml`      | 适配器矩阵：每个 MC 版本的 authlib / Fabric API / `obfuscated`，以及 authlib 与 Mod Menu 适配器清单 | `settings.gradle.kts`（决定 `include` 哪些子项目）、三个 buildSrc 插件（按目录名查条目）、根 `build.gradle.kts`（universal 打包的任务名）                                                                                                                                              |
 
 后果性约束：
 
@@ -182,6 +182,7 @@ MC/loader/API/authlib 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目
 - `AdapterMatrix.kt` / `Toml.kt` — 矩阵模型与极简 TOML 解析（只支持 `[[表]]` + 引号字符串/布尔值，超出即报错）
 - `Loom.kt` — 对 Loom 内部的两处反射（`officialMojangMappings`、`FabricApiVersions.module`），MC 与 Mod Menu 插件共用，注释说明为何必须反射以及为何必须惰性调用
 - `Catalog.kt` — 版本目录访问
+- `MixinDeps.kt` — mixin 系列依赖坐标（仅被 buildSrc 插件动态消费；不放进 `libs.versions.toml` 以免 Gradle 误报"未使用依赖项别名"）
 
 新增适配器版本：先在 `gradle/adapters.toml` 加条目，再在 `adapters/<type>/<version>/` 添加只含 `plugins { }` 的 `build.gradle.kts`。
 

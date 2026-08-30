@@ -1,6 +1,7 @@
 import accountsx.build.AdapterMatrix
 import accountsx.build.Catalog
 import accountsx.build.Loom
+import accountsx.build.MixinDeps
 
 plugins {
     java
@@ -31,7 +32,7 @@ repositories {
 dependencies {
     add("mappings", Loom.officialMojangMappings(project))
 
-    add("modRuntimeOnly", Catalog.notation(project, "mixinextras-fabric"))
+    add("modRuntimeOnly", MixinDeps.MIXINEXTRAS_FABRIC)
     add("implementation", project(":"))
 
     add("minecraft", "com.mojang:minecraft:${mc.version}")

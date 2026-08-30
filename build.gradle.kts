@@ -43,6 +43,7 @@ repositories {
     maven("https://maven.aliyun.com/repository/public/")
 }
 
+@Suppress("GradleDependency")
 dependencies {
     compileOnly(libs.fabric.loader)
     compileOnly(libs.gson)
@@ -135,7 +136,7 @@ abstract class PackageUniversalJar : DefaultTask() {
     // @InputFiles (not @InputFile) so the jars are resolved lazily at execution
     // time — they are produced by dependency tasks (`:jar`, `:core-image:jar`)
     // and do not exist yet at configuration time. Existence is asserted in the
-    // action via `require`, matching the previous behaviour.
+    // action via `require`, matching the previous behavior.
     @get:InputFiles
     val coreJar: ConfigurableFileCollection = project.objects.fileCollection()
 
@@ -391,19 +392,19 @@ abstract class ValidateAdapterMatrix : DefaultTask() {
 
         // --- Check 1: toml ↔ disk ---
         logger.lifecycle("Checking authlib adapter directories...")
-        for (authlib in matrix.authlib) {
-            val dir = rootDir.get().asFile.resolve("adapters/authlib/${authlib.version}")
-            if (dir.isDirectory) pass("authlib ${authlib.version}") else fail("authlib ${authlib.version}: directory not found at ${dir.path}")
+        for ((version1) in matrix.authlib) {
+            val dir = rootDir.get().asFile.resolve("adapters/authlib/$version1")
+            if (dir.isDirectory) pass("authlib $version1") else fail("authlib $version1: directory not found at ${dir.path}")
         }
 
         logger.lifecycle("Checking MC adapter directories...")
-        for (mc in matrix.mc) {
-            val dir = rootDir.get().asFile.resolve("adapters/mc/${mc.version}")
-            if (dir.isDirectory) pass("MC ${mc.version}") else fail("MC ${mc.version}: directory not found at ${dir.path}")
+        for ((version1, authlib) in matrix.mc) {
+            val dir = rootDir.get().asFile.resolve("adapters/mc/$version1")
+            if (dir.isDirectory) pass("MC $version1") else fail("MC $version1: directory not found at ${dir.path}")
 
             // Verify authlib adapter referenced by this MC entry exists
-            val hasAuthlib = matrix.authlib.any { it.version == mc.authlib }
-            if (hasAuthlib) pass("MC ${mc.version} → authlib ${mc.authlib}") else fail("MC ${mc.version}: references missing authlib ${mc.authlib}")
+            val hasAuthlib = matrix.authlib.any { it.version == authlib }
+            if (hasAuthlib) pass("MC $version1 → authlib $authlib") else fail("MC $version1: references missing authlib $authlib")
         }
 
         // --- Check 2: no duplicate MC versions ---
@@ -433,14 +434,14 @@ abstract class ValidateAdapterMatrix : DefaultTask() {
                 .maxWith(Comparator { a, b -> versionCompare(a.version, b.version) })
         }
 
-        for (mc in matrix.mc) {
-            val winner = findWinner(mc.version)
+        for ((version1) in matrix.mc) {
+            val winner = findWinner(version1)
             if (winner == null) {
-                fail("MC ${mc.version}: no adapter covers this version")
-            } else if (winner.version != mc.version) {
-                fail("MC ${mc.version}: expected adapter ${mc.version}, but Loader would select ${winner.version}")
+                fail("MC $version1: no adapter covers this version")
+            } else if (winner.version != version1) {
+                fail("MC $version1: expected adapter $version1, but Loader would select ${winner.version}")
             } else {
-                pass("MC ${mc.version}: selects adapter ${mc.version}")
+                pass("MC $version1: selects adapter $version1")
             }
         }
 
@@ -490,7 +491,7 @@ abstract class VerifyUniversalJar : DefaultTask() {
                 Gson().fromJson(reader, JsonObject::class.java)
             }
 
-            // 2. Check depends contains fabric-api
+            // 2. Check dependencies contains fabric-api
             val depends = rootMod.getAsJsonObject("depends")
             require(depends != null && depends.has("fabric-api")) {
                 "Root fabric.mod.json missing 'depends.fabric-api'"
@@ -617,10 +618,10 @@ abstract class RestoreAdapterArtifacts : DefaultTask() {
         val jarFilter = FileFilter { it.isFile && it.name.endsWith(".jar") }
 
         // Restore MC adapters: artifact name "adapter-mc-<version>" → adapters/mc/<version>/build/libs/
-        for (mc in matrix.mc) {
-            val artifactDir = baseDir.resolve("adapter-mc-${mc.version}")
+        for ((version1) in matrix.mc) {
+            val artifactDir = baseDir.resolve("adapter-mc-$version1")
             if (artifactDir.isDirectory) {
-                val targetDir = rootDir.get().asFile.resolve("adapters/mc/${mc.version}/build/libs")
+                val targetDir = rootDir.get().asFile.resolve("adapters/mc/$version1/build/libs")
                 targetDir.mkdirs()
                 artifactDir.listFiles(jarFilter)?.forEach { jar ->
                     jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
@@ -634,10 +635,10 @@ abstract class RestoreAdapterArtifacts : DefaultTask() {
         // (upload-artifact@v4 with merge-multiple:false nests the original build/libs structure)
         val authlibArtifactDir = baseDir.resolve("adapter-authlib")
         if (authlibArtifactDir.isDirectory) {
-            for (authlib in matrix.authlib) {
-                val targetDir = rootDir.get().asFile.resolve("adapters/authlib/${authlib.version}/build/libs")
+            for ((version1) in matrix.authlib) {
+                val targetDir = rootDir.get().asFile.resolve("adapters/authlib/$version1/build/libs")
                 targetDir.mkdirs()
-                val nestedLibs = authlibArtifactDir.resolve("${authlib.version}/build/libs")
+                val nestedLibs = authlibArtifactDir.resolve("$version1/build/libs")
                 if (nestedLibs.isDirectory) {
                     nestedLibs.listFiles(jarFilter)?.forEach { jar ->
                         jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
@@ -648,10 +649,10 @@ abstract class RestoreAdapterArtifacts : DefaultTask() {
         }
 
         // Restore Mod Menu adapters: artifact name "adapter-modmenu-<version>" → adapters/modmenu/<version>/build/libs/
-        for (modmenu in matrix.modmenu) {
-            val artifactDir = baseDir.resolve("adapter-modmenu-${modmenu.version}")
+        for ((version1) in matrix.modmenu) {
+            val artifactDir = baseDir.resolve("adapter-modmenu-$version1")
             if (artifactDir.isDirectory) {
-                val targetDir = rootDir.get().asFile.resolve("adapters/modmenu/${modmenu.version}/build/libs")
+                val targetDir = rootDir.get().asFile.resolve("adapters/modmenu/$version1/build/libs")
                 targetDir.mkdirs()
                 artifactDir.listFiles(jarFilter)?.forEach { jar ->
                     jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
