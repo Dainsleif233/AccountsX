@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "accountsx-adapter-modmenu",
-  "version": "${version}-${modmenu}",
+  "version": "${modmenu}-${version}",
   "name": "Accounts X Mod Menu Entry",
   "description": "Mod Menu integration for Accounts X.",
   "authors": [

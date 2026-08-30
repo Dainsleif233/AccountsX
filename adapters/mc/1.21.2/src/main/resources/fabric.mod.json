@@ -17,7 +17,7 @@
   ],
   "depends": {
     "minecraft": ">=${minecraft}",
-    "accountsx-adapter-authlib": "${version}-${authlib}"
+    "accountsx-adapter-authlib": "${authlib}-${version}"
   },
   "custom": {
     "accountsx:adapter.mc": {
