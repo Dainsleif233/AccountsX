@@ -79,7 +79,7 @@ AccountsX（根项目 / core）
 │   ├── ui/                          # 版本无关的 UIScreen / Memory / Translator
 │   ├── net/                         # HttpGateway 接口 + JdkHttpGateway（可注入网络层，P1.3）
 │   └── utils/                       # Threading / NetworkUtils / UnsafeVM / AvatarService（头像获取+落盘编排，无 AWT）
-├── core-image/                      # 独立库模块（P1.4 / 决策 D4）：AvatarRenderer(AWT) + AvatarCache(落盘)
+├── core-image/                      # 独立库模块（P1.4 / 决策 D4）：AvatarRenderer(AWT) + AvatarCache(落盘)；默认头像 PNG 不再打包在本模块，改从 core 的 assets/accountsx/textures/gui/alex_avatar.png 读取
 ├── adapters/
 │   ├── authlib/<ver>/               # authlib API 桥接（5 个版本）
 │   ├── mc/<mc-ver>/                 # MC 客户端 API + UI + Mixins（12 个版本）
@@ -87,7 +87,9 @@ AccountsX（根项目 / core）
 ├── buildSrc/                        # 预编译 Gradle 插件（3 个）
 └── src/main/resources/
     ├── fabric.mod.json              # 核心模组元数据
-    └── assets/accountsx/lang/       # i18n（en_us.json + zh_cn.json，41 个 key）
+    ├── assets/accountsx/lang/       # i18n（en_us.json + zh_cn.json，41 个 key）
+    └── assets/accountsx/textures/gui/  # GUI 资源单一数据源：account.png（切换图标）、
+                                        #  sprites/icon/account.png（标题屏精灵）、alex_avatar.png（默认头像）
 ```
 
 ### Core vs Adapters
@@ -146,6 +148,8 @@ universal 任务还会在嵌套的 core 元数据中添加 `fabric-api: *` 依�
 - `MinecraftAdapterImpl` — 实现 `MinecraftPlatform`
 - `ui/` — `AccountScreen`、列表控件、`UIScreenImpl` / `DefaultMemory` 桥接 core `UIScreen`/`Memory`
 - `mixins/` — 标题屏按钮、session/skin accessor、Yggdrasil hook；多数版本嵌套在 `mixins/mixins/` 下（1.20 较扁平）
+
+GUI 资源（切换图标 `account.png`、标题屏精灵 `icon/account`、默认头像 `alex_avatar.png`）统一放在 core 的 `assets/accountsx/textures/gui/` 下，**各 MC 适配器不再携带副本**。`TitleScreenMixin` 的精灵 `ResourceLocation` 用 `MOD_ID`（`accountsx`）而非 `MC_ADAPTER_ID`，由 core 提供纹理；新增 MC 版本时无需复制这些资源。Mod Menu 图标位于 `accountsx-adapter-modmenu` 命名空间。
 
 MC/loader/API/authlib 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目录名（= MC 版本）提供，适配器自己的 `build.gradle.kts` 只应用 Loom 插件 + `accountsx.mc.adapter`，没有 `adapter { }` 块。Mojang official mappings 由 `accountsx.mc.adapter` 集中添加（通过反射访问 Loom 的 `loom` 扩展，因为 Loom 类不在 buildSrc classpath 上）。
 
@@ -278,6 +282,7 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 - 历史拼写错误保留以维持兼容性：
   - `getAuthlibAdpater()`（应为 `getAuthlibAdapter()`）— 纯 Java 符号，旧适配器仍引用；`Platforms` 已用正确方法名 `authlibBridge()`
 - `AccountProvider.validate` 返回 `int` 常量（`STATE_IMMEDIATE_CLOSE=0` / `STATE_HANDLE=1`），而非枚举
+- 非空不变量不要用 `assert x != null` 表达（静态分析无法据此推断回调线程/按钮 `OnPress` 中的引用安全，也无法满足 `@NotNull` 形参）；统一改为捕获到 `final` 局部变量后显式判空并 `return`
 
 ## Commit 规范
 
