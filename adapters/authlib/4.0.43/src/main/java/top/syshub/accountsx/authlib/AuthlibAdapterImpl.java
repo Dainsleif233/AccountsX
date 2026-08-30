@@ -52,7 +52,7 @@ public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImp
             YggdrasilAuthenticationService service = ofYggdrasilAuthenticationService(proxy, env, context.security());
 
             MinecraftSessionService sessionService = new YggdrasilMinecraftSessionService(service, env) {
-                private static final Logger LOGGER = LoggerFactory.getLogger(YggdrasilMinecraftSessionService.class);
+                private static final Logger LOGGER = LoggerFactory.getLogger(AuthlibAdapterImpl.class);
 
                 private final Gson gson = new GsonBuilder().registerTypeAdapter(UUID.class, new UUIDTypeAdapter()).create();
 
@@ -159,7 +159,7 @@ public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImp
             return publicKeys.stream().<ServicesKeyInfo>map(DefaultServicesKeyInfo::new).toList();
         }
 
-        private static final Logger LOGGER = LoggerFactory.getLogger(ServicesKeyInfo.class);
+        private static final Logger LOGGER = LoggerFactory.getLogger(DefaultServicesKeyInfo.class);
 
         @Override
         public int keyBitCount() {
