@@ -21,8 +21,8 @@ public final class EnvironmentAccount extends BaseAccount {
                 playerUUID,
                 AccountType.ENV_DEFAULT,
                 null,
-                avatar == null ? null : avatar.key,
-                avatar == null ? 0L : avatar.cachedAt
+                avatar == null ? null : avatar.key(),
+                avatar == null ? 0L : avatar.cachedAt()
         );
     }
 

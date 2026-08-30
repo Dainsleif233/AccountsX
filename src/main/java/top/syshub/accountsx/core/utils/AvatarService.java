@@ -4,9 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
-import top.syshub.accountsx.core.AccountsX;
 import top.syshub.accountsx.core.net.HttpGateway;
-import top.syshub.accountsx.core.utils.NetworkUtils;
 import top.syshub.accountsx.image.AvatarCache;
 import top.syshub.accountsx.image.AwtAvatarRenderer;
 
@@ -32,15 +30,10 @@ public final class AvatarService {
     private AvatarService() {
     }
 
-    /** 头像落盘后返回的内容哈希 key 与缓存时间戳。 */
-    public static final class AvatarKey {
-        public final String key;
-        public final long cachedAt;
-
-        public AvatarKey(String key, long cachedAt) {
-            this.key = key;
-            this.cachedAt = cachedAt;
-        }
+    /**
+     * 头像落盘后返回的内容哈希 key 与缓存时间戳。
+     */
+        public record AvatarKey(String key, long cachedAt) {
     }
 
     /**
@@ -63,7 +56,7 @@ public final class AvatarService {
             }
 
             byte[] avatarPng = AwtAvatarRenderer.INSTANCE.renderAvatar(skin);
-            if (avatarPng == null || avatarPng.length == 0) {
+            if (avatarPng.length == 0) {
                 return null;
             }
 

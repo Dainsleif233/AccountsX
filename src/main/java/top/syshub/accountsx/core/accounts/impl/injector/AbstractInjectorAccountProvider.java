@@ -59,10 +59,10 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             try {
                 publicKeys = List.of(parseSignaturePublicKey(jp.getAsString()));
             } catch (final NoSuchAlgorithmException | InvalidKeySpecException e) {
-                throw new IOException("Invalid yggdrasil public key!", e);
+                throw new IOException("Invalid Yggdrasil public key!", e);
             }
         } else {
-            throw new IOException("Invalid yggdrasil public key!");
+            throw new IOException("Invalid Yggdrasil public key!");
         }
 
         if (response.get("skinDomains") instanceof JsonArray ja) {
@@ -70,11 +70,11 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 if (je instanceof JsonPrimitive domain && domain.isString()) {
                     skinDomains.add(domain.getAsString());
                 } else {
-                    throw new IOException("Invalid yggdrasil public key!");
+                    throw new IOException("Invalid Yggdrasil public key!");
                 }
             }
         } else {
-            throw new IOException("Invalid yggdrasil public key!");
+            throw new IOException("Invalid Yggdrasil public key!");
         }
 
         return new AccountContext(new AuthServerContext(
@@ -164,8 +164,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                     baseUrl,
                     profile.playerUUID,
                     getAccountName(baseUrl),
-                    avatar == null ? null : avatar.key,
-                    avatar == null ? 0L : avatar.cachedAt
+                    avatar == null ? null : avatar.key(),
+                    avatar == null ? 0L : avatar.cachedAt()
             );
         } else {
             for (Profile profile : profiles) {
@@ -178,8 +178,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                             baseUrl,
                             profile.playerUUID,
                             getAccountName(baseUrl),
-                            avatar == null ? null : avatar.key,
-                            avatar == null ? 0L : avatar.cachedAt
+                            avatar == null ? null : avatar.key(),
+                            avatar == null ? 0L : avatar.cachedAt()
                     );
                 }
             }
@@ -221,7 +221,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                     account.setLoginProfile(accessToken, profile.playerUUID);
                     account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
                     AvatarService.AvatarKey avatar = AvatarService.fetch(http, profileUrl, profile.playerUUID);
-                    account.setAvatar(avatar == null ? null : avatar.key, avatar == null ? 0L : avatar.cachedAt);
+                    account.setAvatar(avatar == null ? null : avatar.key(), avatar == null ? 0L : avatar.cachedAt());
                     return;
                 }
             }
@@ -364,8 +364,8 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
                 yggUrl,
                 profile.playerUUID,
                 getAccountName(yggUrl),
-                avatar == null ? null : avatar.key,
-                avatar == null ? 0L : avatar.cachedAt
+                avatar == null ? null : avatar.key(),
+                avatar == null ? 0L : avatar.cachedAt()
         );
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
         return account;
@@ -404,6 +404,6 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
         account.setProfile(accessToken, profile.playerName, AccountUUID.parse(profile.playerUUID));
         account.setLoginProfile("OAuth " + OAuth, profile.playerUUID);
         AvatarService.AvatarKey avatar = AvatarService.fetch(http, profileUrl, profile.playerUUID);
-        account.setAvatar(avatar == null ? null : avatar.key, avatar == null ? 0L : avatar.cachedAt);
+        account.setAvatar(avatar == null ? null : avatar.key(), avatar == null ? 0L : avatar.cachedAt());
     }
 }

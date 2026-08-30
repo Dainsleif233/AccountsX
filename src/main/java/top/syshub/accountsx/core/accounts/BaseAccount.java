@@ -60,6 +60,11 @@ public abstract class BaseAccount {
 
         private final transient AccountState state;
 
+        // Gson 通过反射（getDeclaredConstructor）调用此无参构造器反序列化 storage。
+        // 同时它是 transient 的 state 唯一赋默认值之处：UNAUTHORIZED（不进 JSON，反序列化后保持）。
+        // 若删除，Gson 回退到 Unsafe.allocateInstance，state 会变为 null 而非 UNAUTHORIZED，
+        // 导致账号列表渲染 getState() 时为空/异常。IDE 报“从未使用”属静态分析误报，故抑制。
+        @SuppressWarnings("unused")
         private AccountStorage() {
             this.accessToken = null;
             this.playerName = null;
@@ -102,6 +107,10 @@ public abstract class BaseAccount {
     // ~/.cache/accountsx/avatars/<avatarKey>.png（见 top.syshub.accountsx.image.AvatarCache）。
     private volatile String avatarKey;
 
+    // 头像缓存时间戳（System.currentTimeMillis()，0 表示未缓存）。
+    // 经 Gson 反射读写完成持久化，并为后续缓存失效逻辑预留；Java 层当前无读取方属正常，
+    // 故标 @SuppressWarnings("unused") 抑制“已分配但从未访问”误报（非真死代码）。
+    @SuppressWarnings("unused")
     private volatile long avatarCachedAt;
 
     protected BaseAccount(String accessToken, String playerName, UUID playerUUID, AccountType type, String accountName, String avatarKey, long avatarCachedAt) {
@@ -133,12 +142,9 @@ public abstract class BaseAccount {
     }
 
     /**
-     * 头像缓存写入时间戳（{@code System.currentTimeMillis()}），0 表示未缓存。
+     * 写入头像内容哈希 key 与缓存时间戳。
+     * 二者均经 Gson 持久化；缓存时间戳当前无 Java 层读取方（留给后续缓存失效逻辑），故不暴露 getter。
      */
-    public long getAvatarCachedAt() {
-        return this.avatarCachedAt;
-    }
-
     public void setAvatar(String avatarKey, long avatarCachedAt) {
         this.avatarKey = avatarKey;
         this.avatarCachedAt = avatarCachedAt;

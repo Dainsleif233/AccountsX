@@ -193,8 +193,8 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
                 AccountUUID.parse(playerUUID),
                 microsoftAccessToken,
                 microsoftRefreshToken,
-                avatar == null ? null : avatar.key,
-                avatar == null ? 0L : avatar.cachedAt
+                avatar == null ? null : avatar.key(),
+                avatar == null ? 0L : avatar.cachedAt()
         );
     }
 
@@ -271,6 +271,6 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
 
         account.setProfile(accessToken, playerName, AccountUUID.parse(playerUUID));
         AvatarService.AvatarKey avatar = AvatarService.fetch(http, SESSION + "/session/minecraft/profile/", playerUUID);
-        account.setAvatar(avatar == null ? null : avatar.key, avatar == null ? 0L : avatar.cachedAt);
+        account.setAvatar(avatar == null ? null : avatar.key(), avatar == null ? 0L : avatar.cachedAt());
     }
 }
