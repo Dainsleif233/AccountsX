@@ -1,13 +1,13 @@
 package top.syshub.accountsx.adapters.mc.ui.impl;
 
 import org.jetbrains.annotations.NotNull;
-import top.syshub.accountsx.core.AccountsX;
-import top.syshub.accountsx.core.accounts.AccountProvider;
-import top.syshub.accountsx.core.accounts.BaseAccount;
-import top.syshub.accountsx.core.ui.Memory;
-import top.syshub.accountsx.core.ui.UIScreen;
-import top.syshub.accountsx.core.manager.AccountManager;
-import top.syshub.accountsx.core.task.TaskScheduler;
+import top.syshub.accountsx.common.AccountsX;
+import top.syshub.accountsx.common.accounts.AccountProvider;
+import top.syshub.accountsx.common.accounts.BaseAccount;
+import top.syshub.accountsx.common.ui.Memory;
+import top.syshub.accountsx.common.ui.UIScreen;
+import top.syshub.accountsx.common.manager.AccountManager;
+import top.syshub.accountsx.common.task.TaskScheduler;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import top.syshub.accountsx.adapters.mc.ui.ButtonWidget;
 import java.util.LinkedHashMap;

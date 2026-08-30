@@ -1,7 +1,7 @@
 package top.syshub.accountsx.adapters.mc.ui;
 
 import net.minecraft.network.chat.Component;
-import top.syshub.accountsx.core.ui.Translator;
+import top.syshub.accountsx.common.ui.Translator;
 
 public final class I18N {
     private I18N() {

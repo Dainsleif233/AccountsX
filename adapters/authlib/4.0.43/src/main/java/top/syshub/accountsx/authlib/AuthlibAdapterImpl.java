@@ -20,11 +20,11 @@ import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;
 import com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService;
 import com.mojang.authlib.yggdrasil.response.MinecraftTexturesPayload;
 import com.mojang.util.UUIDTypeAdapter;
-import top.syshub.accountsx.core.accounts.BaseAccount;
-import top.syshub.accountsx.core.accounts.model.context.AccountContext;
-import top.syshub.accountsx.core.accounts.model.context.AuthSecurityContext;
-import top.syshub.accountsx.core.adapters.api.AuthlibBridge;
-import top.syshub.accountsx.core.utils.UnsafeVM;
+import top.syshub.accountsx.common.accounts.BaseAccount;
+import top.syshub.accountsx.common.accounts.model.context.AccountContext;
+import top.syshub.accountsx.common.accounts.model.context.AuthSecurityContext;
+import top.syshub.accountsx.common.adapters.api.AuthlibBridge;
+import top.syshub.accountsx.common.utils.UnsafeVM;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

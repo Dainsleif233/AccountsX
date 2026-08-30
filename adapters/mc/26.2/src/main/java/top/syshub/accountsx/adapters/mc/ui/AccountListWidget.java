@@ -1,12 +1,12 @@
 package top.syshub.accountsx.adapters.mc.ui;
 
 import org.jspecify.annotations.NonNull;
-import top.syshub.accountsx.core.accounts.impl.injector.AbstractInjectorAccount;
-import top.syshub.accountsx.core.accounts.model.AccountType;
-import top.syshub.accountsx.core.accounts.BaseAccount;
-import top.syshub.accountsx.core.adapters.api.AccountSession;
-import top.syshub.accountsx.core.manager.AccountManager;
-import top.syshub.accountsx.core.task.TaskScheduler;
+import top.syshub.accountsx.common.accounts.impl.injector.AbstractInjectorAccount;
+import top.syshub.accountsx.common.accounts.model.AccountType;
+import top.syshub.accountsx.common.accounts.BaseAccount;
+import top.syshub.accountsx.common.adapters.api.AccountSession;
+import top.syshub.accountsx.common.manager.AccountManager;
+import top.syshub.accountsx.common.task.TaskScheduler;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
@@ -23,7 +23,7 @@ import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
-import static top.syshub.accountsx.core.AccountsX.LOGGER;
+import static top.syshub.accountsx.common.AccountsX.LOGGER;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import top.syshub.accountsx.image.AvatarCache;

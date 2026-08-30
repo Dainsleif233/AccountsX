@@ -105,7 +105,7 @@ val rootDirPath = rootDir
 // 以下在脚本作用域（project，非 Task.project）一次性解析 universal 打包所需的
 // 输入/输出路径，供任务注册块捕获。配置缓存禁止任务 action 引用脚本对象，
 // 也弃用 Task.project，因此所有 project 派生值都在此解析后作为可序列化值传入任务属性。
-val universalCoreJar = layout.buildDirectory.file("libs/${rootName}-core-${rootVersion}.jar")
+val universalCommonJar = layout.buildDirectory.file("libs/${rootName}-common-${rootVersion}.jar")
 val universalOutput = layout.buildDirectory.file("libs/${rootName}-${rootVersion}.jar")
 val universalAdapterPaths: List<String> = adapters.map { a ->
     val p = project(":${a.project}")
@@ -227,16 +227,19 @@ abstract class PackageUniversalJar : DefaultTask() {
 }
 
 /**
- * Scan the compiled core classes and verify that none reference Minecraft or
- * authlib internals, preserving the platform-independent boundary between core
- * and adapters (P0.5).
+ * Scan the compiled common classes and verify that none reference Minecraft or
+ * authlib internals, preserving the platform-independent boundary between
+ * common and adapters (P0.5).
  *
  * Forbidden references:
  * - `net/minecraft/` — Minecraft client code (must come from adapters at runtime)
  * - `com/mojang/authlib/` — authlib internals (bridged by authlib adapters)
- * - `java/awt/` — AWT（warn-only：头像渲染已迁回 core 的 image 包，允许位于 core）
- * - `javax/imageio/` — ImageIO（同 java/awt，warn-only，允许位于 core）
- * - `net/fabricmc/` — Fabric internals (whitelisted: `net/fabricmc/loader/api/` for mod entrypoint)
+ * - `net/fabricmc/` — Fabric internals (whitelisted: `net/fabricmc/api/` + `net/fabricmc/loader/api/` for mod entrypoint)
+ *
+ * Whitelisted references (allowed in common):
+ * - `java/awt/` / `javax/imageio/` — AWT / ImageIO, used by the avatar renderer
+ *   in the `image` package; since avatar rendering moved back into common, these
+ *   are fully allowed (not even a warning).
  *
  * Depends on `compileJava` so classes exist when this runs.
  */
@@ -258,14 +261,11 @@ abstract class CheckArchitecture : DefaultTask() {
             "net/fabricmc/"
         )
 
-        val warnOnly = listOf(
-            "java/awt/",
-            "javax/imageio/"
-        )
-
         val whitelist = listOf(
             "net/fabricmc/api/",      // Fabric API entrypoints (ClientModInitializer)
-            "net/fabricmc/loader/api/" // Fabric Loader API
+            "net/fabricmc/loader/api/", // Fabric Loader API
+            "java/awt/",              // AWT — avatar rendering in the image package (allowed in common)
+            "javax/imageio/"          // ImageIO — same as java/awt
         )
 
         // Scan a .class file's constant pool (UTF-8 entries) for forbidden references.
@@ -293,8 +293,6 @@ abstract class CheckArchitecture : DefaultTask() {
                         val str = String(bytes, offset, len, Charsets.UTF_8)
                         if (whitelist.any { str.startsWith(it) }) {
                             // whitelisted — skip
-                        } else if (warnOnly.any { str.startsWith(it) }) {
-                            hits.add("WARN:$str")
                         } else if (forbidden.any { str.startsWith(it) }) {
                             hits.add(str)
                         }
@@ -312,7 +310,6 @@ abstract class CheckArchitecture : DefaultTask() {
         }
 
         val violations = mutableListOf<String>()
-        val warnings = mutableListOf<String>()
         var scanned = 0
 
         Files.walk(dir.toPath())
@@ -323,22 +320,14 @@ abstract class CheckArchitecture : DefaultTask() {
                 val hits = scanClassFile(bytes)
                 val rel = dir.toPath().relativize(classFile).toString()
                 for (hit in hits) {
-                    if (hit.startsWith("WARN:")) {
-                        warnings.add("$rel references warn-only: ${hit.removePrefix("WARN:")}")
-                    } else {
-                        violations.add("$rel references forbidden: $hit")
-                    }
+                    violations.add("$rel references forbidden: $hit")
                 }
             }
 
         logger.lifecycle("checkArchitecture: scanned $scanned class files")
-        warnings.forEach { logger.warn("  WARN: $it") }
-        if (warnings.isNotEmpty()) {
-            logger.warn("  (${warnings.size} warnings — AWT/ImageIO 允许位于 core 的 image 包，仅记录)")
-        }
 
         require(violations.isEmpty()) {
-            "checkArchitecture FAILED — core contains ${violations.size} forbidden reference(s):\n" +
+            "checkArchitecture FAILED — common contains ${violations.size} forbidden reference(s):\n" +
                 violations.joinToString("\n") { "  $it" }
         }
         logger.lifecycle("checkArchitecture: PASSED")
@@ -642,7 +631,7 @@ abstract class RestoreAdapterArtifacts : DefaultTask() {
 }
 
 // universal / packageUniversal 的注册见下方，输入/输出路径由脚本作用域的
-// universalCoreJar / universalOutput / universalAdapterMap 提供。
+// universalCommonJar / universalOutput / universalAdapterMap 提供。
 
 /**
  * Build every adapter, then nest them into the universal fat jar.
@@ -655,7 +644,7 @@ val universal = tasks.register<PackageUniversalJar>("universal") {
     adapters.forEach { adapter -> dependsOn(":${adapter.project}:${adapter.builder}") }
     dependsOn(tasks.named("jar"))
 
-    coreJar.from(universalCoreJar)
+    coreJar.from(universalCommonJar)
     adapterPrefixes.set(universalAdapterPrefixes)
     adapterPaths.set(universalAdapterPaths)
     adapterJars.from(universalAdapterPaths)
@@ -676,7 +665,7 @@ val packageUniversal = tasks.register<PackageUniversalJar>("packageUniversal") {
 
     dependsOn(tasks.named("jar"))
 
-    coreJar.from(universalCoreJar)
+    coreJar.from(universalCommonJar)
     adapterPrefixes.set(universalAdapterPrefixes)
     adapterPaths.set(universalAdapterPaths)
     adapterJars.from(universalAdapterPaths)
@@ -727,8 +716,8 @@ tasks.withType<JavaCompile> {
     targetCompatibility = "17"
 }
 
-// Core module jar ships as `AccountsX-core-<version>.jar`; the universal task
+// Common module jar ships as `AccountsX-common-<version>.jar`; the universal task
 // repackages it (nested adapters) into the plain-named final deliverable.
 tasks.jar {
-    archiveAppendix = "core"
+    archiveAppendix = "common"
 }

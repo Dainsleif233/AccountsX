@@ -6,9 +6,9 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import top.syshub.accountsx.adapters.mc.ui.impl.UIScreenImpl;
-import top.syshub.accountsx.core.accounts.model.AccountType;
-import top.syshub.accountsx.core.manager.AccountManager;
-import top.syshub.accountsx.core.task.TaskScheduler;
+import top.syshub.accountsx.common.accounts.model.AccountType;
+import top.syshub.accountsx.common.manager.AccountManager;
+import top.syshub.accountsx.common.task.TaskScheduler;
 
 public class AccountScreen extends Screen {
     private static final int LAYOUT_HORIZONTAL_SPACING = 16;

@@ -1,7 +1,7 @@
 package top.syshub.accountsx.adapters.mc.ui.impl;
 
-import top.syshub.accountsx.core.ui.Memory;
-import top.syshub.accountsx.core.utils.Threading;
+import top.syshub.accountsx.common.ui.Memory;
+import top.syshub.accountsx.common.utils.Threading;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.client.Minecraft;

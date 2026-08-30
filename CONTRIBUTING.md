@@ -21,8 +21,8 @@
 ### 构建验证
 
 ```bash
-# 改了 core 代码
-./gradlew :core:build
+# 改了 common 代码
+./gradlew :build
 
 # 改了某个 MC 适配器
 ./gradlew :adapters:mc:1.21.4:build
@@ -45,7 +45,7 @@
 
 ### PR 要求
 
-- PR 前确保 `./gradlew :core:build` 通过
+- PR 前确保 `./gradlew :build` 通过
 - 说明手测了哪些 MC 版本（登录 / 切换 / 重启后账号仍在）
 - 新 MC 版本的 PR 需说明：改了哪些文件、在哪个版本上验证过
 
@@ -66,7 +66,7 @@
 | `perf`     | 性能优化           |
 | `test`     | 测试               |
 
-scope 参照模块名：`build`、`ci`、`core`、`storage`、`auth`、`ui`、`mc`、`authlib`、`modmenu`、`docs`、`test`
+scope 参照模块名：`build`、`ci`、`common`、`storage`、`auth`、`ui`、`mc`、`authlib`、`modmenu`、`docs`、`test`
 
 先 `git log --oneline -20` 查看历史提交，保持风格一致。
 

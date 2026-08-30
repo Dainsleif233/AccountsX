@@ -14,7 +14,7 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "top.syshub.accountsx.core.AccountsX"
+      "top.syshub.accountsx.common.AccountsX"
     ]
   },
   "depends": {
@@ -25,8 +25,8 @@
   },
   "custom": {
     "accountsx:impl-lookup-accessor": [
-      "top.syshub.accountsx.core.utils.access.UnsafeLookupAccessor",
-      "top.syshub.accountsx.core.utils.access.FFMAPILookupAccessor"
+      "top.syshub.accountsx.common.utils.access.UnsafeLookupAccessor",
+      "top.syshub.accountsx.common.utils.access.FFMAPILookupAccessor"
     ]
   }
 }

@@ -1,7 +1,7 @@
 package top.syshub.accountsx.adapters.mc.mixins.mixins;
 
-import top.syshub.accountsx.core.AccountsX;
-import top.syshub.accountsx.core.manager.AccountManager;
+import top.syshub.accountsx.common.AccountsX;
+import top.syshub.accountsx.common.manager.AccountManager;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import top.syshub.accountsx.adapters.mc.ui.I18N;
 import net.minecraft.client.gui.GuiGraphicsExtractor;

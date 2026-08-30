@@ -4,8 +4,8 @@ import com.mojang.authlib.minecraft.MinecraftSessionService;
 import com.mojang.authlib.minecraft.UserApiService;
 import com.mojang.authlib.yggdrasil.ProfileResult;
 import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;
-import top.syshub.accountsx.core.accounts.BaseAccount;
-import top.syshub.accountsx.core.adapters.api.AccountSession;
+import top.syshub.accountsx.common.accounts.BaseAccount;
+import top.syshub.accountsx.common.adapters.api.AccountSession;
 
 public record AccountSessionImpl(
         BaseAccount.AccountStorage storage,
