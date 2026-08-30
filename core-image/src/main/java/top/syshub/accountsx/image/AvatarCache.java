@@ -98,7 +98,7 @@ public final class AvatarCache {
     /**
      * Bundled default avatar (the classic "Alex" silhouette) as raw PNG bytes,
      * loaded once from the module resource
-     * {@code /top/syshub/accountsx/image/alex_avatar.png} and cached so the 12
+     * {@code /assets/accountsx/textures/gui/alex_avatar.png} and cached so the 12
      * MC adapters no longer each hardcode the base64 string. Never {@code null};
      * an empty array is returned only if the resource is unexpectedly absent
      * (in which case the adapter's {@code loadAvatar} treats it as "no texture",
@@ -107,7 +107,7 @@ public final class AvatarCache {
     private static final byte[] DEFAULT_AVATAR;
     static {
         byte[] tmp;
-        try (InputStream in = AvatarCache.class.getResourceAsStream("/top/syshub/accountsx/image/alex_avatar.png")) {
+        try (InputStream in = AvatarCache.class.getResourceAsStream("/assets/accountsx/textures/gui/alex_avatar.png")) {
             tmp = (in == null) ? new byte[0] : in.readAllBytes();
         } catch (IOException ignored) {
             tmp = new byte[0];

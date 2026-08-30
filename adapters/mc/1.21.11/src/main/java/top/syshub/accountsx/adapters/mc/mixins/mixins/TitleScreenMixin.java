@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(TitleScreen.class)
 public class TitleScreenMixin extends Screen {
     @Unique
-    private static final Identifier SWITCH_ACCOUNT_ICON_TEXTURE = Identifier.fromNamespaceAndPath(AccountsX.MC_ADAPTER_ID, "icon/account");
+    private static final Identifier SWITCH_ACCOUNT_ICON_TEXTURE = Identifier.fromNamespaceAndPath(AccountsX.MOD_ID, "icon/account");
 
     @Shadow
     private boolean fading;
