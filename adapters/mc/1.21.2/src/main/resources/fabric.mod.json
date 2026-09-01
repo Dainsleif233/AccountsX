@@ -19,6 +19,11 @@
     "minecraft": ">=${minecraft}",
     "accountsx-adapter-authlib": "${authlib}-${version}"
   },
+  "entrypoints": {
+    "modmenu": [
+      "top.syshub.accountsx.adapters.mc.ModMenuImpl"
+    ]
+  },
   "custom": {
     "accountsx:adapter.mc": {
       "class": "top.syshub.accountsx.adapters.mc.MinecraftAdapterImpl"

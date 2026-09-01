@@ -83,9 +83,8 @@ AccountsX（根项目 / common）
 │   └── image/                           # 头像渲染+落盘（AvatarRenderer / AwtAvatarRenderer / AvatarCache；AWT/ImageIO 在 common 内白名单放行）
 ├── adapters/
 │   ├── authlib/<ver>/               # authlib API 桥接（5 个版本）
-│   ├── mc/<mc-ver>/                 # MC 客户端 API + UI + Mixins（12 个版本）
-│   └── modmenu/<ver>/               # Mod Menu 配置入口
-├── buildSrc/                        # 预编译 Gradle 插件（3 个）
+│   └── mc/<mc-ver>/                 # MC 客户端 API + UI + Mixins（12 个版本）
+│   └── ├── buildSrc/                        # 预编译 Gradle 插件（3 个）
 └── src/main/resources/
     ├── fabric.mod.json              # 核心模组元数据
     ├── assets/accountsx/lang/       # i18n（en_us.json + zh_cn.json，41 个 key）
@@ -106,7 +105,7 @@ AccountsX（根项目 / common）
 
 `Platforms`（`common/adapters/Platforms.java`）通过反射加载两者，使用 `Suppliers.memoize` 缓存，并断言它们共享相同的 `AccountSession` 类型参数。始终通过 `Platforms.getMinecraftPlatform()` / `Platforms.authlibBridge()` 访问，不要直接引用 MC/authlib 类型。旧的 `Adapters` 类保留为 `@Deprecated` 转发壳，适配器不需改动。
 
-Common `fabric.mod.json` 依赖全部三个适配器 mod id（`accountsx-adapter-mc`、`accountsx-adapter-authlib`、`accountsx-adapter-modmenu`），并注册 MethodHandles lookup accessor 到 `accountsx:impl-lookup-accessor` 供 `UnsafeVM` 使用。
+Common `fabric.mod.json` 依赖两个适配器 mod id（`accountsx-adapter-mc`、`accountsx-adapter-authlib`），并注册 MethodHandles lookup accessor 到 `accountsx:impl-lookup-accessor` 供 `UnsafeVM` 使用。
 
 ### Universal 打包
 
@@ -150,24 +149,24 @@ universal 任务还会在嵌套的 common 元数据中添加 `fabric-api: *` 依
 - `ui/` — `AccountScreen`、列表控件、`UIScreenImpl` / `DefaultMemory` 桥接 common `UIScreen`/`Memory`
 - `mixins/` — 标题屏按钮、session/skin accessor、Yggdrasil hook；多数版本嵌套在 `mixins/mixins/` 下（1.20 较扁平）
 
-GUI 资源（切换图标 `account.png`、标题屏精灵 `icon/account`、默认头像 `alex_avatar.png`）统一放在 common 的 `assets/accountsx/textures/gui/` 下，**各 MC 适配器不再携带副本**。`TitleScreenMixin` 的精灵 `ResourceLocation` 用 `MOD_ID`（`accountsx`）而非 `MC_ADAPTER_ID`，由 common 提供纹理；新增 MC 版本时无需复制这些资源。Mod Menu 图标位于 `accountsx-adapter-modmenu` 命名空间。
+GUI 资源（切换图标 `account.png`、标题屏精灵 `icon/account`、默认头像 `alex_avatar.png`）统一放在 common 的 `assets/accountsx/textures/gui/` 下，**各 MC 适配器不再携带副本**。`TitleScreenMixin` 的精灵 `ResourceLocation` 用 `MOD_ID`（`accountsx`）而非 `MC_ADAPTER_ID`，由 common 提供纹理；新增 MC 版本时无需复制这些资源。Mod Menu 集成（配置入口 + 图标）由 mc 适配器通过 `fabric.mod.json` 的 `custom.modmenu.parent` 提供，不再有独立的 `accountsx-adapter-modmenu` 适配器。
 
-MC/loader/API/authlib 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目录名（= MC 版本）提供，适配器自己的 `build.gradle.kts` 只应用 Loom 插件 + `accountsx.mc.adapter`，没有 `adapter { }` 块。Mojang official mappings 由 `accountsx.mc.adapter` 集中添加（通过反射访问 Loom 的 `loom` 扩展，因为 Loom 类不在 buildSrc classpath 上）。
+MC/loader/API/authlib/java 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目录名（= MC 版本）提供，适配器自己的 `build.gradle.kts` 只应用 Loom 插件 + `accountsx.mc.adapter`，没有 `adapter { }` 块。Mojang official mappings 由 `accountsx.mc.adapter` 集中添加（通过反射访问 Loom 的 `loom` 扩展，因为 Loom 类不在 buildSrc classpath 上）。
 
 ### Authlib 适配器（`adapters/authlib/<version>`）
 
 薄桥接层：`AuthlibAdapterImpl` + `AccountSessionImpl`，针对特定 `com.mojang:authlib` 版本。包：`top.syshub.accountsx.authlib`。保持包/类名与 `accountsx:adapter.authlib` 自定义条目对齐（`top.syshub.accountsx.authlib.AuthlibAdapterImpl`）。
 
-### Mod Menu 适配器
+### Mod Menu 集成
 
-`adapters/modmenu/7.0.0` — `top.syshub.accountsx.adapters.modmenu.ModMenuApiImpl` 打开账号 UI。通过 `gradle/adapters.toml` 的 `[[modmenu]]` 条目关联到 MC `1.20`（Mod Menu 7.0.0）。
+不再有独立的 modmenu 适配器。Mod Menu 的「配置入口」由各 mc 适配器 `fabric.mod.json` 的 `custom.modmenu.parent`（指向 `accountsx`）提供，UI 复用 mc 适配器的 `AccountScreen`。Mod Menu 本体（com.terraformersmc:modmenu）仍作为 mc 适配器（obfuscated 分支）的 `modImplementation` 依赖，版本声明在 `gradle/adapters.toml` 每个 `[[mc]]` 的 `modmenu` 字段里。
 
 ### 构建期单一数据源（P0.2）
 
-| 文件                        | 内容                                                                                                | 消费者                                                                                                                                                                                                                                                                                 |
-|-----------------------------|-----------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `gradle/libs.versions.toml` | 与 MC 版本无关的依赖版本（gson / guava / slf4j / asm / fabric-loader）                              | 根项目用 `libs.*` 访问器；buildSrc 三个插件通过 `accountsx.build.Catalog` 读取（预编译脚本插件没有 `libs` 访问器）。mixin 系列（mixinextras ×2 / sponge-mixin）仅被 buildSrc 动态 `findLibrary` 消费、Gradle 静态检查误报为"未使用"，故集中放在 `accountsx.build.MixinDeps` 而非本目录 |
-| `gradle/adapters.toml`      | 适配器矩阵：每个 MC 版本的 authlib / Fabric API / `obfuscated`，以及 authlib 与 Mod Menu 适配器清单 | `settings.gradle.kts`（决定 `include` 哪些子项目）、三个 buildSrc 插件（按目录名查条目）、根 `build.gradle.kts`（universal 打包的任务名）                                                                                                                                              |
+| 文件                        | 内容                                                                                                                                  | 消费者                                                                                                                                                                                                                                                                                 |
+|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `gradle/libs.versions.toml` | 与 MC 版本无关的依赖版本（gson / guava / slf4j / asm / fabric-loader）                                                                | 根项目用 `libs.*` 访问器；buildSrc 两个插件通过 `accountsx.build.Catalog` 读取（预编译脚本插件没有 `libs` 访问器）。mixin 系列（mixinextras ×2 / sponge-mixin）仅被 buildSrc 动态 `findLibrary` 消费、Gradle 静态检查误报为"未使用"，故集中放在 `accountsx.build.MixinDeps` 而非本目录 |
+| `gradle/adapters.toml`      | 适配器矩阵：每个 MC 版本的 authlib / Fabric API / Mod Menu / `obfuscated`、Java 字节码目标 `java`（缺省 17），以及 authlib 适配器清单 | `settings.gradle.kts`（决定 `include` 哪些子项目）、两个 buildSrc 插件（按目录名查条目）、根 `build.gradle.kts`（universal 打包的任务名）                                                                                                                                              |
 
 后果性约束：
 
@@ -178,14 +177,13 @@ MC/loader/API/authlib 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目
 
 ### buildSrc 插件
 
-- `accountsx.mc.adapter` — Loom 依赖（minecraft、mappings、loader、fabric-resource-loader、关联 authlib 适配器）；按矩阵区分混淆/非混淆路径
+- `accountsx.mc.adapter` — Loom 依赖（minecraft、mappings、loader、fabric-resource-loader、关联 authlib 适配器、Mod Menu）；按矩阵区分混淆/非混淆路径
 - `accountsx.authlib.adapter` — authlib + 根项目
-- `accountsx.modmenu.adapter` — Mod Menu + 关联 MC 适配器
 
 共享代码在 `buildSrc/src/main/kotlin/accountsx/build/`：
 
 - `AdapterMatrix.kt` / `Toml.kt` — 矩阵模型与极简 TOML 解析（只支持 `[[表]]` + 引号字符串/布尔值，超出即报错）
-- `Loom.kt` — 对 Loom 内部的两处反射（`officialMojangMappings`、`FabricApiVersions.module`），MC 与 Mod Menu 插件共用，注释说明为何必须反射以及为何必须惰性调用
+- `Loom.kt` — 对 Loom 内部的两处反射（`officialMojangMappings`、`FabricApiVersions.module`），MC 适配器插件使用，注释说明为何必须反射以及为何必须惰性调用
 - `Catalog.kt` — 版本目录访问
 - `MixinDeps.kt` — mixin 系列依赖坐标（仅被 buildSrc 插件动态消费；不放进 `libs.versions.toml` 以免 Gradle 误报"未使用依赖项别名"）
 
@@ -210,7 +208,6 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 # 单个适配器（冒号分隔的项目路径）
 ./gradlew --no-daemon --stacktrace :adapters:mc:1.21.4:remapJar       # ~4 min（热缓存）
 ./gradlew --no-daemon --stacktrace :adapters:authlib:6.0.54:jar
-./gradlew --no-daemon --stacktrace :adapters:modmenu:7.0.0:remapJar
 
 # 快速校验元数据/架构约束
 ./gradlew --no-daemon --stacktrace checkArchitecture validateAdapterMatrix
@@ -293,7 +290,7 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 
 常用 type：`feat` / `fix` / `refactor` / `chore` / `docs` / `style` / `perf` / `test`
 
-scope 参照项目已有模块名：`build`、`ci`、`common`、`storage`、`auth`、`ui`、`mc`、`authlib`、`modmenu`、`docs`、`test`
+scope 参照项目已有模块名：`build`、`ci`、`common`、`storage`、`auth`、`ui`、`mc`、`authlib`、`docs`、`test`
 
 规则：
 1. 先 `git log --oneline -20` 查看历史提交，参照已有风格

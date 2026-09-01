@@ -2,7 +2,7 @@ package accountsx.build
 
 /**
  * Mixin-family dependencies consumed only by the adapter plugins
- * (`accountsx.mc.adapter` / `accountsx.modmenu.adapter`).
+ * (`accountsx.mc.adapter`).
  *
  * These are intentionally kept OUT of `gradle/libs.versions.toml`. That catalog
  * is the single source of truth for dependencies reached through the type-safe

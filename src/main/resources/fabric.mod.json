@@ -11,6 +11,7 @@
     "Dainsleif"
   ],
   "license": "GPL-3.0",
+  "icon": "assets/accountsx/textures/gui/sprites/icon/account.png",
   "environment": "client",
   "entrypoints": {
     "client": [
@@ -20,8 +21,7 @@
   "depends": {
     "minecraft": ">=1.20",
     "accountsx-adapter-mc": "*",
-    "accountsx-adapter-authlib": "*",
-    "accountsx-adapter-modmenu": "*"
+    "accountsx-adapter-authlib": "*"
   },
   "custom": {
     "accountsx:impl-lookup-accessor": [

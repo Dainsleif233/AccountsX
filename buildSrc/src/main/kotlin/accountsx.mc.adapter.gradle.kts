@@ -27,6 +27,7 @@ val loaderVersion = adapter.loader ?: Catalog.version(project, "fabric-loader")
 
 repositories {
     maven("https://maven.fabricmc.net/")
+    maven("https://maven.terraformersmc.com/")
     maven("https://maven.aliyun.com/repository/gradle-plugin/")
 }
 
@@ -41,6 +42,7 @@ dependencies {
         // ── Classic path (pre-26.1) — Loom handles remapping via mod* configs ──
         add("modRuntimeOnly", MixinDeps.MIXINEXTRAS_FABRIC)
         add("modImplementation", Catalog.notation(project, "fabric-loader", loaderVersion))
+        add("modImplementation", "com.terraformersmc:modmenu:${adapter.modmenu}")
 
         // Fabric API resource-loader module. Resolved lazily on purpose: the
         // reflection inside Loom.fabricApiModule needs a Loom frame on the stack.
@@ -60,6 +62,7 @@ dependencies {
         add("implementation", MixinDeps.MIXINEXTRAS_FABRIC_PLAIN)
         add("implementation", MixinDeps.SPONGE_MIXIN)
         add("implementation", Catalog.notation(project, "fabric-loader", loaderVersion))
+        add("implementation", "com.terraformersmc:modmenu:${adapter.modmenu}")
     }
 
     add("minecraft", "com.mojang:minecraft:${adapter.version}")
@@ -88,6 +91,6 @@ tasks.withType<ProcessResources> {
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
-    sourceCompatibility = "17"
-    targetCompatibility = "17"
+    sourceCompatibility = adapter.java
+    targetCompatibility = adapter.java
 }

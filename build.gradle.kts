@@ -80,7 +80,7 @@ tasks.processResources {
  *
  * @param project Gradle project path without leading colon (e.g. `adapters:mc:1.21.4`)
  * @param builder Task that produces the remapped/plain jar
- * @param prefix Nested-jar filename prefix (`mc` / `authlib` / `modmenu`)
+ * @param prefix Nested-jar filename prefix (`mc` / `authlib`)
  */
 data class Adapter(val project: String, val builder: String, val prefix: String)
 
@@ -90,8 +90,7 @@ data class Adapter(val project: String, val builder: String, val prefix: String)
 // string-matching "fabric-loom-remap".
 val adapters: List<Adapter> = AdapterMatrix.load(rootDir).let { matrix ->
     matrix.authlib.map { Adapter(it.projectPath, it.jarTask, "authlib") } +
-        matrix.mc.map { Adapter(it.projectPath, it.jarTask, "mc") } +
-        matrix.modmenu.map { Adapter(it.projectPath, it.jarTask, "modmenu") }
+        matrix.mc.map { Adapter(it.projectPath, it.jarTask, "mc") }
 }
 
 // 配置期捕获的根项目引用，供下方任务注册块（配置期）使用。
@@ -432,7 +431,7 @@ abstract class ValidateAdapterMatrix : DefaultTask() {
  * 3. Root fabric.mod.json `depends` contains `fabric-api`
  * 4. Each nested jar's fabric.mod.json has a valid `custom.accountsx:adapter.*.class`
  *    entry pointing to a .class file that actually exists inside that nested jar
- *    (the Mod Menu adapter has no such entry and is skipped)
+ *    (the `modmenu` custom key is a Mod Menu parent config with no class, so it is skipped)
  *
  * Deliberately declares no `dependsOn`, only ordering: it verifies whatever
  * produced the jar, whether that was `universal` (full build, what CI does) or
@@ -515,7 +514,7 @@ abstract class VerifyUniversalJar : DefaultTask() {
                         }
 
                         // Find accountsx:adapter.mc or accountsx:adapter.authlib
-                        // (modmenu adapter has custom.modmenu instead — no class check needed)
+                        // Only `accountsx:adapter.*` keys carry an adapter class; the `modmenu` custom key (Mod Menu parent config) is skipped.
                         val adapterKeys = custom.keySet().filter { it.startsWith("accountsx:adapter.") }
                         for (key in adapterKeys) {
                             val adapterObj = custom.getAsJsonObject(key)
@@ -561,7 +560,6 @@ abstract class VerifyUniversalJar : DefaultTask() {
  * artifacts/
  *   adapter-mc-<version>/<version>-<rootVersion>.jar
  *   adapter-authlib/<version>/build/libs/<version>-<rootVersion>.jar
- *   adapter-modmenu-<version>/<version>-<rootVersion>.jar
  * ```
  */
 abstract class RestoreAdapterArtifacts : DefaultTask() {
@@ -608,19 +606,6 @@ abstract class RestoreAdapterArtifacts : DefaultTask() {
                         jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
                         restored++
                     }
-                }
-            }
-        }
-
-        // Restore Mod Menu adapters: artifact name "adapter-modmenu-<version>" → adapters/modmenu/<version>/build/libs/
-        for ((version1) in matrix.modmenu) {
-            val artifactDir = baseDir.resolve("adapter-modmenu-$version1")
-            if (artifactDir.isDirectory) {
-                val targetDir = rootDir.get().asFile.resolve("adapters/modmenu/$version1/build/libs")
-                targetDir.mkdirs()
-                artifactDir.listFiles(jarFilter)?.forEach { jar ->
-                    jar.copyTo(targetDir.resolve(jar.name), overwrite = true)
-                    restored++
                 }
             }
         }

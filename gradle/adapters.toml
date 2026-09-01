@@ -2,7 +2,7 @@
 ##
 ## 消费者：
 ##   - `settings.gradle.kts`      —— 决定包含哪些子项目（不再列目录）
-##   - `buildSrc` 的三个适配器插件 —— 每个适配器的依赖版本与 fabric.mod.json 占位符
+##   - `buildSrc` 的两个适配器插件 —— 每个适配器的依赖版本与 fabric.mod.json 占位符
 ##   - 根 `build.gradle.kts`      —— universal 打包时每个适配器的产物任务名
 ##   - `:validateAdapterMatrix`（P0.5）—— 校验本文件与磁盘目录一致 + 模拟 Loader 选择
 ##
@@ -20,72 +20,96 @@
 version = "1.20"
 authlib = "4.0.43"
 fabricApi = "0.83.0"
+modmenu = "7.0.0"
+java = "17"
 obfuscated = true
 
 [[mc]]
 version = "1.20.2"
 authlib = "5.0.47"
 fabricApi = "0.91.6"
+modmenu = "8.0.0"
+java = "17"
 obfuscated = true
 
 [[mc]]
 version = "1.20.3"
 authlib = "6.0.52"
 fabricApi = "0.91.1"
+modmenu = "9.0.0"
+java = "17"
 obfuscated = true
 
 [[mc]]
 version = "1.20.5"
 authlib = "6.0.54"
 fabricApi = "0.97.8"
+modmenu = "10.0.0"
+java = "21"
 obfuscated = true
 
 [[mc]]
 version = "1.21"
 authlib = "6.0.54"
 fabricApi = "0.102.0"
+modmenu = "11.0.0"
+java = "21"
 obfuscated = true
 
 [[mc]]
 version = "1.21.2"
 authlib = "6.0.54"
 fabricApi = "0.106.1"
+modmenu = "12.0.0"
+java = "21"
 obfuscated = true
 
 [[mc]]
 version = "1.21.4"
 authlib = "6.0.54"
 fabricApi = "0.118.5"
+modmenu = "13.0.0"
+java = "21"
 obfuscated = true
 
 [[mc]]
 version = "1.21.6"
 authlib = "6.0.54"
 fabricApi = "0.128.0"
+modmenu = "15.0.0"
+java = "21"
 obfuscated = true
 
 [[mc]]
 version = "1.21.9"
 authlib = "7.0.61"
 fabricApi = "0.134.0"
+modmenu = "16.0.0"
+java = "21"
 obfuscated = true
 
 [[mc]]
 version = "1.21.11"
 authlib = "7.0.61"
 fabricApi = "0.139.4"
+modmenu = "17.0.0"
+java = "21"
 obfuscated = true
 
 [[mc]]
 version = "26.1"
 authlib = "7.0.61"
 fabricApi = "0.145.1"
+modmenu = "18.0.0"
+java = "25"
 obfuscated = false
 
 [[mc]]
 version = "26.2"
 authlib = "7.0.61"
 fabricApi = "0.158.0"
+modmenu = "20.0.0"
+java = "25"
 obfuscated = false
 
 [[authlib]]
@@ -102,7 +126,3 @@ version = "6.0.54"
 
 [[authlib]]
 version = "7.0.61"
-
-[[modmenu]]
-version = "7.0.0"
-minecraft = "1.20"

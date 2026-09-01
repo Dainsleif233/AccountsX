@@ -37,7 +37,5 @@
   "modmenu.nameTranslation.accountsx-adapter-mc": "Accounts X Minecraft Adapter",
   "modmenu.descriptionTranslation.accountsx-adapter-mc": "Minecraft client adapter for Accounts X.",
   "modmenu.nameTranslation.accountsx-adapter-authlib": "Accounts X Authlib Adapter",
-  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Authlib adapter for Accounts X.",
-  "modmenu.nameTranslation.accountsx-adapter-modmenu": "Accounts X Mod Menu Entry",
-  "modmenu.descriptionTranslation.accountsx-adapter-modmenu": "Mod Menu integration for Accounts X."
+  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Authlib adapter for Accounts X."
 }

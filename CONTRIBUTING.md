@@ -66,7 +66,7 @@
 | `perf`     | 性能优化           |
 | `test`     | 测试               |
 
-scope 参照模块名：`build`、`ci`、`common`、`storage`、`auth`、`ui`、`mc`、`authlib`、`modmenu`、`docs`、`test`
+scope 参照模块名：`build`、`ci`、`common`、`storage`、`auth`、`ui`、`mc`、`authlib`、`docs`、`test`
 
 先 `git log --oneline -20` 查看历史提交，保持风格一致。
 

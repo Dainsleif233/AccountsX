@@ -16,8 +16,10 @@ data class McAdapter(
     val version: String,
     val authlib: String,
     val fabricApi: String,
+    val modmenu: String,
     val obfuscated: Boolean,
-    val loader: String?
+    val loader: String?,
+    val java: String
 ) {
     val projectPath: String get() = "adapters:mc:$version"
 
@@ -36,16 +38,6 @@ data class AuthlibAdapter(val version: String) {
 }
 
 /**
- * One Mod Menu adapter (`adapters/modmenu/<version>/`).
- *
- * @param minecraft the MC adapter this Mod Menu version is pinned to
- */
-data class ModmenuAdapter(val version: String, val minecraft: String) {
-    val projectPath: String get() = "adapters:modmenu:$version"
-    val jarTask: String get() = "remapJar"
-}
-
-/**
  * The parsed adapter matrix — the single source of truth for which adapters
  * exist and which versions they pin.
  *
@@ -56,17 +48,13 @@ data class ModmenuAdapter(val version: String, val minecraft: String) {
  */
 class AdapterMatrix(
     val mc: List<McAdapter>,
-    val authlib: List<AuthlibAdapter>,
-    val modmenu: List<ModmenuAdapter>
+    val authlib: List<AuthlibAdapter>
 ) {
     fun mc(version: String): McAdapter = mc.firstOrNull { it.version == version }
         ?: error("Minecraft adapter '$version' is not declared in gradle/adapters.toml")
 
     fun authlib(version: String): AuthlibAdapter = authlib.firstOrNull { it.version == version }
         ?: error("authlib adapter '$version' is not declared in gradle/adapters.toml")
-
-    fun modmenu(version: String): ModmenuAdapter = modmenu.firstOrNull { it.version == version }
-        ?: error("Mod Menu adapter '$version' is not declared in gradle/adapters.toml")
 
     companion object {
         const val RELATIVE_PATH: String = "gradle/adapters.toml"
@@ -79,6 +67,8 @@ class AdapterMatrix(
                     version = row.string("mc", "version"),
                     authlib = row.string("mc", "authlib"),
                     fabricApi = row.string("mc", "fabricApi"),
+                    modmenu = row.string("mc", "modmenu"),
+                    java = (row["java"] as? String) ?: "17",
                     obfuscated = row.boolean("mc", "obfuscated"),
                     loader = row["loader"] as String?
                 )
@@ -86,18 +76,14 @@ class AdapterMatrix(
             val authlib = tables["authlib"].orEmpty().map { row ->
                 AuthlibAdapter(row.string("authlib", "version"))
             }
-            val modmenu = tables["modmenu"].orEmpty().map { row ->
-                ModmenuAdapter(row.string("modmenu", "version"), row.string("modmenu", "minecraft"))
-            }
 
             require(mc.isNotEmpty()) { "$RELATIVE_PATH declares no [[mc]] adapters" }
             require(authlib.isNotEmpty()) { "$RELATIVE_PATH declares no [[authlib]] adapters" }
 
-            val matrix = AdapterMatrix(mc, authlib, modmenu)
+            val matrix = AdapterMatrix(mc, authlib)
             // Fail at configuration time rather than with an unresolvable
             // project dependency deep inside a Loom task.
             mc.forEach { matrix.authlib(it.authlib) }
-            modmenu.forEach { matrix.mc(it.minecraft) }
             return matrix
         }
 

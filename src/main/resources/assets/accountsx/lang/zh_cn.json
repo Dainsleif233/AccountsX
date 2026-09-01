@@ -37,7 +37,5 @@
   "modmenu.nameTranslation.accountsx-adapter-mc": "Accounts X Minecraft 适配器",
   "modmenu.descriptionTranslation.accountsx-adapter-mc": "Accounts X 的 Minecraft 客户端适配器。",
   "modmenu.nameTranslation.accountsx-adapter-authlib": "Accounts X Authlib 适配器",
-  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Accounts X 的 Authlib 适配器。",
-  "modmenu.nameTranslation.accountsx-adapter-modmenu": "Accounts X Mod Menu 入口",
-  "modmenu.descriptionTranslation.accountsx-adapter-modmenu": "Accounts X 的 Mod Menu 集成。"
+  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Accounts X 的 Authlib 适配器。"
 }

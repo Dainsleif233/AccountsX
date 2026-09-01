@@ -40,7 +40,7 @@ jobs:
       # One Gradle invocation on purpose: a per-adapter job matrix measured
       # ~7m40s wall clock versus ~3m for the full build, because each job pays
       # checkout + JDK + cache restore + buildSrc compile + configuration of
-      # all 18 subprojects again (Loom configures every project even when only
+      # all 17 subprojects again (Loom configures every project even when only
       # one is built). `build` depends on `universal`, so this also produces
       # the nested fat jar; `verifyUniversalJar` then checks its structure.
       - name: Build

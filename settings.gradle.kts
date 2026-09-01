@@ -27,7 +27,7 @@ include(
             when {
                 line.isEmpty() -> Unit
                 line.startsWith("[[") -> prefix = when (val table = line.removeSurrounding("[[", "]]").trim()) {
-                    "mc", "authlib", "modmenu" -> "adapters:$table:"
+                    "mc", "authlib" -> "adapters:$table:"
                     else -> throw GradleException("gradle/adapters.toml: unknown table [[$table]]")
                 }
 

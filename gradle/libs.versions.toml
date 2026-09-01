@@ -3,7 +3,7 @@
 ## 只放"与 MC 版本无关"的依赖。与 MC 版本相关的矩阵数据（每个 MC 适配器的
 ## authlib / Fabric API / 是否混淆）在 `gradle/adapters.toml`。
 ##
-## buildSrc 的三个适配器插件通过 `VersionCatalogsExtension` 读取本文件，
+## buildSrc 的两个适配器插件通过 `VersionCatalogsExtension` 读取本文件，
 ## 根项目通过 `libs.*` 访问器读取。任何依赖版本都不应再以字面量出现在构建脚本里。
 ## 唯一的例外是 mixin 系列依赖（mixinextras ×2 / sponge-mixin）：它们仅被 buildSrc
 ## 插件通过动态 `findLibrary` 消费，Gradle 的静态"未使用依赖项别名"检查看不到这层
