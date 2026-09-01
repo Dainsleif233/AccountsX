@@ -20,7 +20,7 @@ fabric-loader = "0.19.4"
 # 测试依赖（P0.4）
 junit = "5.10.2"
 junit-platform = "1.10.2"
-assertj = "3.25.3"
+assertj = "3.27.7"
 
 [libraries]
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
