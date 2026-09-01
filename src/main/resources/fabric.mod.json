@@ -25,8 +25,7 @@
   },
   "custom": {
     "accountsx:impl-lookup-accessor": [
-      "top.syshub.accountsx.common.utils.access.UnsafeLookupAccessor",
-      "top.syshub.accountsx.common.utils.access.FFMAPILookupAccessor"
+      "top.syshub.accountsx.common.utils.access.UnsafeLookupAccessor"
     ]
   }
 }
