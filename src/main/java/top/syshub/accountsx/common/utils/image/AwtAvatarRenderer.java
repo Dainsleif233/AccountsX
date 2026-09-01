@@ -1,4 +1,4 @@
-package top.syshub.accountsx.image;
+package top.syshub.accountsx.common.utils.image;
 
 import javax.imageio.ImageIO;
 import java.awt.AlphaComposite;

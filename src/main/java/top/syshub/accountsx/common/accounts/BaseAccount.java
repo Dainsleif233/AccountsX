@@ -104,7 +104,7 @@ public abstract class BaseAccount {
 
     // 1.11 修复：worker 线程 setAvatar、客户端线程渲染读取，需 volatile 保证可见性。
     // P1.4：头像 base64 不再进配置；只保留内容哈希 key 与缓存时间戳，PNG 落盘
-    // ~/.cache/accountsx/avatars/<avatarKey>.png（见 top.syshub.accountsx.image.AvatarCache）。
+    // ~/.cache/accountsx/avatars/<avatarKey>.png（见 top.syshub.accountsx.common.utils.image.AvatarCache）。
     private volatile String avatarKey;
 
     // 头像缓存时间戳（System.currentTimeMillis()，0 表示未缓存）。

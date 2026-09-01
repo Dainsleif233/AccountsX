@@ -5,8 +5,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import top.syshub.accountsx.common.net.HttpGateway;
-import top.syshub.accountsx.image.AvatarCache;
-import top.syshub.accountsx.image.AwtAvatarRenderer;
+import top.syshub.accountsx.common.utils.image.AvatarCache;
+import top.syshub.accountsx.common.utils.image.AwtAvatarRenderer;
 
 import java.util.Base64;
 import java.util.Optional;

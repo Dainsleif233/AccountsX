@@ -23,7 +23,7 @@ import net.minecraft.resources.ResourceLocation;
 import static top.syshub.accountsx.common.AccountsX.LOGGER;
 
 import com.mojang.blaze3d.platform.NativeImage;
-import top.syshub.accountsx.image.AvatarCache;
+import top.syshub.accountsx.common.utils.image.AvatarCache;
 
 public class AccountListWidget extends ObjectSelectionList<AccountListWidget.AccountEntry> {
     public AccountListWidget(Minecraft client, int left, int right, int top, int bottom, int entryHeight) {

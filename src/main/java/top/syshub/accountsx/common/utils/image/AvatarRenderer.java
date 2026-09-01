@@ -1,11 +1,11 @@
-package top.syshub.accountsx.image;
+package top.syshub.accountsx.common.utils.image;
 
 import java.io.IOException;
 
 /**
  * Renders a Minecraft face avatar from a skin PNG.
  *
- * <p>This interface lives in core's {@code top.syshub.accountsx.image} package
+ * <p>This interface lives in common's {@code top.syshub.accountsx.common.utils.image} package
  * (moved back from the standalone {@code core-image} module). Callers pass raw
  * PNG bytes and receive raw PNG bytes — no AWT types leak through this
  * boundary (P1.4 / decision D4).</p>

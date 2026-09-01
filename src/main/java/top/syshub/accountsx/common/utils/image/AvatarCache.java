@@ -1,4 +1,4 @@
-package top.syshub.accountsx.image;
+package top.syshub.accountsx.common.utils.image;
 
 import java.io.IOException;
 import java.io.InputStream;

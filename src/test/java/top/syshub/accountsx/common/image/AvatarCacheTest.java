@@ -2,7 +2,7 @@ package top.syshub.accountsx.common.image;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import top.syshub.accountsx.image.AvatarCache;
+import top.syshub.accountsx.common.utils.image.AvatarCache;
 
 import java.io.IOException;
 import java.nio.file.Files;
