@@ -105,9 +105,11 @@ class HttpGatewayInjectionTest {
         UnitedInjectorAccountProvider provider = new UnitedInjectorAccountProvider(fake);
 
         // 非 OAuth 登录令牌（不含 "OAuth " 前缀），走非 OAuth 刷新路径。
+        // clientToken 是刷新必需的（Yggdrasil /authserver/refresh 会强制比对），
+        // 缺少时 refresh 会直接抛 InjectorAuthException 而非发请求。
         UnitedInjectorAccount account = new UnitedInjectorAccount(
                 "old-injector-token", "OldName", UUID.randomUUID(),
-                SERVER, UUID.randomUUID().toString(), null, null, 0L
+                SERVER, UUID.randomUUID().toString(), null, null, 0L, "fake-client-token"
         );
 
         // refresh 内的 setLoginProfile/setProfile 要求 worker 线程，故经调度器在 worker 线程上执行。
@@ -117,10 +119,12 @@ class HttpGatewayInjectionTest {
         assertThat(account.getAccountStorage().getPlayerName()).isEqualTo(NEW_NAME);
         assertThat(account.getAccountStorage().getPlayerUUID()).isEqualTo(NEW_UUID);
 
-        // 断言刷新确实打到了正确的 refresh 端点，且 body 带旧令牌。
+        // 断言刷新确实打到了正确的 refresh 端点，且 body 带旧令牌与客户端令牌。
         assertThat(fake.lastUrl()).isEqualTo(REFRESH_URL);
         assertThat(fake.lastBody().getAsJsonObject().get("accessToken").getAsString())
                 .isEqualTo("old-injector-token");
+        assertThat(fake.lastBody().getAsJsonObject().get("clientToken").getAsString())
+                .isEqualTo("fake-client-token");
     }
 
     @Test

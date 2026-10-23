@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -25,8 +26,16 @@ import java.util.Map;
 public final class JdkHttpGateway implements HttpGateway {
     public static final JdkHttpGateway INSTANCE = new JdkHttpGateway();
 
+    /**
+     * 请求超时。没有超时的话，一个半开 TCP 连接或卡死的反向代理会让 {@code CLIENT.send} 永久阻塞：
+     * 刷新任务永不结束 → 该账号的轮换令牌永不落盘、启动批次永不收尾（UI 一直显示「正在操作」）。
+     * 30 秒对认证类请求足够宽松（设备码轮询本身是多次短请求）。
+     */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+
     private static final HttpClient CLIENT = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(REQUEST_TIMEOUT)
             .build();
 
     private JdkHttpGateway() {
@@ -41,7 +50,7 @@ public final class JdkHttpGateway implements HttpGateway {
     /** {@inheritDoc} */
     @Override
     public JsonObject get(String url, Map<String, String> headers) throws IOException {
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).GET();
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).timeout(REQUEST_TIMEOUT).GET();
         headers.forEach(builder::header);
         return sendJson(builder.build(), false);
     }
@@ -56,6 +65,7 @@ public final class JdkHttpGateway implements HttpGateway {
     @Override
     public JsonObject postJson(String url, JsonElement body, boolean ignoreHttpStatus) throws IOException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(REQUEST_TIMEOUT)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(NetworkUtils.GSON.toJson(body)))
                 .build();
@@ -72,6 +82,7 @@ public final class JdkHttpGateway implements HttpGateway {
     @Override
     public JsonObject postForm(String url, Map<String, String> formData, boolean ignoreHttpStatus) throws IOException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(REQUEST_TIMEOUT)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(encodeForm(formData)))
                 .build();
@@ -82,6 +93,7 @@ public final class JdkHttpGateway implements HttpGateway {
     @Override
     public Map<String, List<String>> head(String url) throws IOException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(REQUEST_TIMEOUT)
                 .method("HEAD", HttpRequest.BodyPublishers.noBody())
                 .build();
         try {
@@ -96,7 +108,7 @@ public final class JdkHttpGateway implements HttpGateway {
     /** {@inheritDoc} */
     @Override
     public byte[] getBinary(String url) throws IOException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).GET().build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(REQUEST_TIMEOUT).GET().build();
         try {
             HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
             // 校验状态码：非 2xx 抛 IOException，与 JSON 路径一致。
@@ -111,6 +123,10 @@ public final class JdkHttpGateway implements HttpGateway {
         }
     }
 
+    /**
+     * 发送并解析 JSON。超时抛 {@link java.net.http.HttpTimeoutException}（{@link IOException} 子类），
+     * 因此 {@code AccountManager.refreshAccount} 的 IOException 分支会正常把状态归位 UNAUTHORIZED。
+     */
     private JsonObject sendJson(HttpRequest request, boolean ignoreHttpStatus) throws IOException {
         try {
             HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());

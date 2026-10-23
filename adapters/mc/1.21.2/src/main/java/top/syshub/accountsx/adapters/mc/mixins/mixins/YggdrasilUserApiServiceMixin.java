@@ -1,5 +1,6 @@
 package top.syshub.accountsx.adapters.mc.mixins.mixins;
 
+import top.syshub.accountsx.common.accounts.impl.injector.InjectorProfileKeys;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.mojang.authlib.Environment;
@@ -84,7 +85,7 @@ public class YggdrasilUserApiServiceMixin {
             remap = false
     )
     private void getKeyPair(CallbackInfoReturnable<KeyPairResponse> cir) {
-        if (isAuthlibInjector()) {
+        if (isAuthlibInjector() && !InjectorProfileKeys.isSupported()) {
             KeyPairGenerator generator;
             try {
                 generator = KeyPairGenerator.getInstance("RSA");

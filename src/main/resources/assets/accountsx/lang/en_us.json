@@ -1,5 +1,9 @@
 {
+  "accountsx.account.fail.injector_invalid_token": "This external login account's credentials are no longer valid. Please delete it and add it again.",
+  "accountsx.account.fail.injector_login": "External login failed. Check the server address, user ID and password.",
   "accountsx.account.fail.player_no_longer_existed": "Cannot find a matched player!",
+  "accountsx.account.fail.read_only": "Account data could not be read, so changes will NOT be saved this session. Please restart the game; if it persists, back up ~/.accountsx and check the logs.",
+  "accountsx.account.fail.startup_refresh": "Some accounts could not be logged in automatically. Click the affected account to see the reason.",
   "accountsx.account.fail.title": "Account Operation Failed",
   "accountsx.account.fail.unknown": "Unknown exceptions have occurred. Please check the logs or seek help.",
   "accountsx.account.general.account_list": "Accounts",
@@ -32,10 +36,10 @@
   "accountsx.account.type.united_injector.using": "Using United Pass Phrase Authentication Account: %s",
   "accountsx.general.action.close": "Back",
   "accountsx.general.action.ok": "OK",
-  "modmenu.nameTranslation.accountsx": "Accounts X",
   "modmenu.descriptionTranslation.accountsx": "Switch accounts in Minecraft.",
-  "modmenu.nameTranslation.accountsx-adapter-mc": "Accounts X Minecraft Adapter",
+  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Authlib adapter for Accounts X.",
   "modmenu.descriptionTranslation.accountsx-adapter-mc": "Minecraft client adapter for Accounts X.",
+  "modmenu.nameTranslation.accountsx": "Accounts X",
   "modmenu.nameTranslation.accountsx-adapter-authlib": "Accounts X Authlib Adapter",
-  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Authlib adapter for Accounts X."
+  "modmenu.nameTranslation.accountsx-adapter-mc": "Accounts X Minecraft Adapter"
 }

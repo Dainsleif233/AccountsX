@@ -2,6 +2,7 @@ package top.syshub.accountsx.common.task;
 
 import org.jspecify.annotations.NonNull;
 import top.syshub.accountsx.common.AccountsX;
+import top.syshub.accountsx.common.accounts.impl.injector.InjectorAuthException;
 import top.syshub.accountsx.common.accounts.model.PlayerNoLongerExistedException;
 import top.syshub.accountsx.common.adapters.Platforms;
 
@@ -199,6 +200,10 @@ public final class TaskScheduler {
     private static String failureMessage(Throwable t) {
         if (t instanceof PlayerNoLongerExistedException) {
             return "accountsx.account.fail.player_no_longer_existed";
+        }
+        if (t instanceof InjectorAuthException injectorAuthException) {
+            // 外置登录的凭据失效是可操作的（重新添加账号即可恢复），不该落进「未知错误」。
+            return injectorAuthException.getTranslationKey();
         }
         return "accountsx.account.fail.unknown";
     }

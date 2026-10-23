@@ -76,7 +76,20 @@ class TaskSchedulerTest {
 
         release.countDown();
         future.get(2, TimeUnit.SECONDS);
-        assertThat(TaskScheduler.isRunning()).isFalse();
+
+        // 不能在这里直接断言 false：CompletableFuture 是在 executeWrapped 内部完成的，
+        // 而「正在运行」标志由 runSerialLoop 的 finally 在其**之后**清除，两者之间存在一个
+        // 微秒级窗口（测试负载高时会被观察到，历史上有偶发失败）。isRunning() 本身是给 UI 用的
+        // 100ms 去抖信号，因此这里轮询等待它归位。
+        boolean becameIdle = false;
+        for (int i = 0; i < 100; i++) {
+            if (!TaskScheduler.isRunning()) {
+                becameIdle = true;
+                break;
+            }
+            Thread.sleep(10);
+        }
+        assertThat(becameIdle).as("任务结束后 isRunning() 应当归位为 false").isTrue();
     }
 
     @Test

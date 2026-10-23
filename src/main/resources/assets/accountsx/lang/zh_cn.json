@@ -1,5 +1,9 @@
 {
+  "accountsx.account.fail.injector_invalid_token": "该外置登录账号的凭据已失效，请删除后重新添加该账号。",
+  "accountsx.account.fail.injector_login": "外置登录失败，请检查认证服务器地址、用户 ID 与密码是否正确。",
   "accountsx.account.fail.player_no_longer_existed": "未能查找到匹配的玩家！",
+  "accountsx.account.fail.read_only": "账户数据读取失败，本次会话的账号改动不会保存。请重启游戏；若反复出现，请先备份 ~/.accountsx 并查看日志。",
+  "accountsx.account.fail.startup_refresh": "部分账号未能自动登录。点击对应账号可查看原因。",
   "accountsx.account.fail.title": "账户操作失败",
   "accountsx.account.fail.unknown": "未知错误。请查看日志，或询问社区帮助",
   "accountsx.account.general.account_list": "账户列表",
@@ -32,10 +36,10 @@
   "accountsx.account.type.united_injector.using": "正在使用统一通行证账户：%s",
   "accountsx.general.action.close": "返回",
   "accountsx.general.action.ok": "我明白了",
-  "modmenu.nameTranslation.accountsx": "Accounts X",
   "modmenu.descriptionTranslation.accountsx": "在 Minecraft 中切换账户。",
-  "modmenu.nameTranslation.accountsx-adapter-mc": "Accounts X Minecraft 适配器",
+  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Accounts X 的 Authlib 适配器。",
   "modmenu.descriptionTranslation.accountsx-adapter-mc": "Accounts X 的 Minecraft 客户端适配器。",
+  "modmenu.nameTranslation.accountsx": "Accounts X",
   "modmenu.nameTranslation.accountsx-adapter-authlib": "Accounts X Authlib 适配器",
-  "modmenu.descriptionTranslation.accountsx-adapter-authlib": "Accounts X 的 Authlib 适配器。"
+  "modmenu.nameTranslation.accountsx-adapter-mc": "Accounts X Minecraft 适配器"
 }
