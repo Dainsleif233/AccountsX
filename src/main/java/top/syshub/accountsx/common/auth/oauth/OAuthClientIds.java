@@ -8,8 +8,6 @@ public final class OAuthClientIds {
             "https://skin.jsumc.fun/api/yggdrasil", "3",
             "https://skin.mualliance.ltd/api/yggdrasil", "28",
             "https://littleskin.cn/api/yggdrasil", "1214",
-            "https://mcskin.ecustvr.top/api/yggdrasil", "6");
-
-    private OAuthClientIds() {
-    }
+            "https://mcskin.ecustvr.top/api/yggdrasil", "6"
+    );
 }
