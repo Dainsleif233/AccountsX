@@ -82,6 +82,7 @@ AccountsX（根项目 / common）
 │   │   │   └── AccountWorker.java       # @Deprecated 转发到 TaskScheduler（兼容旧适配器）
 │   │   ├── storage/                     # 全局单文件存储（ConfigStore / ConfigRoot / JsonConfigStore）
 │   │   │   └── migration/               # Migration / MigrationChain + 标准迁移链（0→1→2→3→4，含 UNIFY_AND_DECOUPLE）
+│   │   ├── sync/                        # 多实例协作（去中心化）：FileMutex / AccountKey / PeerRegistry / EventLog / CoordinationService
 │   │   ├── ui/                          # 版本无关的 Translator / SelectionStyle / 列表模型
 │   │   ├── net/                         # HttpGateway 接口 + JdkHttpGateway（可注入网络层）
 │   │   └── utils/                       # Threading / NetworkUtils / UnsafeVM / AvatarService（头像获取+落盘编排，无 AWT）
@@ -92,7 +93,7 @@ AccountsX（根项目 / common）
 │   └── ├── buildSrc/                        # 预编译 Gradle 插件（3 个）
 └── src/main/resources/
     ├── fabric.mod.json              # 核心模组元数据
-    ├── assets/accountsx/lang/       # i18n（en_us.json + zh_cn.json，各 65 个 key）
+    ├── assets/accountsx/lang/       # i18n（en_us.json + zh_cn.json，各 69 个 key）
     └── assets/accountsx/textures/gui/  # GUI 资源单一数据源：account.png（切换图标）、
                                         #  sprites/icon/account.png（标题屏精灵）、alex_avatar.png（默认头像）
 ```
@@ -144,6 +145,20 @@ universal 任务还会在嵌套的 common 元数据中添加 `fabric-api: *` 依
 外置认证的密码登录分两段：先 `/authserver/authenticate` 只拿令牌与角色清单，用户在界面上勾选角色（单角色或服务端已 bound 时跳过）后，再对每个角色发一次带 `selectedProfile` 的 `/authserver/refresh` 完成绑定——一个账号有几个角色就建几个账号，全部入库后切换到服务端原本已绑定的那个角色（没有绑定记录则用第一个）。Yggdrasil 没有独立的「选角色」端点，绑定只能靠 refresh；而刷新时也带 `selectedProfile`（取账号的 preferredPlayerUUID），否则服务端不知道该把令牌绑回哪个角色。
 
 多角色选择态会显示每个角色的头像：头像由 common 的 `AvatarPixels` 解码成 ARGB 网格，界面侧用 `fill` 逐像素画出——`blit` / `DynamicTexture` 的签名在 1.20 / 1.21.x / 26.x 三代之间各不相同，而这些界面只有 1.20 与 26.x 两份源码、其余版本靠源码回退共享，写死任一签名都会让继承链上的版本编译失败。
+
+### 多实例协作（多个客户端同时运行）
+
+同一份配置可能被多个游戏实例同时读写，而**同一账号不可能被两个进程各持一份有效令牌**：Yggdrasil 刷新即作废旧令牌，微软 `refresh_token` 是单次使用的。因此不做「实例隔离」，而是让所有实例共享令牌，并把「谁在换票」串行化。
+
+- 权威是磁盘，串行点是文件锁，广播是追加日志；没有中心进程、没有监听端口、没有 leader（`common/sync/`）。
+- 协调目录是配置文件旁的 `*.d/`（`SyncPaths`）：`config.lock`（全局写锁）、`instances/<id>.json`（pid + 当前账号 + 心跳）、`locks/<accountKey>.lock`（账号租约）、`events.log`（变更事件）。
+- 写路径：`AccountRepository.markDirty` → 串行通道 → 持 `config.lock` → 读盘 → **合并** → 原子写 → 追加事件。合并规则：不认识且未被墓碑标记的条目原样带回；被墓碑标记的账号不写回；我们认识的账号按内存顺序写并戳更大的 `rev`。
+- 墓碑写在根节点的 `removed` 数组（`{key, at}`，最多保留 200 条）：删账号时追加，防止「另一个实例的旧快照把它写回来」。
+- 刷新路径：取账号租约 → 锁内先 `reconcileAccount`（采纳对方已换好的令牌）→ 再判 `canReuseToken` → 都不行才换票 → **立刻落盘**。拿不到租约（对面正在换票）就跳过本轮，改读盘复用。
+- 对账（`reconcile`）：磁盘上更新的令牌直接采纳；磁盘上新增的账号收进内存；被墓碑标记、内存里还在的账号丢弃（若是当前账号则回落默认账号）；对端新增认证服务器时重载注册表。
+- 发现延迟：`CoordinationService` 轮询 `events.log`（250ms）+ 心跳（2s）。日志只影响「多快发现」，正确性不依赖它——用令牌前一定先读盘。
+- 删除保护：删除一个正被别的存活实例用着的账号时，第一次点击只弹警告，3 秒内再点一次才真删（`DefaultAccountListModel`）；被删方的界面经 `AccountManager.addChangeListener` 回调重同步，当前账号被删则回落到默认账号，且**不会**再调 `signOut`（删它的那个实例已经撤销过）。
+- 崩溃处理：换票前写 `locks/<key>.intent`，成功落盘后清除；启动时发现属于已死进程的意图文件，说明令牌可能已被轮换却未落盘，提示用户重新登录。写到一半崩溃不会留下半个文件（临时文件带 pid+序号，只做原子替换）。
 
 `@Threading.Thread` 文档标注预期线程；`Threading.checkMinecraftClientThread()` / `checkAccountWorkerThread()` 强制执行。不要在 worker 线程外调用 profile 修改 API。
 
