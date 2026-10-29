@@ -40,6 +40,9 @@ public class AccountScreen extends Screen {
     private final Screen parent;
     private AccountListWidget accountListWidget;
 
+    /** 别处改了账号集合（多实例）时重同步界面；同一实例只订阅一次，关界面时退订。 */
+    private final Runnable changeListener = this::onAccountsChanged;
+
     private final List<Filter> filters = new ArrayList<>();
     private int selectedFilter;
 
@@ -58,6 +61,7 @@ public class AccountScreen extends Screen {
     }
 
     public void onClose() {
+        AccountManager.removeChangeListener(this.changeListener);
         Minecraft minecraft = this.minecraft;
         if (minecraft == null) {
             return;
@@ -71,9 +75,25 @@ public class AccountScreen extends Screen {
         }
     }
 
+    /**
+     * 别的实例改动账号/认证服务器后刷新界面（客户端线程）。
+     *
+     * <p>整块重建而不只同步列表：对端可能加了认证服务器，左栏筛选项也得跟着变，
+     * 否则新账号在列表里却在左栏找不到对应分类。</p>
+     */
+    private void onAccountsChanged() {
+        if (this.minecraft == null) {
+            return;
+        }
+        this.rebuildFilters();
+        this.updateWidgets();
+    }
+
     @Override
     protected void init() {
         super.init();
+        // init 会在窗口尺寸变化时重复调用：addChangeListener 对同一实例幂等
+        AccountManager.addChangeListener(this.changeListener);
         this.rebuildFilters();
         this.updateWidgets();
     }

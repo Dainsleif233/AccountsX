@@ -14,6 +14,9 @@ import top.syshub.accountsx.common.auth.server.AuthServer;
 import top.syshub.accountsx.common.storage.ConfigStore;
 import top.syshub.accountsx.common.storage.JsonConfigStore;
 import top.syshub.accountsx.common.storage.migration.StandardMigrations;
+import top.syshub.accountsx.common.sync.AccountKey;
+import top.syshub.accountsx.common.sync.CoordinationService;
+import top.syshub.accountsx.common.sync.SyncBusyException;
 import top.syshub.accountsx.common.task.TaskScheduler;
 import top.syshub.accountsx.common.utils.NetworkUtils;
 import top.syshub.accountsx.common.utils.Threading;
@@ -40,6 +43,17 @@ public final class AccountManager {
 
 
     private static AccountRepository repository;
+
+    /** 多实例协调器；{@code null} 表示没有配置文件可用（测试/异常路径），退回单实例语义。 */
+    private static CoordinationService coordination;
+
+    /**
+     * 账号集合被别的实例改过时通知界面（客户端线程）。
+     *
+     * <p>界面自己不会轮询磁盘：远端删除一个账号后，如果没人告诉它，列表会一直显示一个已经不存在的行。
+     * 用回调而不是让界面去轮询，是为了让"发现"只发生一次。</p>
+     */
+    private static final List<Runnable> CHANGE_LISTENERS = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private AccountManager() {
     }
@@ -85,11 +99,13 @@ public final class AccountManager {
     }
 
     public static void initialize() {
-        ConfigStore store = JsonConfigStore.createDefault(StandardMigrations.chain(NetworkUtils.GSON));
+        JsonConfigStore store = JsonConfigStore.createDefault(StandardMigrations.chain(NetworkUtils.GSON));
         repository = new AccountRepository(store);
         // 环境账号打头（运行时派生，永不落盘），随后是新存储的账号
         repository.initialize(Platforms.getMinecraftPlatform().fromCurrentClient(),
                 FabricLoader.getInstance().getConfigDir().resolve("accountsx"));
+
+        startCoordination(store);
 
         // P3.1：服务器元数据启动预热（串行通道，逐 server 一次；失败标 stale 不阻塞启动）
         repository.warmAuthServers();
@@ -130,6 +146,124 @@ public final class AccountManager {
         // 迁移写入由 3→4 自己落盘；load 的结果本来就是最新状态，无需回写。
     }
 
+    /**
+     * 启动多实例协调（P6）。
+     *
+     * <p>失败只降级成单实例模式：协调是「让多个实例不互相踩」，不是运行的前提；
+     * 拿不到锁目录（只读盘、权限不足）也不该让模组起不来。</p>
+     */
+    private static void startCoordination(JsonConfigStore store) {
+        try {
+            CoordinationService sync = new CoordinationService(store.path());
+            coordination = sync;
+            repository.attachSync(sync);
+            sync.setListener(AccountManager::onRemoteChange);
+            sync.start();
+            warnStaleIntents(sync);
+        } catch (RuntimeException e) {
+            coordination = null;
+            AccountsX.LOGGER.warn("多实例协调启动失败，按单实例模式运行。", e);
+        }
+    }
+
+    /**
+     * 上次运行在「已向服务端换票、还没落盘」时退出的账号。
+     *
+     * <p>这个窗口无法自愈：服务端已经作废旧令牌，本地却没有新令牌。此时直接刷新会拿到 401，
+     * 用户看到的是"账号莫名其妙失效"。提前提示一句，比让他在登录失败里猜要好。</p>
+     */
+    private static void warnStaleIntents(CoordinationService sync) {
+        List<String> stale = sync.staleIntents();
+        if (stale.isEmpty()) {
+            return;
+        }
+        int known = 0;
+        for (String key : stale) {
+            if (repository().findByKey(key) != null) {
+                known++;
+            }
+        }
+        if (known > 0) {
+            AccountsX.LOGGER.warn("{} account(s) may have rotated their token without persisting it.", known);
+            Platforms.getMinecraftPlatform().showToast(
+                    "accountsx.account.sync.title", "accountsx.account.sync.stale_intent", known);
+        }
+    }
+
+    /**
+     * 别的实例改过配置后的对账（协调线程 → 串行通道 → 客户端线程）。
+     *
+     * <p>对账本身要读盘，放在串行通道上是为了与写路径共用同一把仓储锁；界面通知必须回到
+     * 客户端线程，因为列表控件不是线程安全的。</p>
+     */
+    private static void onRemoteChange() {
+        TaskScheduler.submit(() -> {
+            AccountRepository.ReconcileResult result;
+            try {
+                result = repository().reconcile();
+            } catch (RuntimeException e) {
+                AccountsX.LOGGER.warn("多实例对账失败。", e);
+                return;
+            }
+            if (!result.changed()) {
+                return;
+            }
+            Platforms.getMinecraftPlatform().execute(() -> {
+                notifyChangeListeners();
+                if (result.removedCurrent() != null) {
+                    // 当前账号被别的客户端删了：回落到默认账号，别把游戏会话留在已删除账号上。
+                    // 这里不调 signOut——删它的那个实例已经撤销过令牌了。
+                    switchToFallback();
+                    Platforms.getMinecraftPlatform().showToast(
+                            "accountsx.account.sync.title", "accountsx.account.sync.removed_current",
+                            result.removedCurrent().getAccountStorage().getPlayerName());
+                }
+            });
+        });
+    }
+
+    /**
+     * 订阅「账号集合被别的实例改动」。必须在客户端线程调用；重复订阅同一实例无副作用。
+     */
+    public static void addChangeListener(Runnable listener) {
+        if (listener != null && !CHANGE_LISTENERS.contains(listener)) {
+            CHANGE_LISTENERS.add(listener);
+        }
+    }
+
+    public static void removeChangeListener(Runnable listener) {
+        CHANGE_LISTENERS.remove(listener);
+    }
+
+    private static void notifyChangeListeners() {
+        for (Runnable listener : CHANGE_LISTENERS) {
+            try {
+                listener.run();
+            } catch (RuntimeException e) {
+                // 一个界面刷新失败不能连累其他界面（也更不能连累协调线程）
+                AccountsX.LOGGER.warn("Account change listener failed.", e);
+            }
+        }
+    }
+
+    /** 该账号是否正被另一个存活实例当作当前账号（删除前要二次确认）。 */
+    public static boolean isUsedByOtherInstance(BaseAccount account) {
+        CoordinationService sync = coordination;
+        if (sync == null || account == null) {
+            return false;
+        }
+        String key = AccountKey.of(account);
+        return key != null && sync.isUsedByOther(key);
+    }
+
+    /** 当前账号变化时立刻广播：别的实例的删除确认读到的必须是最新状态。 */
+    private static void announceCurrent(BaseAccount account) {
+        CoordinationService sync = coordination;
+        if (sync != null) {
+            sync.publishCurrent(AccountKey.of(account));
+        }
+    }
+
     @Threading.Thread(Threading.ThreadRole.CLIENT)
     public static void dropAccount(BaseAccount account) {
         Threading.checkMinecraftClientThread();
@@ -146,6 +280,7 @@ public final class AccountManager {
         if (wasCurrent) {
             switchToFallback();
         }
+        announceCurrent(repository().getCurrent());
     }
 
     /**
@@ -280,6 +415,8 @@ public final class AccountManager {
 
         repository().setCurrent(account);
         Platforms.getMinecraftPlatform().switchAccount(session);
+        // 立刻广播：另一个实例的"删除确认"读的是心跳里的当前账号，晚 2 秒就会给出错误的确认提示。
+        announceCurrent(account);
     }
 
     @Threading.Thread(Threading.ThreadRole.WORKER)
@@ -339,6 +476,42 @@ public final class AccountManager {
 
     @Threading.Thread(Threading.ThreadRole.WORKER)
     private static void doRefreshAccount(BaseAccount account, boolean thrown) throws IOException {
+        CoordinationService sync = coordination;
+        String key = AccountKey.of(account);
+        if (sync == null || key == null) {
+            refreshUnderLock(account, thrown, null, null);
+            return;
+        }
+        try {
+            sync.withAccountLease(key, CoordinationService.LEASE_TIMEOUT_MILLIS,
+                    () -> {
+                        refreshUnderLock(account, thrown, sync, key);
+                        return null;
+                    });
+        } catch (SyncBusyException e) {
+            // 另一个实例正在给这个账号换票：不能跟着换（那会把对方刚拿到的令牌作废）。
+            // 它换完会落盘，我们读一次就够——读到能复用的令牌算是这次刷新的结果。
+            if (repository().reconcileAccount(key) && isTokenReusable(account)) {
+                account.setProfileState(AccountState.AUTHORIZED);
+                return;
+            }
+            AccountsX.LOGGER.warn("另一个实例正在刷新该账号，本次刷新跳过。", e);
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Cannot acquire the refresh lease for " + key, e);
+        }
+    }
+
+    /**
+     * 租约内的刷新（多实例模式下 {@code sync}/{@code key} 非 null）。
+     *
+     * <p>顺序是硬约束：<b>先对账、再判复用、最后才换票</b>。反过来（先换票后落盘）会让两个实例
+     * 各换一份令牌，后换的把先换的作废，用户看到的是"另一个客户端莫名掉线"。</p>
+     */
+    @Threading.Thread(Threading.ThreadRole.WORKER)
+    private static void refreshUnderLock(BaseAccount account, boolean thrown,
+                                         CoordinationService sync, String key) throws IOException {
         if (Thread.currentThread().isInterrupted()) {
             markUnauthorizedUnlessAlreadyAuthorized(account);
             if (thrown) {
@@ -347,6 +520,20 @@ public final class AccountManager {
                 return;
             }
         }
+
+        if (sync != null) {
+            // 已被别的实例删除：不刷新，更不能再落盘——否则删掉的账号会被写回去。
+            if (repository().findByKey(key) == null) {
+                account.setProfileState(AccountState.UNAUTHORIZED);
+                return;
+            }
+            repository().reconcileAccount(key);
+            if (repository().findByKey(key) == null) {
+                account.setProfileState(AccountState.UNAUTHORIZED);
+                return;
+            }
+        }
+
         if (isTokenReusable(account)) {
             // 令牌仍有效：不刷新。refresh 会作废旧令牌（Yggdrasil 刷新即递增版本号），
             // 而账号 state 是 transient 的、每次启动都按未授权处理——无条件刷新等于每启动
@@ -355,6 +542,22 @@ public final class AccountManager {
             return;
         }
 
+        if (sync != null) {
+            // 先留意图：崩溃窗口（服务端已换票、本地还没落盘）只能靠它事后识别
+            sync.recordRefreshIntent(key);
+        }
+        try {
+            rotate(account, thrown);
+        } finally {
+            if (sync != null) {
+                sync.clearRefreshIntent(key);
+            }
+        }
+    }
+
+    /** 真正换票：provider.refresh + 状态机归位 + 落盘。 */
+    @Threading.Thread(Threading.ThreadRole.WORKER)
+    private static void rotate(BaseAccount account, boolean thrown) throws IOException {
         account.setProfileState(AccountState.AUTHORIZING);
         try {
             AccountProvider.getProvider(account).refresh(account);

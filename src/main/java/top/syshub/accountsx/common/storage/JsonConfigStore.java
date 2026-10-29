@@ -239,7 +239,9 @@ public final class JsonConfigStore implements ConfigStore {
             tightenPermissions(dir, "rwx------");
         }
 
-        Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+        // 临时名带进程唯一后缀：多实例同时保存时不会互相截断同一个 .tmp，
+        // 也不会抢同一个 tmp 的 move（全局写锁是另一重保险，这里保证即使锁失效也不损坏数据）。
+        Path tmp = path.resolveSibling(path.getFileName() + ".tmp-" + UniqueSuffix.next());
         try {
             Files.writeString(tmp, gson.toJson(root.raw()), StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
@@ -263,6 +265,18 @@ public final class JsonConfigStore implements ConfigStore {
             throw e;
         }
         tightenPermissions(path, "rw-------");
+    }
+
+    /** 进程内单调递增的唯一后缀，供临时文件名使用（跨进程由 pid 保证不重）。 */
+    private static final class UniqueSuffix {
+        private static final java.util.concurrent.atomic.AtomicLong SEQ = new java.util.concurrent.atomic.AtomicLong();
+
+        private UniqueSuffix() {
+        }
+
+        static String next() {
+            return ProcessHandle.current().pid() + "-" + SEQ.incrementAndGet();
+        }
     }
 
     private static void fsync(Path tmp) {

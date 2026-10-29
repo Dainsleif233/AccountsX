@@ -21,6 +21,8 @@ import top.syshub.accountsx.common.accounts.impl.injector.AbstractInjectorAccoun
 import top.syshub.accountsx.common.auth.yggdrasil.YggdrasilDeviceCodeFlow;
 import top.syshub.accountsx.common.storage.ConfigRoot;
 import top.syshub.accountsx.common.storage.ConfigStore;
+import top.syshub.accountsx.common.sync.AccountKey;
+import top.syshub.accountsx.common.sync.CoordinationService;
 import top.syshub.accountsx.common.task.TaskScheduler;
 
 import java.io.IOException;
@@ -28,8 +30,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -57,6 +64,22 @@ public final class AccountRepository {
 
     /** 服务器注册表（P3.1）：servers 条目的内存视图 + 元数据缓存；变更经 markDirty 落盘。 */
     private final AuthServerRegistry authServers = new AuthServerRegistry(Platforms.getHttpGateway(), this::markDirty);
+
+    /**
+     * 多实例协调（P6）；{@code null} 表示单实例模式（单元测试与无配置文件场景）。
+     *
+     * <p>一旦装上，写路径变成"锁内读盘 → 合并 → 写回"，读路径多一个"用令牌前先对账"。</p>
+     */
+    private volatile CoordinationService sync;
+
+    /** 每个账号最后一次落盘/采纳的 revision（缺省 0）。用来判断磁盘上的条目是不是比内存里的新。 */
+    private final Map<String, Long> revisions = new HashMap<>();
+
+    /** 本地已删除但还没写进文件的墓碑（key → 删除时刻），写入时并进 {@code removed} 数组。 */
+    private final Map<String, Long> pendingRemovals = new LinkedHashMap<>();
+
+    /** {@code removed} 数组最多保留的墓碑数：只用于防止"复活"，留太多没必要。 */
+    private static final int MAX_TOMBSTONES = 200;
 
     public AccountRepository(ConfigStore store) {
         this.store = Objects.requireNonNull(store, "store");
@@ -102,6 +125,15 @@ public final class AccountRepository {
             }
         }
 
+        revisions.clear();
+        for (JsonElement element : root.accounts()) {
+            if (element instanceof JsonObject jo) {
+                String key = AccountKey.of(jo);
+                if (key != null)
+                    revisions.put(key, longValue(jo.get("rev")));
+            }
+        }
+
         // 注册表接管 servers（P3.1）：装载 + 补齐固定条目 + 安装到 provider 可见的单例槽。
         authServers.load(root.servers());
         AbstractInjectorAccountProvider.installRegistry(authServers);
@@ -110,6 +142,19 @@ public final class AccountRepository {
     /** P3.1：服务器注册表（登录/刷新经注册表使用）。 */
     public AuthServerRegistry authServers() {
         return authServers;
+    }
+
+    /**
+     * 装上多实例协调（P6）。必须在 {@link #initialize} 之后调用：装载阶段还不知道其他实例存在，
+     * 而写路径要等协调器可用了才敢做"读-合并-写"。
+     */
+    public void attachSync(CoordinationService coordination) {
+        this.sync = coordination;
+    }
+
+    /** 当前协调器；{@code null} 表示单实例模式。 */
+    public CoordinationService sync() {
+        return sync;
     }
 
     /**
@@ -229,11 +274,181 @@ public final class AccountRepository {
     public synchronized void drop(BaseAccount account) {
         if (account == null || !accounts.remove(account))
             return;
+        // 墓碑：删掉的账号可能还躺在另一个实例的内存里，它下一次保存必须知道"这条已经删了"，
+        // 否则合并写会把它复活。
+        String key = AccountKey.of(account);
+        if (key != null) {
+            pendingRemovals.put(key, System.currentTimeMillis());
+            revisions.remove(key);
+        }
         // 删掉的正是当前账号：指针立刻落回默认账号（启动器会话），别留着指向已删除的对象。
         // 真正的游戏会话切换由 AccountManager 在 worker 上做——仓储只管状态。
         if (current == account)
             current = defaultAccount();
         markDirty();
+    }
+
+    /** 磁盘原文（合并写的基线）；读不到返回 {@code null}，调用方按"没有别人的改动"处理。 */
+    private JsonObject readDiskRaw() {
+        try {
+            return readGlobalRaw(store);
+        } catch (RuntimeException e) {
+            LOGGER.warn("读取全局配置原文失败，本次按单实例语义写入。", e);
+            return null;
+        }
+    }
+
+    /** 当前内存里持有该 key 的账号（对账用）；没有则 {@code null}。 */
+    public synchronized BaseAccount findByKey(String key) {
+        if (key == null)
+            return null;
+        for (BaseAccount account : accounts) {
+            if (key.equals(AccountKey.of(account)))
+                return account;
+        }
+        return null;
+    }
+
+    /**
+     * 与磁盘对账：采纳别处换好的令牌、收下别处新增的账号、丢弃别处删掉的账号。
+     *
+     * @return 变化描述；没有变化时 {@link ReconcileResult#NONE}
+     */
+    public ReconcileResult reconcile() {
+        JsonObject disk = readDiskRaw();
+        if (disk == null)
+            return ReconcileResult.NONE;
+        return reconcileWith(disk, null);
+    }
+
+    /**
+     * 只对账一个账号（刷新取令牌前必须调用）。
+     *
+     * <p>顺序不可换：先对账再判令牌。反过来的话，第二个实例会拿自己内存里的旧令牌去调 refresh，
+     * 把对方刚换到的令牌作废——正是"另一个客户端莫名其妙掉线"的来源。</p>
+     *
+     * @return true 表示采纳到了更新的令牌（调用方应重新判断是否还需要联网）
+     */
+    public boolean reconcileAccount(String key) {
+        if (key == null)
+            return false;
+        JsonObject disk = readDiskRaw();
+        if (disk == null)
+            return false;
+        return reconcileWith(disk, key).changed();
+    }
+
+    private synchronized ReconcileResult reconcileWith(JsonObject disk, String onlyKey) {
+        boolean changed = false;
+        BaseAccount removedCurrent = null;
+
+        Map<String, JsonObject> diskByKey = new LinkedHashMap<>();
+        Set<String> tombstoned = tombstoneKeys(disk);
+        for (JsonElement element : arrayOf(disk, "accounts")) {
+            if (!(element instanceof JsonObject jo))
+                continue;
+            String key = AccountKey.of(jo);
+            if (key == null || tombstoned.contains(key))
+                continue;
+            diskByKey.put(key, jo);
+        }
+
+        // 1) 本地账号：磁盘更新则采纳；磁盘没了则是别处删掉了（ENV 永不落盘，跳过）
+        for (BaseAccount account : List.copyOf(accounts)) {
+            if (account.getAccountType() == AccountType.ENV_DEFAULT)
+                continue;
+            String key = AccountKey.of(account);
+            if (key == null || (onlyKey != null && !onlyKey.equals(key)))
+                continue;
+            JsonObject entry = diskByKey.get(key);
+            if (entry == null) {
+                if (onlyKey != null)
+                    continue;
+                // 只在墓碑存在时才算"被删除"：磁盘读不懂/被清空时不能把账号全丢了
+                if (!tombstoned.contains(key))
+                    continue;
+                accounts.remove(account);
+                revisions.remove(key);
+                if (current == account) {
+                    current = defaultAccount();
+                    removedCurrent = account;
+                }
+                changed = true;
+                continue;
+            }
+            long diskRev = longValue(entry.get("rev"));
+            if (onlyKey == null && diskRev <= revisions.getOrDefault(key, 0L))
+                continue;
+            if (adopt(account, entry)) {
+                revisions.put(key, diskRev);
+                changed = true;
+            }
+        }
+
+        // 2) 磁盘上别的实例新增的账号：收进内存，界面才能看见
+        if (onlyKey == null) {
+            Set<String> local = new LinkedHashSet<>();
+            for (BaseAccount account : accounts) {
+                String key = AccountKey.of(account);
+                if (key != null)
+                    local.add(key);
+            }
+            for (Map.Entry<String, JsonObject> entry : diskByKey.entrySet()) {
+                if (local.contains(entry.getKey()))
+                    continue;
+                try {
+                    BaseAccount account = fromJson(entry.getValue(), root.servers());
+                    if (account != null) {
+                        accounts.add(account);
+                        revisions.put(entry.getKey(), longValue(entry.getValue().get("rev")));
+                        changed = true;
+                    }
+                } catch (RuntimeException e) {
+                    LOGGER.warn("对账时跳过无法解析的账号条目。", e);
+                }
+            }
+            // 3) 别的实例新增了认证服务器：注册表跟着磁盘重载（元数据缓存失效，重新探测即可）
+            if (!serversMatch(disk)) {
+                authServers.load(arrayOf(disk, "servers"));
+                AbstractInjectorAccountProvider.installRegistry(authServers);
+                warmAuthServers();
+                changed = true;
+            }
+        }
+
+        return new ReconcileResult(changed, removedCurrent);
+    }
+
+    private boolean adopt(BaseAccount account, JsonObject entry) {
+        JsonObject profile = entry.get("profile") instanceof JsonObject p ? p : null;
+        JsonObject credentials = entry.get("credentials") instanceof JsonObject c ? c : null;
+        String accessToken = credentials == null ? null : str(credentials.get("accessToken"));
+        BaseAccount.AccountStorage storage = account.getAccountStorage();
+        if (Objects.equals(accessToken, storage.getAccessToken())
+                && longValue(credentials == null ? null : credentials.get("expiresAt")) == storage.getExpiresAt())
+            return false;
+        UUID uuid = profile == null ? null : parseUuid(str(profile.get("uuid")));
+        String name = profile == null ? null : str(profile.get("name"));
+        account.adoptFromDisk(accessToken, name != null ? name : storage.getPlayerName(),
+                uuid != null ? uuid : storage.getPlayerUUID(),
+                longValue(credentials == null ? null : credentials.get("expiresAt")));
+        return true;
+    }
+
+    private boolean serversMatch(JsonObject disk) {
+        JsonArray diskServers = arrayOf(disk, "servers");
+        for (JsonElement element : diskServers) {
+            if (!(element instanceof JsonObject jo))
+                continue;
+            if (!hasServer(root.servers(), jo))
+                return false;
+        }
+        return true;
+    }
+
+    /** 对账结果：有没有变化、当前账号是否被别处删除（需要切回默认账号）。 */
+    public record ReconcileResult(boolean changed, BaseAccount removedCurrent) {
+        public static final ReconcileResult NONE = new ReconcileResult(false, null);
     }
 
     /**
@@ -310,24 +525,156 @@ public final class AccountRepository {
     }
 
     /**
-     * 写时从对象重建 JSON（login/refresh 改过的 storage 一定落盘），同时把
-     * load 时无法映射的条目（未知 type / 解析失败）原样带回——注释与行为一致：
-     * 跳过但不删除，P3 注册表接管。
+     * 写时从对象重建 JSON，并与磁盘上的最新内容合并。
+     *
+     * <p>合并而不是覆盖，是因为另一个实例可能在我们加载之后加过账号、加过服务器、删过账号：
+     * <ul>
+     *   <li>磁盘上我们<b>不认识</b>、也没被墓碑标记的条目原样带回——"我没见过"不能成为删掉别人的理由；</li>
+     *   <li>被墓碑标记的账号不写回——否则删掉的账号会被另一个实例的下一次保存复活；</li>
+     *   <li>我们认识的账号按内存顺序写，并戳一个比磁盘更大的 {@code rev}，让对方下次对账时知道谁更新。</li>
+     * </ul>
+     * 无法映射的历史条目（未知 type / 手工改坏）同样原样保留。</p>
      */
-    private void snapshot() {
-        JsonArray preserved = new JsonArray();
-        for (JsonElement element : root.accounts()) {
-            if (element instanceof JsonObject jo && fromJson(jo, root.servers()) == null)
-                preserved.add(jo);
+    private Set<String> writeSnapshot(JsonObject diskRaw) {
+        JsonArray diskAccounts = arrayOf(diskRaw, "accounts");
+        Set<String> tombstoned = new LinkedHashSet<>(tombstoneKeys(diskRaw));
+        tombstoned.addAll(pendingRemovals.keySet());
+
+        Map<String, JsonObject> diskByKey = new LinkedHashMap<>();
+        for (JsonElement element : diskAccounts) {
+            if (element instanceof JsonObject jo) {
+                String key = AccountKey.of(jo);
+                if (key != null)
+                    diskByKey.put(key, jo);
+            }
         }
-        JsonArray array = root.accounts();
-        while (!array.isEmpty())
-            array.remove(0);
-        for (JsonElement element : preserved)
-            array.add(element);
+
+        JsonArray next = new JsonArray();
+        Set<String> written = new LinkedHashSet<>();
         for (BaseAccount account : accounts) {
-            if (account.getAccountType() != AccountType.ENV_DEFAULT)
-                array.add(toJson(account));
+            if (account.getAccountType() == AccountType.ENV_DEFAULT)
+                continue;
+            String key = AccountKey.of(account);
+            if (key == null) {
+                // 没有稳定身份（缺 uuid）：无法对账，原样写，至少不丢
+                next.add(toJson(account));
+                continue;
+            }
+            if (tombstoned.contains(key))
+                continue;
+            JsonObject jo = toJson(account);
+            long rev = Math.max(revisions.getOrDefault(key, 0L), longValue(diskByKey.get(key) == null ? null : diskByKey.get(key).get("rev"))) + 1L;
+            jo.addProperty("rev", rev);
+            revisions.put(key, rev);
+            written.add(key);
+            next.add(jo);
+        }
+        for (Map.Entry<String, JsonObject> entry : diskByKey.entrySet()) {
+            if (!written.contains(entry.getKey()) && !tombstoned.contains(entry.getKey()))
+                next.add(entry.getValue());
+        }
+        // 认不出 key 的条目（未知 type / 手工改坏）一样保留：既包括内存里原有的，也包括磁盘上新出现的。
+        // 这些条目无法对账，删掉就等于替用户丢掉他升级/降级版本时的数据。
+        Set<String> unknownSeen = new LinkedHashSet<>();
+        for (JsonElement element : root.accounts()) {
+            if (element instanceof JsonObject jo && AccountKey.of(jo) == null && unknownSeen.add(jo.toString()))
+                next.add(jo);
+        }
+        for (JsonElement element : diskAccounts) {
+            if (element instanceof JsonObject jo && AccountKey.of(jo) == null && unknownSeen.add(jo.toString()))
+                next.add(jo);
+        }
+        replaceContent(root.accounts(), next);
+
+        // servers：先写我们的注册表，再把别的实例新增、我们还不认识的条目补回去
+        JsonArray servers = root.servers();
+        List<JsonObject> unknownServers = new ArrayList<>();
+        for (JsonElement element : arrayOf(diskRaw, "servers")) {
+            if (element instanceof JsonObject jo && !hasServer(servers, jo))
+                unknownServers.add(jo);
+        }
+        authServers.persist(servers);
+        for (JsonObject jo : unknownServers) {
+            if (!hasServer(servers, jo))
+                servers.add(jo);
+        }
+
+        writeTombstones(diskRaw, tombstoned);
+        // 不在这里清 pendingRemovals：落盘失败时墓碑必须留着，否则下一次写会忘了"这条已删除"，
+        // 另一个实例的旧快照就能把它复活。清理交给落盘成功的调用方。
+        return tombstoned;
+    }
+
+    private static boolean hasServer(JsonArray servers, JsonObject candidate) {
+        String apiRoot = str(candidate.get("apiRoot"));
+        String type = str(candidate.get("type"));
+        for (JsonElement element : servers) {
+            if (element instanceof JsonObject jo
+                    && Objects.equals(apiRoot, str(jo.get("apiRoot")))
+                    && Objects.equals(type, str(jo.get("type"))))
+                return true;
+        }
+        return false;
+    }
+
+    private static void replaceContent(JsonArray target, JsonArray source) {
+        while (!target.isEmpty())
+            target.remove(0);
+        for (JsonElement element : source)
+            target.add(element);
+    }
+
+    private static JsonArray arrayOf(JsonObject raw, String name) {
+        if (raw == null)
+            return new JsonArray();
+        JsonElement element = raw.get(name);
+        if (element instanceof JsonArray array)
+            return array;
+        JsonArray created = new JsonArray();
+        if (raw != null)
+            raw.add(name, created);
+        return created;
+    }
+
+    /** 磁盘上已有的墓碑 key。 */
+    private static Set<String> tombstoneKeys(JsonObject diskRaw) {
+        Set<String> keys = new LinkedHashSet<>();
+        for (JsonElement element : arrayOf(diskRaw, "removed")) {
+            if (element instanceof JsonObject jo) {
+                String key = str(jo.get("key"));
+                if (key != null)
+                    keys.add(key);
+            }
+        }
+        return keys;
+    }
+
+    /** 墓碑只增不减会让文件一直长；保留最近若干条就够了（旧的复活风险远低于体积成本）。 */
+    private void writeTombstones(JsonObject diskRaw, Set<String> keys) {
+        JsonArray removed = arrayOf(root.raw(), "removed");
+        Map<String, Long> merged = new LinkedHashMap<>();
+        // 内存里已有的墓碑也要带上：磁盘这次读失败时，历史删除记录不能就此丢光。
+        for (JsonElement element : arrayOf(root.raw(), "removed")) {
+            if (element instanceof JsonObject jo && str(jo.get("key")) != null)
+                merged.put(str(jo.get("key")), longValue(jo.get("at")));
+        }
+        for (JsonElement element : arrayOf(diskRaw, "removed")) {
+            if (element instanceof JsonObject jo && str(jo.get("key")) != null)
+                merged.put(str(jo.get("key")), longValue(jo.get("at")));
+        }
+        long now = System.currentTimeMillis();
+        for (String key : keys)
+            merged.putIfAbsent(key, pendingRemovals.getOrDefault(key, now));
+        List<Map.Entry<String, Long>> all = new ArrayList<>(merged.entrySet());
+        if (all.size() > MAX_TOMBSTONES)
+            all = all.subList(all.size() - MAX_TOMBSTONES, all.size());
+        while (!removed.isEmpty())
+            removed.remove(0);
+        for (Map.Entry<String, Long> entry : all) {
+            JsonObject jo = new JsonObject();
+            jo.addProperty("key", entry.getKey());
+            jo.addProperty("at", entry.getValue());
+            removed.add(jo);
         }
     }
 
@@ -345,22 +692,62 @@ public final class AccountRepository {
             writePending = true;
         }
         TaskScheduler.submit(() -> {
-            // 深拷贝快照必须在锁内做：root.accounts() 是 live 数组，锁外序列化会被
-            // CLIENT 线程的 add/drop/move 结构性修改撕裂（P2.4-review 竞态项）。
-            String snapshotText;
-            synchronized (this) {
-                writePending = false;
-                // 锁序恒为 仓储→注册表：注册表内部的变更回调（markDirty）在注册表锁外触发。
-                authServers.persist(root.servers());
-                snapshot();
-                snapshotText = top.syshub.accountsx.common.utils.NetworkUtils.GSON.toJson(root.raw());
-            }
             try {
-                store.saveSnapshot(snapshotText);
+                writeNow();
             } catch (IOException e) {
                 LOGGER.error("账号配置保存失败（内存状态不受影响，下次变更触发重试）。", e);
             }
         });
+    }
+
+    /**
+     * 真正落盘：多实例模式下先拿全局写锁，再"读盘 → 合并 → 写回"。
+     *
+     * <p>锁的意义不是防"同时写"（原子替换已经保证了文件不残缺），而是保证
+     * <b>读-改-写整个序列</b>不被另一个实例插进中间：否则两边都基于自己加载时的旧内容，
+     * 后写的那个会把对方刚加的账号抹掉。</p>
+     */
+    private void writeNow() throws IOException {
+        CoordinationService coordination = this.sync;
+        if (coordination == null) {
+            writeUnderLock();
+            return;
+        }
+        try {
+            coordination.withConfigLock(this::writeUnderLock);
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            // 拿不到写锁（超时/中断）：本次写丢弃，内存状态仍在，下次变更会再次触发
+            throw new IOException("获取配置写锁失败，本次保存已放弃。", e);
+        }
+    }
+
+    private Object writeUnderLock() throws IOException {
+        JsonObject diskRaw = readDiskRaw();
+        // 深拷贝快照必须在锁内做：root.accounts() 是 live 数组，锁外序列化会被
+        // CLIENT 线程的 add/drop/move 结构性修改撕裂（P2.4-review 竞态项）。
+        Set<String> mergedRemovals;
+        String snapshotText;
+        synchronized (this) {
+            writePending = false;
+            // 锁序恒为 仓储→注册表：注册表内部的变更回调（markDirty）在注册表锁外触发。
+            mergedRemovals = writeSnapshot(diskRaw);
+            snapshotText = top.syshub.accountsx.common.utils.NetworkUtils.GSON.toJson(root.raw());
+        }
+        store.saveSnapshot(snapshotText);
+        synchronized (this) {
+            for (String key : mergedRemovals)
+                pendingRemovals.remove(key);
+        }
+        coordinationPublish();
+        return null;
+    }
+
+    private void coordinationPublish() {
+        CoordinationService coordination = this.sync;
+        if (coordination != null)
+            coordination.publishWrite("save", root.accounts().size());
     }
 
     // ── 新↔旧双向映射 ──

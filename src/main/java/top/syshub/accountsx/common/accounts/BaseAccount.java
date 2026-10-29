@@ -209,4 +209,17 @@ public abstract class BaseAccount {
         AccountStorage s = this.storage;
         this.storage = new AccountStorage(s.accessToken, s.playerName, s.playerUUID, s.expiresAt, state);
     }
+
+    /**
+     * 采纳另一个实例已经换好的令牌（多实例协调专用）。
+     *
+     * <p>同一账号不可能被两个进程各持一份有效令牌：服务端每次换票都会作废旧值。所以第二个
+     * 实例在用令牌之前先读盘，磁盘上的条目比自己新就直接采纳，绝不能自己去换票——那会把
+     * 对方刚拿到的令牌顶掉，表现为"另一客户端莫名其妙掉线"。</p>
+     *
+     * <p>不加线程检查：调用点位于仓储对账（串行化在 synchronized 内），并非 provider 的刷新路径。</p>
+     */
+    public final void adoptFromDisk(String accessToken, String playerName, UUID playerUUID, long expiresAt) {
+        this.storage = new AccountStorage(accessToken, playerName, playerUUID, expiresAt, AccountState.AUTHORIZED);
+    }
 }
