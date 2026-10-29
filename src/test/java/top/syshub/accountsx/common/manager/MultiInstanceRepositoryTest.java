@@ -84,6 +84,14 @@ class MultiInstanceRepositoryTest {
                 + uuid32.substring(12, 16) + "-" + uuid32.substring(16, 20) + "-" + uuid32.substring(20);
     }
 
+    /** 在 worker 线程上换令牌（{@code setProfile} 有线程检查），再标脏落盘。 */
+    private static void rotate(AccountRepository repository, String token) throws Exception {
+        BaseAccount account = repository.view().get(0);
+        TaskScheduler.submit(() -> account.setProfile(token, account.getAccountStorage().getPlayerName(),
+                account.getAccountStorage().getPlayerUUID())).get(10, TimeUnit.SECONDS);
+        repository.touch(account);
+    }
+
     private static void awaitWrite(AccountRepository repository) throws Exception {
         long deadline = System.currentTimeMillis() + 10_000L;
         while (repository.isWritePending() && System.currentTimeMillis() < deadline) {
@@ -177,6 +185,65 @@ class MultiInstanceRepositoryTest {
                 .isEqualTo("fake-token-rotated");
         // 对账把状态归为已授权：拿到的确实是刚换好的有效令牌
         assertThat(second.view().get(0).getAccountStorage().getState().name()).isEqualTo("AUTHORIZED");
+    }
+
+    @Test
+    void readdedAccountIsNotBlockedByItsTombstone() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository first = instance(config);
+        first.add(offline("Steve", STEVE));
+        awaitWrite(first);
+
+        // 删掉再重新添加同一个账号（同类型同 UUID）：墓碑不能把它永久封死
+        first.drop(first.view().get(0));
+        awaitWrite(first);
+        first.add(offline("Steve", STEVE));
+        awaitWrite(first);
+
+        AccountRepository reloaded = instance(config);
+        assertThat(reloaded.view()).extracting(a -> a.getAccountStorage().getPlayerName())
+                .containsExactly("Steve");
+    }
+
+    @Test
+    void writeAdoptsNewerTokenFromDiskInsteadOfOverwritingIt() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository first = instance(config);
+        first.add(offline("Steve", STEVE));
+        awaitWrite(first);
+
+        // 第二个实例此刻手里还是旧令牌
+        AccountRepository second = instance(config);
+        rotate(first, "fake-token-rotated");
+        awaitWrite(first);
+
+        // 它写一条无关变更时，不能把内存里的旧令牌盖回去
+        second.add(offline("Notch", NOTCH));
+        awaitWrite(second);
+
+        AccountRepository reloaded = instance(config);
+        BaseAccount steve = reloaded.view().stream()
+                .filter(a -> a.getAccountStorage().getPlayerName().equals("Steve"))
+                .findFirst().orElseThrow();
+        assertThat(steve.getAccountStorage().getAccessToken()).isEqualTo("fake-token-rotated");
+    }
+
+    @Test
+    void dropThenWrite_doesNotResurrectTheAccountBeforeTheTombstoneLands() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository first = instance(config);
+        first.add(offline("Steve", STEVE));
+        first.add(offline("Alex", ALEX));
+        awaitWrite(first);
+
+        // 删掉和下一次写之间不给落盘留时间：合并写会先对账，必须知道"这条是本地删的"
+        first.drop(first.view().get(1));
+        first.add(offline("Notch", NOTCH));
+        awaitWrite(first);
+
+        AccountRepository reloaded = instance(config);
+        assertThat(reloaded.view()).extracting(a -> a.getAccountStorage().getPlayerName())
+                .containsExactlyInAnyOrder("Steve", "Notch");
     }
 
     @Test

@@ -78,6 +78,15 @@ public final class AccountRepository {
     /** 本地已删除但还没写进文件的墓碑（key → 删除时刻），写入时并进 {@code removed} 数组。 */
     private final Map<String, Long> pendingRemovals = new LinkedHashMap<>();
 
+    /**
+     * 本实例刚重新添加的账号 key。
+     *
+     * <p>墓碑是给"别的实例手里那份旧快照"用的：它不能让删掉的账号复活，但也不能永久封死这个
+     * 账号——用户删掉再重新添加同一个账号（同类型同 UUID 同服务器）是完全正常的操作。
+     * 只有本实例<b>显式添加</b>过的 key 才压在墓碑之上；另一实例内存里的旧副本仍然会被墓碑挡住。</p>
+     */
+    private final Set<String> revivedKeys = new LinkedHashSet<>();
+
     /** {@code removed} 数组最多保留的墓碑数：只用于防止"复活"，留太多没必要。 */
     private static final int MAX_TOMBSTONES = 200;
 
@@ -268,6 +277,13 @@ public final class AccountRepository {
 
     public synchronized void add(BaseAccount account) {
         accounts.add(Objects.requireNonNull(account, "account"));
+        // 删掉再重新添加同一个账号：本地意图优先于墓碑，否则这个账号会永远写不进去
+        // （写入时被墓碑跳过，重启后凭空消失）。
+        String key = AccountKey.of(account);
+        if (key != null) {
+            pendingRemovals.remove(key);
+            revivedKeys.add(key);
+        }
         markDirty();
     }
 
@@ -280,6 +296,7 @@ public final class AccountRepository {
         if (key != null) {
             pendingRemovals.put(key, System.currentTimeMillis());
             revisions.remove(key);
+            revivedKeys.remove(key);
         }
         // 删掉的正是当前账号：指针立刻落回默认账号（启动器会话），别留着指向已删除的对象。
         // 真正的游戏会话切换由 AccountManager 在 worker 上做——仓储只管状态。
@@ -364,6 +381,9 @@ public final class AccountRepository {
             if (entry == null) {
                 if (onlyKey != null)
                     continue;
+                // 刚重新添加、还没落盘的账号：磁盘上暂时没有，不能当成"别处删掉了"。
+                if (revivedKeys.contains(key))
+                    continue;
                 // 只在墓碑存在时才算"被删除"：磁盘读不懂/被清空时不能把账号全丢了
                 if (!tombstoned.contains(key))
                     continue;
@@ -395,6 +415,9 @@ public final class AccountRepository {
             }
             for (Map.Entry<String, JsonObject> entry : diskByKey.entrySet()) {
                 if (local.contains(entry.getKey()))
+                    continue;
+                // 本地刚删掉、还没落盘的账号：磁盘上还在，但用户已经不要它了，别收回来。
+                if (pendingRemovals.containsKey(entry.getKey()))
                     continue;
                 try {
                     BaseAccount account = fromJson(entry.getValue(), root.servers());
@@ -560,8 +583,12 @@ public final class AccountRepository {
                 next.add(toJson(account));
                 continue;
             }
-            if (tombstoned.contains(key))
-                continue;
+            if (tombstoned.contains(key)) {
+                // 本实例重新添加过的账号：撤销墓碑（磁盘上的那条也要删掉），否则下次保存又被挡住。
+                if (!revivedKeys.contains(key))
+                    continue;
+                tombstoned.remove(key);
+            }
             JsonObject jo = toJson(account);
             long rev = Math.max(revisions.getOrDefault(key, 0L), longValue(diskByKey.get(key) == null ? null : diskByKey.get(key).get("rev"))) + 1L;
             jo.addProperty("rev", rev);
@@ -599,7 +626,7 @@ public final class AccountRepository {
                 servers.add(jo);
         }
 
-        writeTombstones(diskRaw, tombstoned);
+        writeTombstones(diskRaw, tombstoned, written);
         // 不在这里清 pendingRemovals：落盘失败时墓碑必须留着，否则下一次写会忘了"这条已删除"，
         // 另一个实例的旧快照就能把它复活。清理交给落盘成功的调用方。
         return tombstoned;
@@ -650,7 +677,7 @@ public final class AccountRepository {
     }
 
     /** 墓碑只增不减会让文件一直长；保留最近若干条就够了（旧的复活风险远低于体积成本）。 */
-    private void writeTombstones(JsonObject diskRaw, Set<String> keys) {
+    private void writeTombstones(JsonObject diskRaw, Set<String> keys, Set<String> written) {
         JsonArray removed = arrayOf(root.raw(), "removed");
         Map<String, Long> merged = new LinkedHashMap<>();
         // 内存里已有的墓碑也要带上：磁盘这次读失败时，历史删除记录不能就此丢光。
@@ -665,6 +692,9 @@ public final class AccountRepository {
         long now = System.currentTimeMillis();
         for (String key : keys)
             merged.putIfAbsent(key, pendingRemovals.getOrDefault(key, now));
+        // 这次真的写进 accounts 的条目不是"已删除"：重新添加的账号必须把它的墓碑一起撤掉，
+        // 否则文件里留着墓碑，下次启动读到它照样会被跳过。
+        merged.keySet().removeAll(written);
         List<Map.Entry<String, Long>> all = new ArrayList<>(merged.entrySet());
         if (all.size() > MAX_TOMBSTONES)
             all = all.subList(all.size() - MAX_TOMBSTONES, all.size());
@@ -731,6 +761,10 @@ public final class AccountRepository {
         String snapshotText;
         synchronized (this) {
             writePending = false;
+            // 写之前先对账：别人刚换好的令牌、别人刚删掉的账号都要先反映到内存里，
+            // 否则这次写会把内存里的旧副本（旧令牌 / 已删账号）盖回去。
+            if (diskRaw != null)
+                reconcileWith(diskRaw, null);
             // 锁序恒为 仓储→注册表：注册表内部的变更回调（markDirty）在注册表锁外触发。
             mergedRemovals = writeSnapshot(diskRaw);
             snapshotText = top.syshub.accountsx.common.utils.NetworkUtils.GSON.toJson(root.raw());
@@ -739,6 +773,8 @@ public final class AccountRepository {
         synchronized (this) {
             for (String key : mergedRemovals)
                 pendingRemovals.remove(key);
+            // 复活意图只在"已经落盘"之后才算数：写到一半失败时它还得留着，否则墓碑会把这个账号重新挡掉。
+            revivedKeys.clear();
         }
         coordinationPublish();
         return null;
