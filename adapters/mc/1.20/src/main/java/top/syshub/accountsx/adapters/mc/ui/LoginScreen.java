@@ -21,6 +21,17 @@ abstract class LoginScreen extends Screen {
     protected static final int INPUT_W = 240;
     protected static final int TOP = 96;
 
+    /** 页头（标题 40 / 副标题 56）之下的第一条可用线：控件上移时不许越过它。 */
+    protected static final int HEADER_BOTTOM = 72;
+
+    /**
+     * 登录族最高的一屏表单：方式切换行 + 两个输入框 + 登陆按钮（四行、三处间隙）。
+     *
+     * <p>控件块按最高表单定位，切换 OAuth / 密码时整块才不动——锚点跟着当前模式算，
+     * 按钮会在鼠标底下往上跳一格。</p>
+     */
+    private static final int MAX_FORM_H = 4 * BTN_H + 3 * PAD;
+
     protected final Screen parent;
     private final Component subtitle;
 
@@ -132,6 +143,34 @@ abstract class LoginScreen extends Screen {
     /** 控件区的底边上限：页面控件不许越过状态行。 */
     protected final int limitY() {
         return statusY() - PAD;
+    }
+
+    /**
+     * 控件块顶部：整个登录族共用同一个锚点，只随窗口高度变化。
+     *
+     * <p>正常从 {@link #TOP} 起；窗口矮到放不下最高表单时整体上移，但不越过页头。
+     * 各屏若按自己当前的表单算，微软 / OAuth / 密码三屏的按钮会落在三个不同高度。</p>
+     */
+    protected final int contentTop() {
+        return Math.max(HEADER_BOTTOM, Math.min(TOP, this.limitY() - MAX_FORM_H));
+    }
+
+    /**
+     * 说明行（登录码、OAuth 提示）的基线：紧贴控件块下沿空一格。
+     *
+     * <p>微软与外置两屏共用它，否则同一条「登录码」会一屏在按钮上方、一屏在下方。</p>
+     */
+    protected static int hintBelow(int blockBottom) {
+        return blockBottom + PAD;
+    }
+
+    /**
+     * 页头上方那一行（明文 HTTP 警告、选择提示）的基线：贴着控件块，窗口变矮时一起上移。
+     *
+     * <p>下界压回页头下沿，否则高 GUI 缩放下（窗口只有两百多像素）这一行会压到副标题上。</p>
+     */
+    protected final int noticeY() {
+        return Math.max(HEADER_BOTTOM, this.contentTop() - 12);
     }
 
     /**

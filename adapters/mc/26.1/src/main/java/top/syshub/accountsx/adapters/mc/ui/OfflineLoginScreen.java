@@ -32,7 +32,7 @@ public class OfflineLoginScreen extends LoginScreen {
         this.clearWidgets();
 
         int x = this.contentX();
-        int y = TOP;
+        int y = this.contentTop();
 
         this.nameBox = new EditBox(this.font, x, y, INPUT_W, BTN_H,
                 Component.translatable("accountsx.account.objects.player_name"));

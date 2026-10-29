@@ -22,7 +22,6 @@ public class MicrosoftLoginScreen extends LoginScreen {
     private final MicrosoftAccountProvider provider;
 
     private MicrosoftAccountProvider.DeviceCode deviceCode;
-    private int hintY;
 
     public MicrosoftLoginScreen(Screen parent) {
         super(parent, "accountsx.account.general.login",
@@ -35,7 +34,7 @@ public class MicrosoftLoginScreen extends LoginScreen {
         this.clearWidgets();
 
         int x = this.contentX();
-        int y = TOP;
+        int y = this.contentTop();
 
         if (this.deviceCode == null) {
             ButtonWidget fetch = new ButtonWidget(x, y, INPUT_W, BTN_H,
@@ -56,7 +55,6 @@ public class MicrosoftLoginScreen extends LoginScreen {
             this.addField(copy);
         }
 
-        this.hintY = y + BTN_H + PAD;
         this.addBackButton();
     }
 
@@ -159,9 +157,9 @@ public class MicrosoftLoginScreen extends LoginScreen {
 
         MicrosoftAccountProvider.DeviceCode code = this.deviceCode;
         if (code != null) {
-            Component hint = Component.translatable("accountsx.account.external.code", code.userCode());
-            String shown = this.font.plainSubstrByWidth(code.verificationUri(), INPUT_W * 2);
-            this.center(context, hint.copy().append(Component.literal("  " + shown)), this.hintY, 0xFFE0E0E0);
+            // 只画短码，地址交给下面两个按钮——地址挤进来会被截断，还和外置那屏的写法不一致。
+            this.center(context, Component.translatable("accountsx.account.external.code", code.userCode()),
+                    hintBelow(this.contentTop() + BTN_H), 0xFFE0E0E0);
         }
 
         this.drawStatus(context);

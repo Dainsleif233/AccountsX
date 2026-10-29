@@ -43,11 +43,6 @@ import java.util.Set;
 public class ExternalLoginScreen extends LoginScreen {
     private static final int TOGGLE_W = (INPUT_W - PAD) / 2;
 
-    /** 页头（标题 40 / 副标题 56）之下的第一条可用线：控件上移时不许越过它。 */
-    private static final int HEADER_BOTTOM = 72;
-
-    /** OAuth 提示行：固定在页头下方，避免和会随窗口移动的控件互相压字。 */
-    private static final int HINT_Y = 84;
     /** 选择态头像：画在角色按钮左侧，边长与内缩都按 16 像素的整数倍排。 */
     private static final int AVATAR_SIZE = 16;
     private static final int AVATAR_INSET = 2;
@@ -110,8 +105,8 @@ public class ExternalLoginScreen extends LoginScreen {
             return;
         }
 
-        // 窗口不够高时整段控件上移，但不越过页头；提示行有固定位置，不参与这套浮动。
-        int y = this.contentTop(this.formStackHeight());
+        // 锚点由基类整族统一给出：切换 OAuth / 密码时这一行不会动。
+        int y = this.contentTop();
 
         if (this.oauthAvailable) {
             this.addField(new ButtonWidget(x, y, TOGGLE_W, BTN_H,
@@ -120,7 +115,7 @@ public class ExternalLoginScreen extends LoginScreen {
             this.addField(new ButtonWidget(x + TOGGLE_W + PAD, y, INPUT_W - TOGGLE_W - PAD, BTN_H,
                     Component.translatable("accountsx.account.external.mode.password"),
                     button -> this.selectMode(false)));
-            y += BTN_H + PAD * 2;
+            y += BTN_H + PAD;
         }
 
         if (this.oauthMode) {
@@ -172,18 +167,6 @@ public class ExternalLoginScreen extends LoginScreen {
         }
 
         this.addBackButton();
-    }
-
-    /** 登录表单整段占的高度：模式切换行（可选）+ 动作行（OAuth 一行 / 密码三行）。 */
-    private int formStackHeight() {
-        int height = this.oauthAvailable ? BTN_H + PAD * 2 : 0;
-        height += (this.oauthMode ? 1 : 3) * (BTN_H + PAD);
-        return height;
-    }
-
-    /** 控件区顶部：正常从 TOP 开始，窗口太矮时上移到底边上限之内。 */
-    private int contentTop(int stackHeight) {
-        return Math.max(HEADER_BOTTOM, Math.min(TOP, this.limitY() - stackHeight));
     }
 
     /**
@@ -248,17 +231,13 @@ public class ExternalLoginScreen extends LoginScreen {
      * <p>正常高度下按 TOP 起算；窗口太矮时退到页头下方，能塞几行塞几行——宁可挤也不能把控件排出屏幕。</p>
      */
     private int rowCapacity() {
-        int available = this.confirmY() - PAD - TOP;
-        if (available >= BTN_H + PAD) {
-            return available / (BTN_H + PAD);
-        }
-        int squeezed = this.confirmY() - PAD - HEADER_BOTTOM;
-        return Math.max(1, squeezed / (BTN_H + PAD));
+        int available = this.confirmY() - PAD - this.contentTop();
+        return Math.max(1, available / (BTN_H + PAD));
     }
 
-    /** 角色行起点：正常是 TOP，行数多到压住确认按钮时整体上移。 */
+    /** 角色行起点：与登录表单同一个锚点，行数多到压住确认按钮时整体上移。 */
     private int selectionRowsTop(int capacity) {
-        return Math.max(HEADER_BOTTOM, Math.min(TOP, this.confirmY() - PAD - capacity * (BTN_H + PAD)));
+        return Math.min(this.contentTop(), this.confirmY() - PAD - capacity * (BTN_H + PAD));
     }
 
     private int pageCount() {
@@ -596,11 +575,13 @@ public class ExternalLoginScreen extends LoginScreen {
         return this.oauthMode ? TOGGLE_W : INPUT_W - TOGGLE_W - PAD;
     }
 
-    /**
-     * 提示行的高度：正常贴在页头下沿，窗口被挤矮时抬到表单上方，避免压住第一个输入框。
-     */
-    private int hintY(int contentTop) {
-        return Math.max(24, Math.min(HINT_Y, contentTop - 12));
+    /** OAuth 提示行：动作按钮下沿再空一格，和微软那屏同一条规则。 */
+    private int oauthHintY() {
+        int actionTop = this.contentTop();
+        if (this.oauthAvailable) {
+            actionTop += BTN_H + PAD;
+        }
+        return hintBelow(actionTop + BTN_H);
     }
 
     /** 选中模式的外圈：必须先于控件绘制，否则会盖住按钮本身。 */
@@ -609,7 +590,7 @@ public class ExternalLoginScreen extends LoginScreen {
             return;
         }
 
-        int top = this.contentTop(this.formStackHeight());
+        int top = this.contentTop();
         context.fill(this.modeX() - SelectionStyle.INSET_X, top - SelectionStyle.INSET_Y,
                 this.modeX() + this.modeWidth() + SelectionStyle.INSET_X, top + BTN_H + SelectionStyle.INSET_Y,
                 SelectionStyle.FRAME);
@@ -675,17 +656,19 @@ public class ExternalLoginScreen extends LoginScreen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         this.drawHeader(context);
-        if (ServerAddressSecurity.isPlaintext(this.server.apiRoot())) {
-            this.center(context, Component.translatable("accountsx.account.server.insecure"), 72, 0xFFFF5555);
-        }
 
         if (this.candidates != null) {
-            // 选择态没有模式按钮和密码框，别画它们的外圈与遮蔽。
+            // 选择态没有模式按钮和密码框，别画它们的外圈与遮蔽；这一屏也不输密码，
+            // 明文警告让位给「请选择角色」，两条说明共用页头下沿那一行。
             super.extractRenderState(context, mouseX, mouseY, delta);
             this.drawCandidateAvatars(context);
-            this.center(context, this.selectionHint(), this.hintY(this.selectionRowsTop(this.rowCapacity())), 0xFFE0E0E0);
+            this.center(context, this.selectionHint(), this.noticeY(), 0xFFE0E0E0);
             this.drawStatus(context);
             return;
+        }
+
+        if (ServerAddressSecurity.isPlaintext(this.server.apiRoot())) {
+            this.center(context, Component.translatable("accountsx.account.server.insecure"), this.noticeY(), 0xFFFF5555);
         }
 
         this.drawModeFrame(context);
@@ -694,7 +677,7 @@ public class ExternalLoginScreen extends LoginScreen {
         this.drawPasswordMask(context, this.passwordBox, this.passwordX, this.passwordY);
 
         if (this.oauthMode) {
-            this.center(context, this.oauthHint(), this.hintY(this.contentTop(this.formStackHeight())), 0xFFE0E0E0);
+            this.center(context, this.oauthHint(), this.oauthHintY(), 0xFFE0E0E0);
         }
 
         this.drawStatus(context);
