@@ -220,6 +220,23 @@ public abstract class BaseAccount {
      * <p>不加线程检查：调用点位于仓储对账（串行化在 synchronized 内），并非 provider 的刷新路径。</p>
      */
     public final void adoptFromDisk(String accessToken, String playerName, UUID playerUUID, long expiresAt) {
-        this.storage = new AccountStorage(accessToken, playerName, playerUUID, expiresAt, AccountState.AUTHORIZED);
+        // 已知过期的令牌不能算授权：此时进游戏必然被服务端打回 401，不如照常走刷新。
+        boolean usable = expiresAt <= 0 || System.currentTimeMillis() < expiresAt;
+        this.storage = new AccountStorage(accessToken, playerName, playerUUID, expiresAt,
+                usable ? AccountState.AUTHORIZED : AccountState.UNAUTHORIZED);
+    }
+
+    /**
+     * 装载后把状态重置为未授权：此刻我们只有一个磁盘上留下来的令牌，它的有效性完全未知。
+     *
+     * <p>必须显式重置——账号对象都是经构造器创建出来的，而构造器按"刚登录成功"语义把状态置为
+     * {@code AUTHORIZED}。不重置的话启动刷新会把所有账号当成已授权而全部跳过，过期令牌会被直接
+     * 拿去建会话（表现为切账号时 {@code /player/attributes} 401）。</p>
+     *
+     * <p>不加线程检查：唯一调用点是 {@code AccountRepository.fromJson}（装载阶段）。</p>
+     */
+    public final void markUnauthorizedForLoad() {
+        AccountStorage s = this.storage;
+        this.storage = new AccountStorage(s.accessToken, s.playerName, s.playerUUID, s.expiresAt, AccountState.UNAUTHORIZED);
     }
 }

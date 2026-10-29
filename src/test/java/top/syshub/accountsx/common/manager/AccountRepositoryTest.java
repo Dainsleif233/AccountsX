@@ -451,6 +451,21 @@ class AccountRepositoryTest {
     }
 
     @Test
+    void fromJson_marksLoadedAccountsUnauthorized_soStartupRefreshRuns() {
+        // 回归：账号对象经构造器创建，而构造器按"刚登录成功"置 AUTHORIZED。装载时若不退回
+        // UNAUTHORIZED，启动刷新会整批跳过，磁盘上的过期令牌会被直接拿去建会话（切微软账号 401）。
+        String uuid = "069a79f444e94726a5befca90e38aaf5";
+        AbstractInjectorAccount account = injector("Steve", "https://example.invalid/api/yggdrasil", uuid);
+        JsonObject json = AccountRepository.toJson(account);
+
+        BaseAccount restored = AccountRepository.fromJson(json);
+        assertThat(restored).isNotNull();
+        assertThat(restored.getAccountStorage().getState().name()).isEqualTo("UNAUTHORIZED");
+        // 令牌本身照旧保留：刷新失败时用户还能看到条目，重新登录也从这条开始。
+        assertThat(restored.getAccountStorage().getAccessToken()).isEqualTo(account.getAccountStorage().getAccessToken());
+    }
+
+    @Test
     void initialize_loadsPersistedAccounts() throws Exception {
         Files.createDirectories(global.getParent());
         String uuid = "069a79f444e94726a5befca90e38aaf5";

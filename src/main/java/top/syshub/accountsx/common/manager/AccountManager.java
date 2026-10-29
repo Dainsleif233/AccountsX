@@ -351,7 +351,9 @@ public final class AccountManager {
     public static AccountSession loginAccount(BaseAccount account) throws IOException {
         Threading.checkAccountWorkerThread();
 
-        if (account.getAccountStorage().getState() != AccountState.AUTHORIZED) {
+        // 状态是已授权也可能拿到死令牌：游戏开着跨过 expiresAt（微软 24h）后再切回来就是这种情形。
+        // 知道过期时刻时直接刷新，别把过期令牌送去 /player/attributes 换一个 401。
+        if (account.getAccountStorage().getState() != AccountState.AUTHORIZED || tokenKnownExpired(account)) {
             // 刷新成功后 refreshAccount 自己会把 storage 变更落盘，这里不再重复 touch。
             refreshAccount(account, true);
 
@@ -472,6 +474,12 @@ public final class AccountManager {
             AccountsX.LOGGER.debug("Cannot check whether the token can be reused; refreshing instead.", e);
             return false;
         }
+    }
+
+    /** 令牌是否已知过期；{@code expiresAt == 0}（未知）时不作判断，交给 state 与 validate。 */
+    private static boolean tokenKnownExpired(BaseAccount account) {
+        long expiresAt = account.getAccountStorage().getExpiresAt();
+        return expiresAt > 0 && System.currentTimeMillis() >= expiresAt;
     }
 
     @Threading.Thread(Threading.ThreadRole.WORKER)

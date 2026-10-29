@@ -798,9 +798,13 @@ public final class AccountRepository {
             }
             default -> null;
         };
-        if (loaded != null)
+        if (loaded != null) {
             // 缺失/0 表示未知（老文件、Yggdrasil）：保持 0，下次启动靠 validate 判定。
             loaded.setTokenExpiryForLoad(longValue(credentials.get("expiresAt")));
+            // 构造器按"刚登录"把状态置成 AUTHORIZED，装载时必须退回去：磁盘上的令牌可能早就过期，
+            // 当成已授权会让启动刷新整批跳过（见 BaseAccount#markUnauthorizedForLoad）。
+            loaded.markUnauthorizedForLoad();
+        }
         return loaded;
     }
 
