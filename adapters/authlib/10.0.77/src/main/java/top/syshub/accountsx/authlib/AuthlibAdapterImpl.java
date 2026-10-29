@@ -1,5 +1,6 @@
 package top.syshub.accountsx.authlib;
 
+import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.exceptions.AuthenticationException;
 import com.mojang.authlib.minecraft.SessionService;
 import com.mojang.authlib.minecraft.TelemetrySession;
@@ -58,7 +59,11 @@ public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImp
     @Override
     public AccountSessionImpl createAccountProfile(BaseAccount.AccountStorage storage, AccountContext context, Proxy proxy) throws IOException {
         if (context == null) {
-            MinecraftServicesDiscoveryService discovery = MinecraftServicesDiscoveryService.createOffline(proxy);
+            // 环境账号（启动器会话）与离线账号没有 injector 上下文，但它们用的仍是 Mojang 的服务：
+            // 用 createOffline 会合成一个"没有任何端点"的 discovery，之后所有 getUrl 都抛
+            // "Services are unavailable"，切回默认账号就会因为查不到档案而失败。
+            // 与 ≤26.2 的 new YggdrasilAuthenticationService(proxy) 保持一致：走官方端点。
+            MinecraftServicesDiscoveryService discovery = MinecraftServicesDiscoveryService.create(proxy);
             SessionService sessionService = discovery.createMinecraftSessionService();
             return new AccountSessionImpl(
                     storage, discovery, sessionService,
@@ -281,7 +286,14 @@ public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImp
     }
 
     private static ProfileResult computeProfile(BaseAccount.AccountStorage storage, SessionService sessionService) {
-        return sessionService.fetchProfile(storage.getPlayerUUID(), true);
+        ProfileResult result = sessionService.fetchProfile(storage.getPlayerUUID(), true);
+        if (result != null) {
+            return result;
+        }
+        // 离线账号的 UUID 在服务端本就不存在，查不到是正常结果。这里返回 null 会让
+        // Minecraft 的 profileFuture 里塞进 null：档案名/UUID 只能靠 User 兜底，皮肤与
+        // 档案动作全部丢失。用本地 storage 合成一份，与 vanilla 的兜底语义一致。
+        return new ProfileResult(new GameProfile(storage.getPlayerUUID(), storage.getPlayerName()));
     }
 
     /**
