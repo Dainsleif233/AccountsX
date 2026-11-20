@@ -468,11 +468,6 @@ public class ExternalLoginScreen extends LoginScreen {
             Map<String, String> avatars) {
         Profile bound = authenticated.bound();
         List<Profile> available = authenticated.profiles();
-        if (available.isEmpty()) {
-            this.status = Component.translatable("accountsx.account.fail.injector_login");
-            this.updateWidgets();
-            return;
-        }
         if (available.size() == 1) {
             this.addSelected(username, secret, authenticated, available);
             return;
@@ -527,7 +522,7 @@ public class ExternalLoginScreen extends LoginScreen {
                     return;
                 }
                 this.busy = false;
-                if (accounts == null || accounts.isEmpty()) {
+                if (accounts == null) {
                     this.status = error;
                     this.updateWidgets();
                     return;
@@ -544,7 +539,7 @@ public class ExternalLoginScreen extends LoginScreen {
      * 换成别的等于替用户做了一次「换角色」；没有绑定记录时退到勾选的第一个。
      */
     private static BaseAccount preferredAccount(List<? extends BaseAccount> accounts, LoginDraft draft) {
-        Profile bound = draft == null ? null : draft.bound();
+        Profile bound = draft.bound();
         if (bound != null) {
             String uuid = normalize(bound.playerUuid());
             for (BaseAccount account : accounts) {

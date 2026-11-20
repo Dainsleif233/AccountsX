@@ -88,7 +88,7 @@ abstract class LoginScreen extends Screen {
     }
 
     /**
-     * 登录成功（可能一次产出多个账号）：全部入库，只切换到 {@code switchTo}（为空则第一个）。
+     * 登录成功：将非空的 {@code accounts} 全部入库，只切换到其中的 {@code switchTo}。
      *
      * <p>多角色账号里用户勾了几个就建几个，其余留给列表手动切换——每个都自动切一次没有意义，
      * 切账号会重连，回回都断线。切换放在 {@link #onClose()} 之后：界面已经没用了，
@@ -96,9 +96,6 @@ abstract class LoginScreen extends Screen {
      * {@link AccountManager#selectAccount} 在「已是当前账号」的分支上也会直接调用它。</p>
      */
     protected final void finish(java.util.List<? extends BaseAccount> accounts, BaseAccount switchTo) {
-        if (accounts.isEmpty()) {
-            return;
-        }
         for (BaseAccount account : accounts) {
             AccountManager.addAccount(account);
         }
@@ -106,9 +103,8 @@ abstract class LoginScreen extends Screen {
         if (parentScreen instanceof AccountScreen accountScreen) {
             accountScreen.syncAccounts();
         }
-        BaseAccount target = switchTo != null && accounts.contains(switchTo) ? switchTo : accounts.get(0);
         this.onClose();
-        AccountManager.selectAccount(target, () -> {
+        AccountManager.selectAccount(switchTo, () -> {
         });
     }
 
