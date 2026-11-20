@@ -50,23 +50,8 @@ class AccountRepositoryTest {
     private ConfigStore store(MigrationChain chain) {
         MigrationContext ctx = new MigrationContext() {
             @Override
-            public FileSystem fs() {
-                return fs;
-            }
-
-            @Override
-            public Path legacyGameConfigDir() {
-                return instanceDir;
-            }
-
-            @Override
             public Path legacyHomeDir() {
                 return legacyHome;
-            }
-
-            @Override
-            public Path globalConfigFile() {
-                return global;
             }
 
             @Override
@@ -97,8 +82,8 @@ class AccountRepositoryTest {
         return account.toString();
     }
 
-    /** 测试用装饰器：记录 save 快照，同时暴露 MigrationContext（实现仓储的 Contextual）。 */
-    private final class DelegatingStore implements ConfigStore, AccountRepository.Contextual {
+    /** 测试用装饰器：记录 save 快照。 */
+    private final class DelegatingStore implements ConfigStore {
         private final JsonConfigStore inner;
         /** 非空时把落盘堵住：用来确定性地制造「写进行中又来变更」的窗口。 */
         private volatile CountDownLatch entered;
@@ -165,8 +150,8 @@ class AccountRepositoryTest {
         }
 
         @Override
-        public MigrationContext migrationContext() {
-            return inner.migrationContext();
+        public ConfigRoot load(Path legacyGameConfigDir) {
+            return inner.load(legacyGameConfigDir);
         }
     }
 
@@ -516,7 +501,7 @@ class AccountRepositoryTest {
                 StandardCharsets.UTF_8);
 
         AccountRepository repository = new AccountRepository(
-                store(StandardMigrations.chain(GSON)));
+                store(StandardMigrations.chain()));
         repository.initialize(null, instanceDir);
 
         // 旧账号已并入全局并实例化；载荷被删、实例配置改名
@@ -529,7 +514,7 @@ class AccountRepositoryTest {
         assertThat(onDisk.getAsJsonArray("accounts")).hasSize(1);
 
         // 幂等：第二次 initialize 不再重复并入
-        AccountRepository again = new AccountRepository(store(StandardMigrations.chain(GSON)));
+        AccountRepository again = new AccountRepository(store(StandardMigrations.chain()));
         again.initialize(null, instanceDir);
         JsonObject againOnDisk = JsonParser.parseString(Files.readString(global, StandardCharsets.UTF_8)).getAsJsonObject();
         assertThat(againOnDisk.getAsJsonArray("accounts")).hasSize(1);
@@ -552,7 +537,7 @@ class AccountRepositoryTest {
                 + "{\"type\":\"offline\",\"profile\":{\"name\":\"Migrated\",\"uuid\":\"" + uuid + "\"}}]}",
                 StandardCharsets.UTF_8);
         // 全局已有账号则绝不触发：旧载荷与实例配置原样保留，读到的是全局里的 Migrated
-        AccountRepository repository = new AccountRepository(store(StandardMigrations.chain(GSON)));
+        AccountRepository repository = new AccountRepository(store(StandardMigrations.chain()));
         repository.initialize(null, instanceDir);
 
         assertThat(Files.exists(legacyHome.resolve(id + ".json"))).isTrue();
@@ -580,7 +565,7 @@ class AccountRepositoryTest {
                 + "]";
         Files.writeString(legacyHome.resolve(id + ".json"), payload, StandardCharsets.UTF_8);
 
-        AccountRepository repository = new AccountRepository(store(StandardMigrations.chain(GSON)));
+        AccountRepository repository = new AccountRepository(store(StandardMigrations.chain()));
         repository.initialize(null, instanceDir);
 
         List<BaseAccount> accounts = new ArrayList<>(repository.view());

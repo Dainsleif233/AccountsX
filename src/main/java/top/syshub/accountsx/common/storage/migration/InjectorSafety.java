@@ -21,7 +21,7 @@ public final class InjectorSafety implements Migration {
     }
 
     @Override
-    public JsonObject apply(JsonObject config, MigrationContext ctx) {
+    public Result apply(JsonObject config, MigrationContext ctx) {
         if (config.get("accounts") instanceof JsonArray accounts) {
             for (int i = accounts.size() - 1; i >= 0; i--) {
                 JsonElement account = accounts.get(i);
@@ -33,7 +33,6 @@ public final class InjectorSafety implements Migration {
                 }
             }
         }
-        config.addProperty("version", toVersion());
-        return config;
+        return new Result(config);
     }
 }

@@ -43,7 +43,6 @@ public final class PeerRegistry {
         peer.addProperty("id", self.id());
         peer.addProperty("pid", self.pid());
         peer.addProperty("startedAt", self.startedAtMillis());
-        peer.addProperty("lastSeen", System.currentTimeMillis());
         String key = this.currentKey;
         if (key != null) {
             peer.addProperty("current", key);

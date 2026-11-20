@@ -8,7 +8,7 @@ import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import org.junit.jupiter.api.Test;
 import top.syshub.accountsx.common.storage.ConfigStore;
-import top.syshub.accountsx.common.utils.image.AvatarCache;
+import top.syshub.accountsx.common.storage.JsonConfigStore;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -38,23 +38,8 @@ class StandardMigrationsTest {
 
     private final MigrationContext ctx = new MigrationContext() {
         @Override
-        public FileSystem fs() {
-            return fs;
-        }
-
-        @Override
-        public Path legacyGameConfigDir() {
-            return instanceDir;
-        }
-
-        @Override
         public Path legacyHomeDir() {
             return legacyHome;
-        }
-
-        @Override
-        public Path globalConfigFile() {
-            return global;
         }
 
         @Override
@@ -62,6 +47,10 @@ class StandardMigrationsTest {
             return avatarDir;
         }
     };
+
+    private JsonConfigStore store() {
+        return new JsonConfigStore(fs, global, GSON, StandardMigrations.chain(), ctx, (title, desc, args) -> { });
+    }
 
     private JsonObject doc(String json) {
         return JsonParser.parseString(json).getAsJsonObject();
@@ -83,37 +72,47 @@ class StandardMigrationsTest {
     @Test
     void hop0to1_removesInjectorAccounts() {
         JsonObject config = doc("{\"version\":0,\"accounts\":[{\"type\":\"INJECTOR\"},{\"type\":\"OFFLINE\"}]}");
-        JsonObject out = new InjectorSafety().apply(config, ctx);
+        JsonObject out = new InjectorSafety().apply(config, ctx).config();
 
         assertThat(out.getAsJsonArray("accounts")).hasSize(1);
         assertThat(out.getAsJsonArray("accounts").get(0).getAsJsonObject().get("type").getAsString()).isEqualTo("OFFLINE");
-        assertThat(out.get("version").getAsInt()).isEqualTo(1);
     }
 
     @Test
     void hop1to2_renamesKnownAndDropsUnknown() {
         JsonObject config = doc("{\"version\":1,\"accounts\":[{\"type\":\"OFFLINE\"},{\"type\":\"MICROSOFT\"},"
                 + "{\"type\":\"INJECTOR\"},{\"type\":\"BOGUS\"}]}");
-        JsonObject out = new RenameAccountType().apply(config, ctx);
+        JsonObject out = new RenameAccountType().apply(config, ctx).config();
 
         JsonArray accounts = out.getAsJsonArray("accounts");
         assertThat(accounts).hasSize(3);
         assertThat(accounts.get(0).getAsJsonObject().get("type").getAsString()).isEqualTo("offline");
         assertThat(accounts.get(1).getAsJsonObject().get("type").getAsString()).isEqualTo("microsoft");
         assertThat(accounts.get(2).getAsJsonObject().get("type").getAsString()).isEqualTo("injector.authlib-injector");
-        assertThat(out.get("version").getAsInt()).isEqualTo(2);
     }
 
     @Test
-    void hop2to3_extractsPayloadUnderIdAndKeepsExistingId() throws IOException {
-        JsonObject config = doc("{\"version\":2,\"id\":\"fixed-id\",\"accounts\":[{\"type\":\"offline\"}]}");
-        JsonObject out = new SecurityStorage(GSON).apply(config, ctx);
+    void v2UsesInlineAccountsAndNeverReadsOrRewritesUnrelatedV3Payload() throws Exception {
+        writePayload(ID, "[{}]");
+        Path payload = legacyHome.resolve(ID + ".json");
+        JsonObject v2 = new JsonObject();
+        v2.addProperty("version", 2);
+        v2.addProperty("id", ID);
+        v2.add("accounts", JsonParser.parseString("[{\"type\":\"offline\"}]"));
 
-        assertThat(out.get("id").getAsString()).isEqualTo("fixed-id");
-        assertThat(out.has("accounts")).isFalse();
-        assertThat(out.get("version").getAsInt()).isEqualTo(3);
-        assertThat(Files.readString(legacyHome.resolve("fixed-id.json"), StandardCharsets.UTF_8))
-                .contains("offline");
+        Migration.Result upgraded = StandardMigrations.chain().upgrade(v2, 2, ctx);
+
+        assertThat(upgraded.config().getAsJsonArray("accounts")).hasSize(1);
+        assertThat(upgraded.config().get("version").getAsInt()).isEqualTo(ConfigStore.CURRENT_VERSION);
+        assertThat(upgraded.legacyPayload()).isNull();
+        assertThat(Files.readString(payload)).isEqualTo("[{}]");
+        assertThat(Files.exists(global)).isFalse();
+
+        v2.remove("accounts");
+        assertThat(StandardMigrations.chain().upgrade(v2, 2, ctx).config().getAsJsonArray("accounts")).isEmpty();
+        v2.add("accounts", new JsonObject());
+        assertThatThrownBy(() -> StandardMigrations.chain().upgrade(v2, 2, ctx))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("accounts");
     }
 
     // ── 3→4 UNIFY_AND_DECOUPLE ───────────────────────────────────
@@ -158,11 +157,11 @@ class StandardMigrationsTest {
     }
 
     @Test
-    void hop3to4_convertsAllLegacyShapesAndCleansUp() throws Exception {
+    void startupMigratesAllV3AccountShapesAndCleansUp() throws Exception {
         writeInstanceConfig(ID);
         writePayload(ID, legacyPayload());
 
-        JsonObject out = new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx);
+        JsonObject out = store().load(instanceDir).raw();
 
         assertThat(out.get("version").getAsInt()).isEqualTo(4);
         JsonArray accounts = out.getAsJsonArray("accounts");
@@ -225,7 +224,7 @@ class StandardMigrationsTest {
         writeInstanceConfig(ID);
         writePayload(ID, "[" + passwordFirst + "," + oauthAccountJson() + "]");
 
-        JsonObject out = new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx);
+        JsonObject out = StandardMigrations.chain().upgrade(legacyV3Doc(), 3, ctx).config();
 
         assertThat(out.getAsJsonArray("accounts")).hasSize(2);
         JsonArray servers = out.getAsJsonArray("servers");
@@ -259,7 +258,7 @@ class StandardMigrationsTest {
         missingField.addProperty("loginToken", "OAuth " + partial);
         writePayload(ID, "[" + bad + "," + missingField + "]");
 
-        JsonObject out = new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx);
+        JsonObject out = StandardMigrations.chain().upgrade(legacyV3Doc(), 3, ctx).config();
 
         JsonArray accounts = out.getAsJsonArray("accounts");
         assertThat(accounts).hasSize(2);
@@ -277,7 +276,7 @@ class StandardMigrationsTest {
         Files.write(legacyHome.resolve("other-1.json"), other1);
         Files.write(legacyHome.resolve("other-2.json"), other1);
 
-        new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx);
+        store().load(instanceDir);
 
         assertThat(Files.exists(legacyHome.resolve(ID + ".json"))).isFalse();
         assertThat(Files.readAllBytes(legacyHome.resolve("other-1.json"))).isEqualTo(other1);
@@ -286,70 +285,10 @@ class StandardMigrationsTest {
     }
 
     @Test
-    void hop3to4_overwritesExistingGlobalInsteadOfMerging() throws Exception {
-        // v4 没发布过，全局文件里不可能有"要并入"的内容：整份覆盖，旧账号与未知字段都不保留。
-        Files.createDirectories(global.getParent());
-        Files.writeString(global, "{\"version\":4,\"extra\":{\"future\":true},\"servers\":[{\"type\":\"mojang\"}],"
-                + "\"accounts\":[{\"type\":\"offline\",\"profile\":{\"name\":\"Stale\",\"uuid\":\"069a79f444e94726a5befca90e38aaf5\"}}]}",
-                StandardCharsets.UTF_8);
-        Files.createDirectories(instanceDir);
-        Files.writeString(instanceDir.resolve("accounts.json.migrated"), "{\"version\":3}", StandardCharsets.UTF_8);
-        writeInstanceConfig(ID);
-        writePayload(ID, "["
-                + "{\"type\":\"offline\",\"storage\":{\"playerName\":\"Bob\",\"playerUUID\":\"069a79f4-44e9-4726-a5befca90e38aaf6\"}},"
-                + "{\"type\":\"injector.authlib-injector\",\"storage\":{\"accessToken\":\"fake-t\",\"playerName\":\"Alex\",\"playerUUID\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\"},"
-                + "\"server\":\"https://example.invalid/api/yggdrasil\",\"loginToken\":\"fake-t\"}]");
-
-        JsonObject out = new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx);
-
-        assertThat(out.getAsJsonArray("accounts")).hasSize(2);
-        assertThat(out.toString()).doesNotContain("Stale").doesNotContain("extra");
-        assertThat(out.getAsJsonArray("servers")).hasSize(1);
-        assertThat(findServer(out, "https://example.invalid/api/yggdrasil").get("type").getAsString()).isEqualTo("yggdrasil");
-        // 旧的 .migrated 被直接覆盖，不产生 .migrated-2
-        assertThat(Files.readString(instanceDir.resolve("accounts.json.migrated"), StandardCharsets.UTF_8))
-                .contains("\"id\"");
-        assertThat(Files.exists(instanceDir.resolve("accounts.json.migrated-2"))).isFalse();
-        // 覆盖真的落盘（不是只在内存里）
-        JsonObject onDisk = JsonParser.parseString(Files.readString(global, StandardCharsets.UTF_8)).getAsJsonObject();
-        assertThat(onDisk.get("version").getAsInt()).isEqualTo(4);
-        assertThat(onDisk.getAsJsonArray("accounts")).hasSize(2);
-        assertThat(onDisk.toString()).doesNotContain("Stale");
-        // 读得懂的文件直接覆盖，不留备份
-        try (var files = Files.list(global.getParent())) {
-            assertThat(files.map(p -> p.getFileName().toString()))
-                    .noneMatch(n -> n.startsWith("accountsx.json.bak-"));
-        }
-    }
-
-    @Test
-    void hop3to4_backsUpUnreadableGlobalBeforeOverwrite() throws Exception {
-        // 坏掉的全局文件不能静默消失：先整份备份 + 记 error，再写入迁移结果。
-        Files.createDirectories(global.getParent());
-        byte[] broken = "{ this is not json ]".getBytes(StandardCharsets.UTF_8);
-        Files.write(global, broken);
-        writeInstanceConfig(ID);
-        writePayload(ID, "[{\"type\":\"offline\",\"storage\":{\"playerName\":\"Steve\","
-                + "\"playerUUID\":\"069a79f4-44e9-4726-a5befca90e38aaf5\"}}]");
-
-        new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx);
-
-        try (var files = Files.list(global.getParent())) {
-            Path bak = files.filter(p -> p.getFileName().toString().startsWith("accountsx.json.bak-"))
-                    .findFirst()
-                    .orElseThrow(() -> new AssertionError("坏文件没有被备份"));
-            assertThat(Files.readAllBytes(bak)).isEqualTo(broken);
-        }
-        JsonObject onDisk = JsonParser.parseString(Files.readString(global, StandardCharsets.UTF_8)).getAsJsonObject();
-        assertThat(onDisk.get("version").getAsInt()).isEqualTo(4);
-        assertThat(onDisk.getAsJsonArray("accounts")).hasSize(1);
-    }
-
-    @Test
     void hop3to4_corruptPayloadRefusesAndKeepsEverything() throws Exception {
         writeInstanceConfig(ID);
         writePayload(ID, "{ \"not\": \"an array\" }");
-        assertThatThrownBy(() -> new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx))
+        assertThatThrownBy(() -> StandardMigrations.chain().upgrade(legacyV3Doc(), 3, ctx))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("数组");
         // 读不懂的载荷绝不删除
@@ -357,7 +296,7 @@ class StandardMigrationsTest {
         assertThat(Files.exists(instanceDir.resolve("accounts.json"))).isTrue();
 
         writePayload(ID, "{ this is not json ]");
-        assertThatThrownBy(() -> new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx))
+        assertThatThrownBy(() -> StandardMigrations.chain().upgrade(legacyV3Doc(), 3, ctx))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("解析失败");
         assertThat(Files.exists(legacyHome.resolve(ID + ".json"))).isTrue();
@@ -367,16 +306,27 @@ class StandardMigrationsTest {
     @Test
     void hop3to4_missingIdRefusesToRun() {
         JsonObject config = doc("{\"version\":3}");
-        assertThatThrownBy(() -> new UnifyAndDecouple(GSON).apply(config, ctx))
+        assertThatThrownBy(() -> StandardMigrations.chain().upgrade(config, 3, ctx))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("id");
+    }
+
+    @Test
+    void hop3to4_invalidIdIsOmittedFromDiagnostic() {
+        JsonObject config = legacyV3Doc();
+        config.addProperty("id", "fake-id" + (char) 0);
+        assertThatThrownBy(() -> StandardMigrations.chain().upgrade(config, 3, ctx))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("载荷文件名")
+                .hasMessageNotContaining("fake-id")
+                .hasNoCause();
     }
 
     @Test
     void hop3to4_payloadMissingWritesEmptyGlobalAndCleansUp() throws Exception {
         writeInstanceConfig(ID); // 载荷不存在：实例从未添加过账号
 
-        JsonObject out = new UnifyAndDecouple(GSON).apply(legacyV3Doc(), ctx);
+        JsonObject out = store().load(instanceDir).raw();
 
         assertThat(out.getAsJsonArray("accounts")).isEmpty();
         assertThat(out.getAsJsonArray("servers")).hasSize(0); // 无 builtin mojang/offline
@@ -393,13 +343,13 @@ class StandardMigrationsTest {
                 + "\"microsoftAccountRefreshToken\":\"fake-r\"},"
                 + "{\"type\":\"BOGUS\"}]}");
 
-        JsonObject out = StandardMigrations.chain(GSON).upgrade(v0, 0, ctx);
+        JsonObject out = StandardMigrations.chain().upgrade(v0, 0, ctx).config();
 
         assertThat(out.get("version").getAsInt()).isEqualTo(ConfigStore.CURRENT_VERSION);
-        // INJECTOR 在 0→1 删除、BOGUS 在 1→2 跳过；2→3 搬载荷、3→4 覆盖写全局并清理
+        // INJECTOR 在 0→1 删除、BOGUS 在 1→2 跳过；2→4 转换内联账号。
         assertThat(out.getAsJsonArray("accounts")).hasSize(2);
         assertThat(out.getAsJsonArray("servers")).hasSize(0);
-        assertThat(Files.exists(global)).isTrue();
+        assertThat(Files.exists(global)).isFalse();
         assertThat(Files.exists(legacyHome)).isFalse();
     }
 

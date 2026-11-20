@@ -5,9 +5,7 @@ import java.time.Instant;
 /**
  * 本进程的身份：随机 id + pid + 进程启动时刻。
  *
- * <p>存活判定用 {@code pid + 启动时刻} 而不是心跳超时：pid 会被操作系统复用，
- * 只看 pid 会把"新进程恰好占用同一 pid"误判成同一个实例；启动时刻能把两者区分开。
- * 心跳只用来刷新 {@code current}，不承担正确性。</p>
+ * <p>pid 会被操作系统复用，启动时刻用于区分占用同一个 pid 的不同进程。</p>
  */
 public record InstanceIdentity(String id, long pid, long startedAtMillis) {
     private static volatile InstanceIdentity current;

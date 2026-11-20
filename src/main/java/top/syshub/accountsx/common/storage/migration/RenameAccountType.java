@@ -35,7 +35,7 @@ public final class RenameAccountType implements Migration {
     }
 
     @Override
-    public JsonObject apply(JsonObject config, MigrationContext ctx) {
+    public Result apply(JsonObject config, MigrationContext ctx) {
         if (config.get("accounts") instanceof JsonArray accounts) {
             // 倒序遍历以便安全移除
             for (int i = accounts.size() - 1; i >= 0; i--) {
@@ -46,13 +46,12 @@ public final class RenameAccountType implements Migration {
                     if (renamed != null) {
                         jo.addProperty("type", renamed);
                     } else {
-                        LOGGER.warn("迁移时遇到未知账号类型 '{}'，已跳过该账号。", jp.getAsString());
+                        LOGGER.warn("迁移时遇到未知账号类型，已跳过该账号。");
                         accounts.remove(i);
                     }
                 }
             }
         }
-        config.addProperty("version", toVersion());
-        return config;
+        return new Result(config);
     }
 }

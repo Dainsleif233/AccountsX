@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import top.syshub.accountsx.common.accounts.BaseAccount;
+import top.syshub.accountsx.common.accounts.impl.microsoft.MicrosoftAccount;
 import top.syshub.accountsx.common.accounts.impl.offline.OfflineAccount;
 import top.syshub.accountsx.common.storage.JsonConfigStore;
 import top.syshub.accountsx.common.storage.migration.MigrationChain;
@@ -14,11 +15,13 @@ import top.syshub.accountsx.common.task.TaskScheduler;
 
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 多实例协作（P6）：两个仓储指向同一份配置文件，模拟两个客户端同时运行。
@@ -39,23 +42,8 @@ class MultiInstanceRepositoryTest {
         FileSystem fs = FileSystems.getDefault();
         MigrationContext ctx = new MigrationContext() {
             @Override
-            public FileSystem fs() {
-                return fs;
-            }
-
-            @Override
-            public Path legacyGameConfigDir() {
-                return dir.resolve("legacy");
-            }
-
-            @Override
             public Path legacyHomeDir() {
                 return dir.resolve("home");
-            }
-
-            @Override
-            public Path globalConfigFile() {
-                return config;
             }
 
             @Override
@@ -92,13 +80,8 @@ class MultiInstanceRepositoryTest {
         repository.touch(account);
     }
 
-    private static void awaitWrite(AccountRepository repository) throws Exception {
-        long deadline = System.currentTimeMillis() + 10_000L;
-        while (repository.isWritePending() && System.currentTimeMillis() < deadline) {
-            TimeUnit.MILLISECONDS.sleep(20L);
-        }
-        // 标脏只保证"排了队"，再等一拍让写任务真的跑完
-        TimeUnit.MILLISECONDS.sleep(200L);
+    private static void awaitWrite() throws Exception {
+        TaskScheduler.submit(() -> {}).get(10, TimeUnit.SECONDS);
     }
 
     @Test
@@ -108,11 +91,11 @@ class MultiInstanceRepositoryTest {
         AccountRepository second = instance(config);
 
         first.add(offline("Steve", STEVE));
-        awaitWrite(first);
+        awaitWrite();
 
         // 第二个实例仍持有启动时的旧快照，此时它写自己的账号
         second.add(offline("Alex", ALEX));
-        awaitWrite(second);
+        awaitWrite();
 
         AccountRepository reloaded = instance(config);
         assertThat(reloaded.view()).extracting(a -> a.getAccountStorage().getPlayerName())
@@ -125,17 +108,17 @@ class MultiInstanceRepositoryTest {
         AccountRepository first = instance(config);
         first.add(offline("Steve", STEVE));
         first.add(offline("Alex", ALEX));
-        awaitWrite(first);
+        awaitWrite();
 
         AccountRepository second = instance(config);
         assertThat(second.view()).hasSize(2);
 
         first.drop(first.view().get(1));
-        awaitWrite(first);
+        awaitWrite();
 
         // 第二个实例内存里还有 Alex；它保存时不能把已删除的账号写回去
         second.add(offline("Notch", NOTCH));
-        awaitWrite(second);
+        awaitWrite();
 
         AccountRepository reloaded = instance(config);
         assertThat(reloaded.view()).extracting(a -> a.getAccountStorage().getPlayerName())
@@ -147,14 +130,14 @@ class MultiInstanceRepositoryTest {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);
         first.add(offline("Steve", STEVE));
-        awaitWrite(first);
+        awaitWrite();
 
         AccountRepository second = instance(config);
         BaseAccount gone = second.view().get(0);
         second.setCurrent(gone);
 
         first.drop(first.view().get(0));
-        awaitWrite(first);
+        awaitWrite();
 
         AccountRepository.ReconcileResult result = second.reconcile();
         assertThat(result.changed()).isTrue();
@@ -168,7 +151,7 @@ class MultiInstanceRepositoryTest {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);
         first.add(offline("Steve", STEVE));
-        awaitWrite(first);
+        awaitWrite();
 
         AccountRepository second = instance(config);
         assertThat(second.view()).hasSize(1);
@@ -178,9 +161,9 @@ class MultiInstanceRepositoryTest {
         TaskScheduler.submit(() -> rotated.setProfile("fake-token-rotated", "Steve",
                 UUID.fromString(toDashed(STEVE)))).get(10, TimeUnit.SECONDS);
         first.touch(rotated);
-        awaitWrite(first);
+        awaitWrite();
 
-        assertThat(second.reconcileAccount("offline:" + STEVE)).isTrue();
+        assertThat(second.prepareRefresh(second.view().get(0), "offline:" + STEVE)).isTrue();
         assertThat(second.view().get(0).getAccountStorage().getAccessToken())
                 .isEqualTo("fake-token-rotated");
         // 对账把状态归为已授权：拿到的确实是刚换好的有效令牌
@@ -192,13 +175,13 @@ class MultiInstanceRepositoryTest {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);
         first.add(offline("Steve", STEVE));
-        awaitWrite(first);
+        awaitWrite();
 
         // 删掉再重新添加同一个账号（同类型同 UUID）：墓碑不能把它永久封死
         first.drop(first.view().get(0));
-        awaitWrite(first);
+        awaitWrite();
         first.add(offline("Steve", STEVE));
-        awaitWrite(first);
+        awaitWrite();
 
         AccountRepository reloaded = instance(config);
         assertThat(reloaded.view()).extracting(a -> a.getAccountStorage().getPlayerName())
@@ -210,16 +193,16 @@ class MultiInstanceRepositoryTest {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);
         first.add(offline("Steve", STEVE));
-        awaitWrite(first);
+        awaitWrite();
 
         // 第二个实例此刻手里还是旧令牌
         AccountRepository second = instance(config);
         rotate(first, "fake-token-rotated");
-        awaitWrite(first);
+        awaitWrite();
 
         // 它写一条无关变更时，不能把内存里的旧令牌盖回去
         second.add(offline("Notch", NOTCH));
-        awaitWrite(second);
+        awaitWrite();
 
         AccountRepository reloaded = instance(config);
         BaseAccount steve = reloaded.view().stream()
@@ -234,12 +217,12 @@ class MultiInstanceRepositoryTest {
         AccountRepository first = instance(config);
         first.add(offline("Steve", STEVE));
         first.add(offline("Alex", ALEX));
-        awaitWrite(first);
+        awaitWrite();
 
         // 删掉和下一次写之间不给落盘留时间：合并写会先对账，必须知道"这条是本地删的"
         first.drop(first.view().get(1));
         first.add(offline("Notch", NOTCH));
-        awaitWrite(first);
+        awaitWrite();
 
         AccountRepository reloaded = instance(config);
         assertThat(reloaded.view()).extracting(a -> a.getAccountStorage().getPlayerName())
@@ -251,7 +234,7 @@ class MultiInstanceRepositoryTest {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);
         first.add(offline("Steve", STEVE));
-        awaitWrite(first);
+        awaitWrite();
 
         // 模拟读盘失败：对账绝不能因此清空内存里的账号
         java.nio.file.Files.delete(config);
@@ -259,5 +242,79 @@ class MultiInstanceRepositoryTest {
         AccountRepository.ReconcileResult result = first.reconcile();
         assertThat(result.changed()).isFalse();
         assertThat(first.view()).hasSize(1);
+    }
+
+    @Test
+    void unreadableOrNewerConfigIsNeverReplacedByOngoingInstance() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository repository = instance(config);
+        String broken = "{\"version\":";
+        Files.writeString(config, broken);
+        repository.add(offline("Steve", STEVE));
+        awaitWrite();
+        assertThat(Files.readString(config)).isEqualTo(broken);
+        assertThatThrownBy(() -> repository.prepareRefresh(repository.view().get(0), "offline:" + STEVE))
+                .isInstanceOf(java.io.IOException.class);
+
+        for (String version : new String[]{"5", "4.5", "4294967300"}) {
+            String unsupported = "{\"version\":" + version + ",\"accounts\":[],\"servers\":[]}";
+            Files.writeString(config, unsupported);
+            repository.markDirty();
+            awaitWrite();
+            assertThat(Files.readString(config)).isEqualTo(unsupported);
+        }
+    }
+
+    @Test
+    void failedLockOpenDoesNotPreventLaterWrites() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository repository = instance(config);
+        Path lock = repository.sync().paths().configLock();
+        Files.createDirectories(lock);
+        repository.add(offline("Steve", STEVE));
+        awaitWrite();
+        assertThat(instance(config).view()).isEmpty();
+
+        Files.delete(lock);
+        repository.add(offline("Alex", ALEX));
+        awaitWrite();
+        assertThat(instance(config).view()).extracting(a -> a.getAccountStorage().getPlayerName())
+                .containsExactly("Steve", "Alex");
+    }
+
+    @Test
+    void refreshPublishesAllCredentialsBeforeNextLeaseHolder() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository first = instance(config);
+        MicrosoftAccount writer = new MicrosoftAccount("fake-mc-old", "Steve", UUID.fromString(toDashed(STEVE)),
+                null, "fake-msa-old", null, 0);
+        first.add(writer);
+        awaitWrite();
+        AccountRepository second = instance(config);
+        MicrosoftAccount reader = (MicrosoftAccount) second.view().get(0);
+        String key = "microsoft:" + STEVE;
+
+        first.sync().withAccountLease(key, 0, () -> {
+            assertThat(first.prepareRefresh(writer, key)).isTrue();
+            assertThat(first.beginRotation(writer, key)).isTrue();
+            try {
+                writer.setMicrosoftAccountToken(null, "fake-msa-new");
+                first.add(offline("Alex", ALEX));
+                awaitWrite();
+                assertThat(instance(config).view().stream().filter(MicrosoftAccount.class::isInstance)
+                        .map(MicrosoftAccount.class::cast).findFirst().orElseThrow().getMicrosoftAccountRefreshToken())
+                        .isEqualTo("fake-msa-old");
+                first.persistRefresh(key);
+            } finally {
+                first.endRotation(key);
+            }
+            return null;
+        });
+
+        second.sync().withAccountLease(key, 0, () -> {
+            assertThat(second.prepareRefresh(reader, key)).isTrue();
+            assertThat(reader.getMicrosoftAccountRefreshToken()).isEqualTo("fake-msa-new");
+            return null;
+        });
     }
 }

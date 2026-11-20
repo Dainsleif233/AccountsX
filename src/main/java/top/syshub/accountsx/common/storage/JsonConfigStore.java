@@ -1,43 +1,52 @@
 package top.syshub.accountsx.common.storage;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import net.fabricmc.loader.api.FabricLoader;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import top.syshub.accountsx.common.adapters.Platforms;
+import top.syshub.accountsx.common.storage.migration.Migration;
 import top.syshub.accountsx.common.storage.migration.MigrationChain;
 import top.syshub.accountsx.common.storage.migration.MigrationContext;
 import top.syshub.accountsx.common.utils.NetworkUtils;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.Reader;
+import java.math.BigDecimal;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.FileSystems;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Set;
+import java.util.Objects;
 import java.util.function.Function;
 
 /**
  * {@link ConfigStore} 的 JSON 文件实现（P2.2）。
  *
  * <p>文件系统、路径、环境变量、迁移链与提示回调全部注入，可在 jimfs 内存文件系统中
- * 完整测试（含降级路径）；生产入口是 {@link #createDefault()}。</p>
+ * 完整测试（含降级路径）；生产入口是 {@link #createDefault(MigrationChain)}。</p>
  *
  * <p>写路径：{@code .tmp} → fsync → {@code ATOMIC_MOVE}（REPLACE_EXISTING），
- * 崩溃或断电不会留下半截配置文件。POSIX 下尽力把文件收紧到 600、目录 700
- * （文件含明文 token），Windows 上只记一次 warn。</p>
+ * 崩溃或断电不会留下半截配置文件。POSIX 下创建私有配置文件（600）和新目录（700），
+ * 保留已有父目录的权限。Windows 上只记一次 warn。</p>
  *
  * <p>读路径的降级语义（修审计 1.8，本类存在的核心原因）：文件存在但读失败 /
  * 解析失败 / 迁移失败时，先备份为 {@code accountsx.json.bak-<时间戳>}，
@@ -48,6 +57,10 @@ import java.util.function.Function;
 public final class JsonConfigStore implements ConfigStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(JsonConfigStore.class);
     private static final DateTimeFormatter BACKUP_TS = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final FileAttribute<?> PRIVATE_FILE = PosixFilePermissions.asFileAttribute(
+            PosixFilePermissions.fromString("rw-------"));
+    private static final FileAttribute<?> PRIVATE_DIRECTORY = PosixFilePermissions.asFileAttribute(
+            PosixFilePermissions.fromString("rwx------"));
 
     /** 面向用户的提示（游戏内 toast）。 */
     @FunctionalInterface
@@ -81,32 +94,16 @@ public final class JsonConfigStore implements ConfigStore {
 
     /**
      * 生产默认实例：平台文件系统 + D3 路径解析 + 游戏内 toast。
-     * 迁移链由调用方传入（生产用 {@code StandardMigrations.chain(NetworkUtils.GSON)}，P2.4 接线；
+     * 迁移链由调用方传入（生产用 {@code StandardMigrations.chain()}，P2.4 接线；
      * 传 {@link MigrationChain#EMPTY} 时遇到旧版本配置会安全降级而不是覆写）。
      */
     public static JsonConfigStore createDefault(MigrationChain migrations) {
         FileSystem fs = FileSystems.getDefault();
         Path path = resolvePath(System::getenv, System.getProperty("user.home"), fs);
-        Path gameConfigDir = FabricLoader.getInstance().getConfigDir();
         MigrationContext ctx = new MigrationContext() {
-            @Override
-            public FileSystem fs() {
-                return fs;
-            }
-
-            @Override
-            public Path legacyGameConfigDir() {
-                return gameConfigDir.resolve("accountsx");
-            }
-
             @Override
             public Path legacyHomeDir() {
                 return fs.getPath(System.getProperty("user.home"), ".accountsx");
-            }
-
-            @Override
-            public Path globalConfigFile() {
-                return path;
             }
 
             @Override
@@ -136,84 +133,180 @@ public final class JsonConfigStore implements ConfigStore {
 
     @Override
     public ConfigRoot load() {
-        // 区分"文件不存在"（正常首次运行，落盘空配置）
-        // 与"文件存在但读失败"（异常，进降级）——审计 1.8 的覆写事故正是把两者混为一谈。
-        if (!Files.exists(path)) {
-            ConfigRoot fresh = ConfigRoot.empty(CURRENT_VERSION);
-            try {
-                save(fresh);
-            } catch (IOException e) {
-                // 首次运行的空配置写失败不致命：下一次 save 会重试，也不进只读降级（没有数据可保护）
-                LOGGER.error("首次运行时写入空配置失败，稍后重试。", e);
+        return load(null);
+    }
+
+    @Override
+    public synchronized ConfigRoot load(Path legacyGameConfigDir) {
+        ConfigRoot fresh = ConfigRoot.empty(CURRENT_VERSION);
+        JsonObject raw;
+        try {
+            raw = readConfig(path);
+            if (raw != null) {
+                BigDecimal version = configVersion(raw);
+                if (version.compareTo(BigDecimal.valueOf(CURRENT_VERSION)) > 0) {
+                    degrade(new IllegalStateException("配置版本高于当前支持版本"), false,
+                            "accountsx.config.tooNew.title", "accountsx.config.tooNew.desc");
+                    return fresh;
+                }
+                int fileVersion = version.intValueExact();
+                if (fileVersion < CURRENT_VERSION) {
+                    if (readOnly)
+                        return fresh;
+                    Migration.Result upgraded = migrations.upgrade(raw, fileVersion, migrationContext);
+                    return commitMigration(new ConfigRoot(upgraded.config()), upgraded.legacyPayload(), null);
+                }
+                requireArray(raw, "accounts");
+                requireArray(raw, "servers");
             }
+        } catch (Exception e) {
+            degrade(e, true, "accountsx.config.degraded.title", "accountsx.config.degraded.desc");
             return fresh;
         }
 
-        JsonObject raw;
-        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            // 裸 JsonParser：gson 实例带的 UUIDTypeAdapter 等会污染 JsonElement 目标（P2.4 实测回归）
-            JsonElement parsed = com.google.gson.JsonParser.parseReader(reader);
-            if (!(parsed instanceof JsonObject jo))
-                throw new IllegalStateException("配置根节点不是 JSON object");
-            raw = jo;
-        } catch (IOException | RuntimeException e) {
-            degrade(e, true, "accountsx.config.degraded.title", "accountsx.config.degraded.desc");
-            return ConfigRoot.empty(CURRENT_VERSION);
-        }
-
-        JsonElement version = raw.get("version");
-        if (version == null || !version.isJsonPrimitive() || !version.getAsJsonPrimitive().isNumber()) {
-            LOGGER.error("配置文件缺少合法 version 字段: {}", path);
-            degrade(new IllegalStateException("missing version"), true,
-                    "accountsx.config.degraded.title", "accountsx.config.degraded.desc");
-            return ConfigRoot.empty(CURRENT_VERSION);
-        }
-
-        int fileVersion = version.getAsInt();
-        if (fileVersion > CURRENT_VERSION) {
-            // 用户降级了模组：不迁移、不覆盖（覆写会静默丢新字段），文件本身没坏，不必备份。
-            degrade(new IllegalStateException("config version " + fileVersion + " > " + CURRENT_VERSION), false,
-                    "accountsx.config.tooNew.title", "accountsx.config.tooNew.desc");
-            return ConfigRoot.empty(CURRENT_VERSION);
-        }
-
-        if (fileVersion < CURRENT_VERSION) {
+        ConfigRoot global = raw == null ? fresh : new ConfigRoot(raw);
+        if (readOnly)
+            return global;
+        if (legacyGameConfigDir != null && global.accounts().isEmpty()) {
+            Path instance = legacyGameConfigDir.resolve("accounts.json");
             try {
-                raw = migrations.upgrade(raw, fileVersion, migrationContext);
+                JsonObject legacy = readConfig(instance);
+                if (legacy != null && (raw == null || !Files.isSameFile(path, instance))) {
+                    BigDecimal version = configVersion(legacy);
+                    if (version.compareTo(BigDecimal.valueOf(CURRENT_VERSION)) < 0) {
+                        Migration.Result upgraded = migrations.upgrade(legacy, version.intValueExact(), migrationContext);
+                        ConfigRoot imported = new ConfigRoot(upgraded.config());
+                        mergeLegacy(global, imported);
+                        return commitMigration(global, upgraded.legacyPayload(), instance);
+                    }
+                }
             } catch (Exception e) {
-                degrade(e, true, "accountsx.config.degraded.title", "accountsx.config.degraded.desc");
-                return ConfigRoot.empty(CURRENT_VERSION);
+                LOGGER.warn("无法导入旧实例配置 {}，保留原有文件。", instance);
+                degrade(e, false, "accountsx.config.degraded.title", "accountsx.config.degraded.desc");
+                return global;
             }
-            // 迁移成功立刻回写（P2.3：不再依赖调用方 save() 自愈——旧实现靠
-            // initialize() 末尾的无条件 save()，中途崩溃会重复迁移产生残留）。
-            // 回写失败不致命：内存里已是新 schema，下次启动重跑迁移（各跳幂等）。
-            ConfigRoot upgraded = new ConfigRoot(raw);
-            try {
-                save(upgraded);
-            } catch (IOException e) {
-                LOGGER.error("迁移结果回写失败，下次启动将重试迁移。", e);
-            }
-            return upgraded;
         }
-        return new ConfigRoot(raw);
+        if (raw == null) {
+            try {
+                save(global);
+            } catch (IOException | RuntimeException e) {
+                // 首次运行没有数据需要保护；下一次 save 会重试。
+                LOGGER.error("首次运行时写入空配置失败，稍后重试。", e);
+            }
+        }
+        return global;
     }
 
-    /**
-     * 备份（仅文件未损坏且需要保护的场景）+ ERROR + toast + 置只读降级标志。
-     * 备份时间戳同秒冲突时追加序号，绝不覆盖已有备份。
-     */
+    private static JsonObject readConfig(Path file) throws IOException {
+        BasicFileAttributes attrs;
+        try {
+            attrs = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        } catch (NoSuchFileException e) {
+            return null;
+        }
+        if (attrs.isSymbolicLink())
+            attrs = Files.readAttributes(file, BasicFileAttributes.class);
+        if (!attrs.isRegularFile())
+            throw new IOException("配置路径不是普通文件: " + file);
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            if (JsonParser.parseReader(reader) instanceof JsonObject config)
+                return config;
+            throw new IOException("配置根节点不是 JSON object: " + file);
+        } catch (JsonParseException e) {
+            // Gson 异常可能包含明文凭据。
+            throw new IOException("配置 JSON 解析失败: " + file);
+        }
+    }
+
+    private static BigDecimal configVersion(JsonObject config) {
+        JsonElement version = config.get("version");
+        if (version != null && version.isJsonPrimitive() && version.getAsJsonPrimitive().isNumber()) {
+            try {
+                BigDecimal number = version.getAsBigDecimal();
+                if (number.signum() >= 0 && number.stripTrailingZeros().scale() <= 0)
+                    return number;
+            } catch (NumberFormatException | ArithmeticException ignored) {
+                // 不把版本字段原文写入日志。
+            }
+        }
+        throw new IllegalStateException("配置文件缺少有效的整数版本");
+    }
+
+    private static void requireArray(JsonObject config, String field) {
+        JsonElement value = config.get(field);
+        if (value != null && !value.isJsonNull() && !value.isJsonArray())
+            throw new IllegalStateException("配置字段必须是数组: " + field);
+    }
+
+    private static void mergeLegacy(ConfigRoot global, ConfigRoot imported) {
+        global.accounts().addAll(imported.accounts());
+        JsonArray servers = global.servers();
+        for (JsonElement element : imported.servers()) {
+            JsonObject incoming = element.getAsJsonObject();
+            JsonObject existing = null;
+            for (JsonElement known : servers) {
+                if (known instanceof JsonObject server
+                        && Objects.equals(server.get("type"), incoming.get("type"))
+                        && Objects.equals(server.get("apiRoot"), incoming.get("apiRoot"))) {
+                    existing = server;
+                    break;
+                }
+            }
+            if (existing == null) {
+                servers.add(incoming);
+            } else {
+                for (var field : incoming.entrySet()) {
+                    if (!existing.has(field.getKey()))
+                        existing.add(field.getKey(), field.getValue());
+                }
+            }
+        }
+    }
+
+    private ConfigRoot commitMigration(ConfigRoot root, Path payload, Path instance) {
+        try {
+            save(root);
+        } catch (IOException | RuntimeException e) {
+            degrade(e, false, "accountsx.config.degraded.title", "accountsx.config.degraded.desc");
+            return root;
+        }
+        // 全局配置已经落盘。索引改名失败时保留载荷，避免留下无法重试的索引。
+        if (instance != null) {
+            try {
+                Files.move(instance, instance.resolveSibling("accounts.json.migrated"), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                LOGGER.warn("实例配置改名 .migrated 失败，保留旧载荷。", e);
+                return root;
+            }
+        }
+        if (payload != null) {
+            try {
+                Files.deleteIfExists(payload);
+                Files.deleteIfExists(payload.getParent());
+            } catch (DirectoryNotEmptyException ignored) {
+                // 其他实例的载荷仍在使用。
+            } catch (IOException e) {
+                LOGGER.warn("清理已迁移载荷失败: {}", payload, e);
+            }
+        }
+        return root;
+    }
+
+    /** 备份需要保护的原始文件并进入只读模式。 */
     private void degrade(Throwable cause, boolean backup, String titleKey, String descKey) {
         LOGGER.error("无法加载配置文件 {}，本次会话进入只读模式（保存被禁用，不会覆写用户数据）。", path, cause);
-        if (backup) {
+        if (backup && !readOnly && Files.isRegularFile(path)) {
+            Path bak = null;
             try {
-                Path bak = path.resolveSibling(path.getFileName() + ".bak-" + LocalDateTime.now().format(BACKUP_TS));
-                int suffix = 1;
-                while (Files.exists(bak)) {
-                    bak = path.resolveSibling(path.getFileName() + ".bak-" + LocalDateTime.now().format(BACKUP_TS) + "-" + suffix++);
+                String prefix = path.getFileName() + ".bak-" + LocalDateTime.now().format(BACKUP_TS) + "-";
+                bak = Files.createTempFile(path.toAbsolutePath().getParent(), prefix, "", permissions(PRIVATE_FILE));
+                try (OutputStream out = Files.newOutputStream(bak, StandardOpenOption.WRITE)) {
+                    Files.copy(path, out);
                 }
-                Files.copy(path, bak);
                 LOGGER.error("原配置已备份到 {}", bak);
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
+                if (bak != null)
+                    deleteIncompleteFile(bak);
                 LOGGER.error("备份配置文件失败，请勿修改或删除 {}。", path, e);
             }
         }
@@ -227,24 +320,19 @@ public final class JsonConfigStore implements ConfigStore {
     }
 
     @Override
-    public void save(ConfigRoot root) throws IOException {
+    public synchronized void save(ConfigRoot root) throws IOException {
         if (readOnly) {
             LOGGER.warn("配置存储处于只读降级模式，本次保存请求已丢弃（防止覆写用户数据）。");
             return;
         }
 
-        Path dir = path.getParent();
-        if (dir != null) {
-            Files.createDirectories(dir);
-            tightenPermissions(dir, "rwx------");
-        }
+        prepareConfigDirectory();
 
-        // 临时名带进程唯一后缀：多实例同时保存时不会互相截断同一个 .tmp，
-        // 也不会抢同一个 tmp 的 move（全局写锁是另一重保险，这里保证即使锁失效也不损坏数据）。
-        Path tmp = path.resolveSibling(path.getFileName() + ".tmp-" + UniqueSuffix.next());
+        // 同目录随机临时名避开多实例冲突，明文凭据从创建起就只能由所有者读取。
+        Path tmp = createPrivateTemp(path);
         try {
             Files.writeString(tmp, gson.toJson(root.raw()), StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
             fsync(tmp);
             try {
                 Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -255,28 +343,29 @@ public final class JsonConfigStore implements ConfigStore {
                 Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException | RuntimeException e) {
-            // 失败路径清理 .tmp：残留的半截 tmp 会让下次 save 的 TRUNCATE_EXISTING 掩盖问题，
-            // 也避免用户目录里积累垃圾文件。清理本身失败不升级异常。
-            try {
-                Files.deleteIfExists(tmp);
-            } catch (IOException ignored) {
-                LOGGER.debug("清理写入失败的临时文件失败: {}", tmp, ignored);
-            }
+            deleteIncompleteFile(tmp);
             throw e;
         }
-        tightenPermissions(path, "rw-------");
     }
 
-    /** 进程内单调递增的唯一后缀，供临时文件名使用（跨进程由 pid 保证不重）。 */
-    private static final class UniqueSuffix {
-        private static final java.util.concurrent.atomic.AtomicLong SEQ = new java.util.concurrent.atomic.AtomicLong();
-
-        private UniqueSuffix() {
+    private static void deleteIncompleteFile(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            LOGGER.debug("清理不完整的配置文件失败: {}", file, e);
         }
+    }
 
-        static String next() {
-            return ProcessHandle.current().pid() + "-" + SEQ.incrementAndGet();
-        }
+    /** 在协调锁创建自己的目录之前，以私有权限创建缺失的配置父目录。 */
+    public synchronized void prepareConfigDirectory() throws IOException {
+        Path dir = path.toAbsolutePath().getParent();
+        if (!Files.isDirectory(dir))
+            Files.createDirectories(dir, permissions(PRIVATE_DIRECTORY));
+    }
+
+    private Path createPrivateTemp(Path target) throws IOException {
+        return Files.createTempFile(target.toAbsolutePath().getParent(), target.getFileName() + ".tmp-", "",
+                permissions(PRIVATE_FILE));
     }
 
     private static void fsync(Path tmp) {
@@ -288,19 +377,19 @@ public final class JsonConfigStore implements ConfigStore {
         }
     }
 
-    /** 含明文 token 的文件尽力收紧权限；非 POSIX（Windows）上只记一次 warn。 */
-    private void tightenPermissions(Path target, String spec) {
-        try {
-            Set<PosixFilePermission> perms = PosixFilePermissions.fromString(spec);
-            Files.setPosixFilePermissions(target, perms);
-        } catch (UnsupportedOperationException e) {
-            if (!permissionsWarned) {
-                permissionsWarned = true;
-                LOGGER.warn("当前文件系统不支持 POSIX 权限，无法收紧 {} 的文件权限；请避免分享该文件（含明文凭据）。", target);
-            }
-        } catch (IOException e) {
-            LOGGER.debug("设置权限失败: {}", target, e);
+    private FileAttribute<?>[] permissions(FileAttribute<?> privatePermissions) {
+        if (fs.supportedFileAttributeViews().contains("posix"))
+            return new FileAttribute<?>[]{privatePermissions};
+        if (!permissionsWarned) {
+            permissionsWarned = true;
+            LOGGER.warn("当前文件系统不支持 POSIX 权限；请避免分享配置文件 {}（含明文凭据）。", path);
         }
+        return new FileAttribute<?>[0];
+    }
+
+    /** 启动时未取得配置锁，只读取当前格式，不备份、迁移或写入。 */
+    public synchronized void disableWrites() {
+        readOnly = true;
     }
 
     @Override
@@ -308,13 +397,8 @@ public final class JsonConfigStore implements ConfigStore {
         return readOnly;
     }
 
-    /** 配置文件的解析结果路径（诊断用；不含用户数据）。触发迁移逻辑用它定位全局文件。 */
+    /** 配置文件的解析结果路径（供多实例协调使用）。 */
     public Path path() {
         return path;
-    }
-
-    /** 迁移执行环境（P2.4 触发旧实例迁移时复用同一份路径配置）。 */
-    public MigrationContext migrationContext() {
-        return migrationContext;
     }
 }

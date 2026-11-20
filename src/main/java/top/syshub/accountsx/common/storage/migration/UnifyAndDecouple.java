@@ -1,11 +1,10 @@
 package top.syshub.accountsx.common.storage.migration;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,49 +13,30 @@ import top.syshub.accountsx.common.utils.image.AvatarCache;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Base64;
 import java.util.List;
-import java.util.stream.Stream;
 
-/**
- * 3→4 {@code UNIFY_AND_DECOUPLE}（方案 C，见 REFACTORING/08-config-schema.md）：
- * 从"实例配置 {@code id} 索引 + {@code ~/.accountsx/<id>.json} 载荷"收敛为全局单文件。
- *
- * <p>一步完成：唯一数据来源是<b>当前实例</b> {@code id} 指向的载荷，整份转成 v4 后
- * 覆盖写全局文件——不并入已有内容、不去重、不搬未知字段。v4 从未发布，磁盘上不存在
- * "别的实例先迁好的 v4 文件"，所以没有"合并"这回事。
- * {@code ~/.accountsx/} 下其余 {@code *.json} 是其他实例的账号集，一律不动
- * （未更新模组的实例还要用）。</p>
- *
- * <p>顺序刻意安排为"先落盘全局文件，再删载荷、改名实例配置"：载荷删除发生在
- * 全局文件原子写成功之后，崩溃窗口内旧文件仍在，下次启动会重跑一次（覆盖写，结果相同）。</p>
- *
- * <p>迁移过程中还会：反推 servers（{@code oauth} 种子取自带登录信封的账号，与账号顺序无关）、拆
- * {@code "OAuth {\u2026}"} 登录信封为结构化 credentials（解析失败降级为"需重登"，
- * 保留账号条目）、把旧 base64 头像外移到 {@code ~/.cache/accountsx/avatars/}（D4，
- * 失败不阻塞——头像可重建）。</p>
- */
-public final class UnifyAndDecouple implements Migration {
+/** 将 v2 的内联账号或 v3 的独立载荷转换为 v4。全局配置的提交和旧文件清理由存储层负责。 */
+final class UnifyAndDecouple implements Migration {
     private static final Logger LOGGER = LoggerFactory.getLogger(UnifyAndDecouple.class);
     private static final String OAUTH_PREFIX = "OAuth ";
     private static final String HEX = "0123456789abcdef";
-    private static final DateTimeFormatter BACKUP_TS = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
-    private final Gson gson;
+    private final int version;
 
-    public UnifyAndDecouple(Gson gson) {
-        this.gson = gson;
+    UnifyAndDecouple(int version) {
+        this.version = version;
     }
 
     @Override
     public int fromVersion() {
-        return 3;
+        return version;
     }
 
     @Override
@@ -73,12 +53,25 @@ public final class UnifyAndDecouple implements Migration {
     }
 
     @Override
-    public JsonObject apply(JsonObject config, MigrationContext ctx) throws Exception {
-        String id = requireId(config);
-        JsonArray legacy = readPayload(ctx, id);
+    public Result apply(JsonObject config, MigrationContext ctx) throws IOException {
+        Path payload = null;
+        JsonArray legacy;
+        if (version == 3) {
+            Path candidate = payloadPath(config, ctx.legacyHomeDir());
+            JsonArray accounts = readPayload(candidate);
+            legacy = accounts == null ? new JsonArray() : accounts;
+            if (accounts != null)
+                payload = candidate;
+        } else {
+            JsonElement accounts = config.get("accounts");
+            if (accounts == null || accounts.isJsonNull())
+                legacy = new JsonArray();
+            else if (accounts instanceof JsonArray array)
+                legacy = array;
+            else
+                throw new IllegalStateException("旧配置的 accounts 不是 JSON 数组，拒绝迁移以保护数据。");
+        }
 
-        // 一步完成：把本实例的整份旧账号直接转成 v4，整体覆盖全局文件。
-        // 不读取全局文件已有内容——v4 没发布过，不存在"别人已经迁好"的文档需要合并。
         JsonObject out = new JsonObject();
         JsonArray outAccounts = new JsonArray();
         JsonArray outServers = new JsonArray();
@@ -99,41 +92,43 @@ public final class UnifyAndDecouple implements Migration {
         // mojang / offline 是 builtin kind，不写入 servers 列表。
         out.add("accounts", outAccounts);
         out.add("servers", outServers);
-        out.addProperty("version", toVersion());
-
-        writeGlobal(out, ctx);
-
-        cleanupLegacy(ctx, id);
-        return out;
+        return new Result(out, payload);
     }
 
-    // ── 输入侧 ────────────────────────────────────────────────────
-
-    private static String requireId(JsonObject config) {
+    private static Path payloadPath(JsonObject config, Path home) {
         String id = str(config.get("id"));
         if (id == null || id.isBlank())
             throw new IllegalStateException("v3 配置缺少 id，无法定位账号载荷；拒绝迁移以保护数据。");
-        return id;
+        if (!id.contains("/") && !id.contains("\\")) {
+            try {
+                Path name = home.getFileSystem().getPath(id + ".json");
+                if (name.getRoot() == null && name.getNameCount() == 1)
+                    return home.resolve(name);
+            } catch (InvalidPathException ignored) {
+                // 原生异常保留输入内容，不应带到日志。
+            }
+        }
+        throw new IllegalStateException("v3 配置的 id 不是有效的载荷文件名，拒绝迁移以保护数据。");
     }
 
-    private JsonArray readPayload(MigrationContext ctx, String id) throws IOException {
-        Path payload = ctx.legacyHomeDir().resolve(id + ".json");
-        if (!Files.isRegularFile(payload)) {
-            LOGGER.info("旧载荷文件不存在（实例从未添加过账号）：{}", payload);
-            return new JsonArray();
+    private static JsonArray readPayload(Path payload) throws IOException {
+        BasicFileAttributes attrs;
+        try {
+            attrs = Files.readAttributes(payload, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        } catch (NoSuchFileException e) {
+            // 旧版只有在存在内联账号数组时才会创建载荷。
+            return null;
         }
+        if (attrs.isSymbolicLink())
+            attrs = Files.readAttributes(payload, BasicFileAttributes.class);
+        if (!attrs.isRegularFile())
+            throw new IOException("旧载荷不是普通文件，拒绝迁移以保护数据: " + payload);
         try (Reader reader = Files.newBufferedReader(payload, StandardCharsets.UTF_8)) {
-            // 注意：必须用裸 JsonParser 读——注入的 gson 可能带 UUIDTypeAdapter 等，
-            // 会在 JsonElement 目标下抛错（JsonElement 不需要任何适配器）。
-            JsonElement parsed = JsonParser.parseReader(reader);
-            if (parsed == null || parsed.isJsonNull())
-                return new JsonArray();
-            if (!(parsed instanceof JsonArray accounts))
-                throw new IllegalStateException("旧载荷不是 JSON 数组，拒绝迁移以保护数据: " + payload);
-            return accounts;
+            if (JsonParser.parseReader(reader) instanceof JsonArray accounts)
+                return accounts;
+            throw new IllegalStateException("旧载荷不是 JSON 数组，拒绝迁移以保护数据: " + payload);
         } catch (JsonParseException e) {
-            // 载荷读不懂就抛：宁可让存储层备份降级，也不删掉一个还没写进全局文件的载荷。
-            throw new IllegalStateException("旧载荷解析失败: " + payload, e);
+            throw new IllegalStateException("旧载荷解析失败: " + payload);
         }
     }
 
@@ -148,7 +143,7 @@ public final class UnifyAndDecouple implements Migration {
             default -> null;
         };
         if (type == null) {
-            LOGGER.warn("旧载荷含未知账号类型 '{}'，已跳过该账号。", legacyType);
+            LOGGER.warn("旧载荷含未知账号类型，已跳过该账号。");
             return null;
         }
 
@@ -242,7 +237,7 @@ public final class UnifyAndDecouple implements Migration {
             }
             return envelope;
         } catch (RuntimeException e) {
-            LOGGER.debug("OAuth 登录信封不是合法 JSON。", e);
+            LOGGER.debug("OAuth 登录信封不是合法 JSON。");
             return null;
         }
     }
@@ -306,96 +301,6 @@ public final class UnifyAndDecouple implements Migration {
             server.addProperty("displayName", converted.displayName());
         if (!server.has("oauth") && converted.oauthSeed() != null)
             server.add("oauth", converted.oauthSeed());
-    }
-
-    // ── 落盘与旧文件处理 ──────────────────────────────────────────
-
-    /**
-     * 原子写全局文件（tmp → move）。fsync 交给存储层：load() 触发时链跑完还会
-     * save() 回写（带 fsync 与权限收紧）；P2.4 外部触发同理经 ConfigStore 落盘。
-     */
-    private void writeGlobal(JsonObject out, MigrationContext ctx) throws IOException {
-        Path target = ctx.globalConfigFile();
-        backupIfUnreadable(target);
-        Path dir = target.getParent();
-        if (dir != null)
-            Files.createDirectories(dir);
-        Path tmp = target.resolveSibling(target.getFileName() + ".migrate.tmp");
-        Files.writeString(tmp, gson.toJson(out), StandardCharsets.UTF_8);
-        try {
-            Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    /**
-     * 旧全局文件读不懂（手工改坏 / 写一半断电 / 同步冲突）时先整份备份再覆盖。
-     *
-     * <p>迁移是唯一的"盲写方"：{@code JsonConfigStore.load()} 的备份 + 只读降级要等触发器跑完
-     * 才轮到，那时文件已被换成合法 v4，拦不住。备份失败则放弃覆盖——宁可这次启动报错，
-     * 也不要把用户还能手工抢救的数据抹掉。</p>
-     */
-    private static void backupIfUnreadable(Path target) throws IOException {
-        if (!Files.isRegularFile(target))
-            return;
-        String reason = null;
-        try (Reader reader = Files.newBufferedReader(target, StandardCharsets.UTF_8)) {
-            JsonElement parsed = JsonParser.parseReader(reader);
-            if (parsed instanceof JsonObject)
-                return;
-            reason = "内容不是 JSON object";
-        } catch (RuntimeException e) {
-            reason = e.toString();
-        }
-
-        Path bak = target.resolveSibling(target.getFileName() + ".bak-" + LocalDateTime.now().format(BACKUP_TS));
-        int suffix = 1;
-        while (Files.exists(bak)) {
-            bak = target.resolveSibling(target.getFileName() + ".bak-"
-                    + LocalDateTime.now().format(BACKUP_TS) + "-" + suffix++);
-        }
-        try {
-            Files.copy(target, bak);
-        } catch (IOException e) {
-            throw new IOException("旧全局配置无法解析且备份失败，拒绝覆盖：" + target, e);
-        }
-        LOGGER.error("旧全局配置无法解析（{}），已备份到 {}，随后写入迁移结果。", reason, bak);
-    }
-
-    /** 删除本实例载荷（全局文件已持久化才会走到这里）；目录空了就删；实例配置改名 .migrated。 */
-    private static void cleanupLegacy(MigrationContext ctx, String id) {
-        Path home = ctx.legacyHomeDir();
-        Path payload = home.resolve(id + ".json");
-        try {
-            Files.deleteIfExists(payload);
-        } catch (IOException e) {
-            LOGGER.warn("删除已迁移载荷失败：{}（下次启动会重跑一次 3→4，覆盖写结果相同，不影响数据）。", payload, e);
-        }
-        try {
-            if (Files.isDirectory(home)) {
-                boolean hasJson;
-                try (Stream<Path> files = Files.list(home)) {
-                    hasJson = files.anyMatch(p -> p.getFileName().toString().endsWith(".json"));
-                }
-                if (!hasJson)
-                    Files.delete(home);
-            }
-        } catch (IOException e) {
-            LOGGER.debug("清理旧载荷目录失败（留空目录无害）。", e);
-        }
-
-        Path instanceConfig = ctx.legacyGameConfigDir().resolve("accounts.json");
-        if (!Files.isRegularFile(instanceConfig))
-            return;
-        try {
-            Files.move(instanceConfig, instanceConfig.resolveSibling("accounts.json.migrated"),
-                    StandardCopyOption.REPLACE_EXISTING);
-            LOGGER.info("实例配置已改名保留：accounts.json → accounts.json.migrated");
-        } catch (IOException e) {
-            // 全局文件此时已落盘，改名失败不回滚；下次启动会重跑一次（覆盖写，结果相同）。
-            LOGGER.warn("实例配置改名 .migrated 失败（数据已在全局文件，不影响）。", e);
-        }
     }
 
     // ── 小工具 ───────────────────────────────────────────────────

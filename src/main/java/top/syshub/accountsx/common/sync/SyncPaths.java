@@ -33,9 +33,9 @@ public final class SyncPaths {
         return root().resolve("config.lock");
     }
 
-    /** 追加事件日志：把"别的实例写了什么"的发现延迟压到轮询周期，正确性不依赖它。 */
-    public Path eventsLog() {
-        return root().resolve("events.log");
+    /** 每次保存更新一次，提醒其他实例重新读取配置。 */
+    public Path changeSignal() {
+        return root().resolve("config.changed");
     }
 
     public Path peersDir() {
@@ -51,7 +51,7 @@ public final class SyncPaths {
     }
 
     /**
-     * 账号租约文件：同一账号的刷新与删除互斥。
+     * 账号租约文件：同一账号的换票互斥。
      *
      * <p>账号 key 含 {@code :} {@code #} 与 apiRoot 里的斜杠，不能直接当文件名，
      * 所以取 SHA-256 前 24 个 hex 字符——碰撞概率与 UUID 同级，且文件名长度固定。</p>

@@ -11,22 +11,22 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 去中心化多实例协调（P6）。
  *
  * <p>没有中心节点、没有监听端口、没有 leader：会合点是配置文件旁边的 {@code *.d/} 目录，
- * 串行点是文件锁，广播通道是追加日志。每个实例职责完全相同，角色按操作临时获得。</p>
+ * 串行点是文件锁，写入后更新一个变化标记。每个实例职责完全相同，角色按操作临时获得。</p>
  *
- * <p>正确性由「用令牌前必读盘 + 租约内读-改-写」保证；事件日志只负责让界面跟得上，
- * 因此它挂掉、丢行、被截断都不会损坏数据。</p>
+ * <p>正确性由「用令牌前必读盘 + 租约内读-改-写」保证；变化标记只用于通知界面。</p>
  */
 public final class CoordinationService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(CoordinationService.class);
-    private static final long HEARTBEAT_MILLIS = 2_000L;
     private static final long POLL_MILLIS = 250L;
     /** 刷新换票可能走在网络超时边缘：给足等待对端的时间，超时就跳过这一轮而不是强行换。 */
     public static final long LEASE_TIMEOUT_MILLIS = 15_000L;
@@ -41,51 +41,34 @@ public final class CoordinationService implements AutoCloseable {
     private final SyncPaths paths;
     private final InstanceIdentity identity;
     private final PeerRegistry peers;
-    private final EventLog events;
 
     private volatile Listener listener;
     private volatile boolean running;
-    private volatile long offset;
-    private Thread heartbeatThread;
+    private String lastChange;
     private Thread pollThread;
 
     public CoordinationService(Path configFile) {
         this.identity = InstanceIdentity.current();
         this.paths = new SyncPaths(configFile);
         this.peers = new PeerRegistry(paths, identity);
-        this.events = new EventLog(paths);
     }
 
     public SyncPaths paths() {
         return paths;
     }
 
-    public InstanceIdentity identity() {
-        return identity;
-    }
-
     public void setListener(Listener listener) {
         this.listener = listener;
     }
 
-    /** 登记自己并启动心跳/轮询；重复调用无副作用。 */
+    /** 登记自己并启动变化标记轮询。 */
     public synchronized void start() {
         if (running) {
             return;
         }
         running = true;
         peers.publish();
-        // 启动时从日志末尾开始读：历史事件对应的变化已经体现在刚加载的配置里
-        offset = events.read(0L).offset();
-
-        heartbeatThread = daemon("accountsx-sync-heartbeat", () -> {
-            while (running) {
-                sleep(HEARTBEAT_MILLIS);
-                if (running) {
-                    peers.publish();
-                }
-            }
-        });
+        lastChange = null; // 首次轮询也对账，覆盖加载配置与启动协调之间的写入。
         pollThread = daemon("accountsx-sync-poll", () -> {
             while (running) {
                 sleep(POLL_MILLIS);
@@ -98,19 +81,18 @@ public final class CoordinationService implements AutoCloseable {
     }
 
     private void pollOnce() {
-        EventLog.Batch batch = events.read(offset);
-        offset = batch.offset();
-        boolean remote = false;
-        for (JsonObject event : batch.events()) {
-            String from = str(event.get("from"));
-            if (from != null && !identity.isSelf(from)) {
-                remote = true;
-                break;
-            }
-        }
-        if (!remote) {
+        String change;
+        try {
+            change = Files.readString(paths.changeSignal(), StandardCharsets.UTF_8);
+        } catch (NoSuchFileException e) {
+            return;
+        } catch (IOException e) {
+            LOGGER.debug("读取配置变化标记失败。", e);
             return;
         }
+        if (change.equals(lastChange))
+            return;
+        lastChange = change;
         Listener current = this.listener;
         if (current == null) {
             return;
@@ -118,19 +100,18 @@ public final class CoordinationService implements AutoCloseable {
         try {
             current.onRemoteChange();
         } catch (RuntimeException e) {
-            // 对账失败不能让轮询线程死掉：下一轮事件（或下次写入）还会重试
+            // 留待下一次写入通知，保持轮询线程运行。
             LOGGER.warn("多实例对账失败。", e);
         }
     }
 
-    /** 本实例刚写过配置：追加一条事件通知别人。调用方必须已持有 {@code config.lock}。 */
-    public void publishWrite(String op, int accounts) {
-        JsonObject event = new JsonObject();
-        event.addProperty("from", identity.id());
-        event.addProperty("op", op);
-        event.addProperty("accounts", accounts);
-        event.addProperty("at", System.currentTimeMillis());
-        events.append(event);
+    /** 配置落盘后更新标记。轮询方从配置重新对账，无需回放中间的写入。 */
+    public void publishWrite() {
+        try {
+            SyncFiles.writeAtomically(paths.changeSignal(), UUID.randomUUID().toString());
+        } catch (IOException e) {
+            LOGGER.debug("发布配置变化标记失败。", e);
+        }
     }
 
     /** 别的实例是否正把该账号当作当前账号（用于删除前的二次确认）。 */
@@ -138,7 +119,7 @@ public final class CoordinationService implements AutoCloseable {
         return peers.isUsedByOther(accountKey);
     }
 
-    /** 当前账号变化时立即发布：别人的删除确认读的必须是最新状态，而不是最多 2 秒前的。 */
+    /** 当前账号变化时立即发布，供其他实例删除前查询。 */
     public void publishCurrent(String accountKey) {
         peers.setCurrent(accountKey);
     }
@@ -153,7 +134,7 @@ public final class CoordinationService implements AutoCloseable {
         return FileMutex.withLock(paths.configLock(), CONFIG_LOCK_TIMEOUT_MILLIS, action);
     }
 
-    /** 在账号租约内执行：同一账号的刷新与删除跨进程互斥。 */
+    /** 在账号租约内执行：同一账号的换票跨进程串行。 */
     public <T> T withAccountLease(String accountKey, long timeoutMillis, FileMutex.Action<T> action) throws Exception {
         return FileMutex.withLock(paths.leaseFile(accountKey), timeoutMillis, action);
     }
@@ -225,9 +206,7 @@ public final class CoordinationService implements AutoCloseable {
     @Override
     public synchronized void close() {
         running = false;
-        join(heartbeatThread);
         join(pollThread);
-        heartbeatThread = null;
         pollThread = null;
         peers.removeSelf();
     }

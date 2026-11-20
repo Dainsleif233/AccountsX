@@ -1,6 +1,7 @@
 package top.syshub.accountsx.common.storage;
 
 import java.io.IOException;
+import java.nio.file.Path;
 
 /**
  * 全局配置存储（P2.2，决策 D3）。
@@ -24,6 +25,11 @@ public interface ConfigStore {
      * 文件不存在 = 正常首次运行：落盘一份空的当前版本配置并返回它。
      */
     ConfigRoot load();
+
+    /** 启动时装载配置，必要时从指定目录导入旧实例配置；null 表示不导入。 */
+    default ConfigRoot load(Path legacyGameConfigDir) {
+        return load();
+    }
 
     /** 原子写：{@code .tmp} → fsync → {@code ATOMIC_MOVE}。只读降级模式下丢弃并记 warn。 */
     void save(ConfigRoot root) throws IOException;
