@@ -113,6 +113,11 @@ public abstract class BaseAccount {
         public long getExpiresAt() {
             return expiresAt;
         }
+
+        /** 未知过期时刻（0）不足以判定令牌仍然有效。 */
+        public boolean isTokenKnownUnexpired() {
+            return expiresAt > 0 && System.currentTimeMillis() < expiresAt;
+        }
     }
 
     protected volatile AccountStorage storage;

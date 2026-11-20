@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import top.syshub.accountsx.common.accounts.AccountProvider;
 import top.syshub.accountsx.common.accounts.AccountUUID;
+import top.syshub.accountsx.common.accounts.BaseAccount.AccountStorage;
 import top.syshub.accountsx.common.accounts.model.context.AccountContext;
 import top.syshub.accountsx.common.accounts.model.context.AuthPolicy;
 import top.syshub.accountsx.common.accounts.model.context.AuthSecurityContext;
@@ -55,10 +56,12 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
     }
 
     protected static AuthServerRegistry registry() {
-        if (registry == null)
+        final AuthServerRegistry current = registry;
+        if (current == null)
             throw new IllegalStateException("AuthServerRegistry 未注入。");
-        return registry;
+        return current;
     }
+
     private final String accountContextName;
 
     protected final HttpGateway http;
@@ -169,8 +172,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
     public final void refresh(T account) throws IOException {
         if (AccountOAuth.isEnvelope(account.getLoginToken())) {
             // 校验 id_token 需要该服务器的 issuer / jwks_uri，只能从注册表拿完整条目。
-            AuthServerRegistry servers = registry();
-            AuthServer server = servers == null ? null : servers.byApiRoot(account.getServer());
+            AuthServer server = registry().byApiRoot(account.getServer());
             if (server == null)
                 throw new IOException("认证服务器不在列表中，无法刷新账号: " + account.getServer());
             YggdrasilAuthResult result = YggdrasilDeviceCodeFlow.refresh(http,
@@ -196,11 +198,11 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
      */
     @Override
     public boolean canReuseToken(T account) throws IOException {
-        String accessToken = account.getAccountStorage().getAccessToken();
+        AccountStorage storage = account.getAccountStorage();
+        String accessToken = storage.getAccessToken();
         if (accessToken == null || accessToken.isEmpty())
             return false;
-        long expiresAt = account.getAccountStorage().getExpiresAt();
-        if (expiresAt > 0 && System.currentTimeMillis() < expiresAt)
+        if (storage.isTokenKnownUnexpired())
             return true;
         if (AccountOAuth.isEnvelope(account.getLoginToken()))
             return YggdrasilDeviceCodeFlow.validateAccessToken(http, serverFor(account), accessToken);

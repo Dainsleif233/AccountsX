@@ -323,8 +323,7 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
      */
     @Override
     public boolean canReuseToken(MicrosoftAccount account) {
-        long expiresAt = account.getAccountStorage().getExpiresAt();
-        return expiresAt > 0 && System.currentTimeMillis() < expiresAt;
+        return account.getAccountStorage().isTokenKnownUnexpired();
     }
 
     /**

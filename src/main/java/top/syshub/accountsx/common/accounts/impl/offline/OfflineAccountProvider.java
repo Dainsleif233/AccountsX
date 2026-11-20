@@ -4,18 +4,10 @@ import top.syshub.accountsx.common.accounts.AccountProvider;
 import top.syshub.accountsx.common.accounts.AccountUUID;
 import top.syshub.accountsx.common.accounts.BaseAccount;
 import top.syshub.accountsx.common.accounts.model.context.AccountContext;
-import top.syshub.accountsx.common.net.HttpGateway;
 
-import java.util.Objects;
 import java.util.UUID;
 
 public class OfflineAccountProvider implements AccountProvider<OfflineAccount> {
-    // 离线账号不发起网络请求；构造器接收网关仅为统一所有 provider 的构造形态（P1.3）。
-    // 即便不使用，也校验注入的网关非空，与依赖注入契约保持一致。
-    public OfflineAccountProvider(HttpGateway http) {
-        Objects.requireNonNull(http, "http gateway");
-    }
-
     @Override
     public AccountContext createAccountContext(OfflineAccount account) {
         return null;

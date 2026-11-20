@@ -23,8 +23,8 @@ import java.util.stream.Collectors;
 
 @JsonAdapter(AccountType.AccountTypeAdapter.class)
 public enum AccountType {
-    ENV_DEFAULT(EnvironmentAccount.class, new EnvironmentAccountProvider(Platforms.getHttpGateway()), null, null),
-    OFFLINE(OfflineAccount.class, new OfflineAccountProvider(Platforms.getHttpGateway()), "offline", "offline"),
+    ENV_DEFAULT(EnvironmentAccount.class, new EnvironmentAccountProvider(), null, null),
+    OFFLINE(OfflineAccount.class, new OfflineAccountProvider(), "offline", "offline"),
     MICROSOFT(MicrosoftAccount.class, new MicrosoftAccountProvider(Platforms.getHttpGateway()), "microsoft", "microsoft"),
     AUTHLIB_INJECTOR(AuthlibInjectorAccountProvider.AuthlibInjectorAccount.class, new AuthlibInjectorAccountProvider(Platforms.getHttpGateway()), "injector.authlib-injector", "yggdrasil");
 
