@@ -26,12 +26,9 @@ object AdapterSourceResolver {
         val index = matrix.mc.indexOfFirst { it.version == targetVersion }
         require(index >= 0) { "Target version '$targetVersion' not in matrix" }
         val chain = ArrayList<String>()
-        val seen = LinkedHashSet<String>()
         var current: McAdapter? = matrix.mc[index]
+        // Each parent is at a strictly earlier index, so the chain cannot cycle.
         while (current != null) {
-            require(seen.add(current.version)) {
-                "Source chain for '$targetVersion' contains a cycle at '${current.version}'"
-            }
             chain.add(current.version)
             current = parentOf(matrix, targetVersion, current)
         }

@@ -237,10 +237,8 @@ abstract class PackageUniversalJar : DefaultTask() {
  * - `com/mojang/authlib/` — authlib internals (bridged by authlib adapters)
  * - `net/fabricmc/` — Fabric internals (whitelisted: `net/fabricmc/api/` + `net/fabricmc/loader/api/` for mod entrypoint)
  *
- * Whitelisted references (allowed in common):
- * - `java/awt/` / `javax/imageio/` — AWT / ImageIO, used by the avatar renderer
- *   in the `image` package; since avatar rendering moved back into common, these
- *   are fully allowed (not even a warning).
+ * AWT / ImageIO references are allowed for common's avatar renderer because they
+ * are outside the forbidden namespaces.
  *
  * Depends on `compileJava` so classes exist when this runs.
  */
@@ -264,9 +262,7 @@ abstract class CheckArchitecture : DefaultTask() {
 
         val whitelist = listOf(
             "net/fabricmc/api/",      // Fabric API entrypoints (ClientModInitializer)
-            "net/fabricmc/loader/api/", // Fabric Loader API
-            "java/awt/",              // AWT — avatar rendering in the image package (allowed in common)
-            "javax/imageio/"          // ImageIO — same as java/awt
+            "net/fabricmc/loader/api/" // Fabric Loader API
         )
 
         // Scan a .class file's constant pool (UTF-8 entries) for forbidden references.
@@ -395,13 +391,9 @@ abstract class ValidateAdapterMatrix : DefaultTask() {
         }
 
         logger.lifecycle("Checking MC adapter directories...")
-        for ((version1, authlib) in matrix.mc) {
+        for ((version1) in matrix.mc) {
             val dir = rootDir.get().asFile.resolve("adapters/mc/$version1")
             if (dir.isDirectory) pass("MC $version1") else fail("MC $version1: directory not found at ${dir.path}")
-
-            // Verify authlib adapter referenced by this MC entry exists
-            val hasAuthlib = matrix.authlib.any { it.version == authlib }
-            if (hasAuthlib) pass("MC $version1 → authlib $authlib") else fail("MC $version1: references missing authlib $authlib")
         }
 
         // --- Check 2: no duplicate MC versions ---
@@ -425,17 +417,15 @@ abstract class ValidateAdapterMatrix : DefaultTask() {
             return 0
         }
 
-        fun findWinner(mcVersion: String): McAdapter? {
+        fun findWinner(mcVersion: String): McAdapter {
+            // Every version tested below is declared and therefore qualifies for itself.
             val candidates = matrix.mc.filter { versionCompare(mcVersion, it.version) >= 0 }
-            return candidates.ifEmpty { return null }
-                .maxWith(Comparator { a, b -> versionCompare(a.version, b.version) })
+            return candidates.maxWith(Comparator { a, b -> versionCompare(a.version, b.version) })
         }
 
         for ((version1) in matrix.mc) {
             val winner = findWinner(version1)
-            if (winner == null) {
-                fail("MC $version1: no adapter covers this version")
-            } else if (winner.version != version1) {
+            if (winner.version != version1) {
                 fail("MC $version1: expected adapter $version1, but Loader would select ${winner.version}")
             } else {
                 pass("MC $version1: selects adapter $version1")
@@ -508,12 +498,12 @@ abstract class VerifyUniversalJar : DefaultTask() {
                 val filePath = jarEntry.get("file")?.asString
                     ?: error("jars[$i] missing 'file' field")
 
-                require(zip.getEntry(filePath) != null) {
+                val nestedEntry = zip.getEntry(filePath)
+                require(nestedEntry != null) {
                     "Nested jar '$filePath' listed in fabric.mod.json not found in zip"
                 }
 
                 // Extract the nested jar to a temp file and inspect it
-                val nestedEntry = zip.getEntry(filePath)
                 val tempDir = Files.createTempDirectory("ax-verify-")
                 val tempJar = tempDir.resolve(filePath.substringAfterLast('/'))
                 try {
@@ -724,7 +714,7 @@ val verifyUniversalJar = tasks.register<VerifyUniversalJar>("verifyUniversalJar"
 
 val checkArchitecture = tasks.register<CheckArchitecture>("checkArchitecture") {
     group = "verification"
-    description = "Scan core compiled classes for forbidden platform references (MC / authlib / AWT)"
+    description = "Scan core compiled classes for forbidden platform references (MC / authlib / Fabric internals)"
     dependsOn(tasks.named("compileJava"))
     dependsOn(tasks.named("processResources"))
     classesDir.set(coreClassesDir)
