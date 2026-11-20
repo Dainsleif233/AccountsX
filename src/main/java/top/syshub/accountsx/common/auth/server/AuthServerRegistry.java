@@ -198,11 +198,16 @@ public final class AuthServerRegistry {
             if (server.kind().builtin())
                 continue;
             try {
-                AuthServer probed = probe(server.apiRoot(), server.kind(), knownClientIds);
+                YggdrasilServerProbe.Probed probed = probeAndCacheMetadata(server.apiRoot(), knownClientIds);
+                OAuthEndpoints oauth = OAuthEndpoints.merge(probed.oauth(), server.oauth());
+                // 明确拒绝所需 scope 时，不能把缓存里的设备码端点当作缺失字段补回。
+                if (probed.deviceScopesRejected() && oauth != null) {
+                    oauth = new OAuthEndpoints(oauth.clientId(), oauth.tokenEndpoint(), null,
+                            oauth.userinfoEndpoint(), oauth.issuer(), oauth.jwksUri());
+                }
                 AuthServer merged = new AuthServer(server.apiRoot(), server.kind(),
                         probed.displayName() != null ? probed.displayName() : server.displayName(),
-                        OAuthEndpoints.merge(probed.oauth(), server.oauth()),
-                        probed.cachedAt());
+                        oauth, System.currentTimeMillis());
                 merged = preserveClientId(merged, server);
                 synchronized (this) {
                     Key key = new Key(server.kind(), server.apiRoot());
@@ -250,12 +255,18 @@ public final class AuthServerRegistry {
     @Threading.Thread(Threading.ThreadRole.WORKER)
     public AuthServer probe(String apiRoot, AuthServerKind kind, Map<String, String> knownClientIds)
             throws IOException {
+        YggdrasilServerProbe.Probed probed = probeAndCacheMetadata(apiRoot, knownClientIds);
+        return new AuthServer(apiRoot, kind, probed.displayName(), probed.oauth(),
+                System.currentTimeMillis());
+    }
+
+    private YggdrasilServerProbe.Probed probeAndCacheMetadata(String apiRoot, Map<String, String> knownClientIds)
+            throws IOException {
         YggdrasilServerProbe.Probed probed = YggdrasilServerProbe.probe(http, apiRoot, knownClientIds);
         synchronized (this) {
             metadata.put(apiRoot, probed.metadata());
         }
-        return new AuthServer(apiRoot, kind, probed.displayName(), probed.oauth(),
-                System.currentTimeMillis());
+        return probed;
     }
 
     /** 移除条目（UI「移除认证服务器」）；返回是否真的删掉了，删掉后触发持久化。 */
@@ -272,25 +283,5 @@ public final class AuthServerRegistry {
             onChange.run();
         }
         return removed;
-    }
-
-    /**
-     * 登录期兜底发现的 OAuth 端点回写：预热失败的条目在 device 登录成功后
-     * 把 discover 结果并回 servers[] 并落盘，避免每次登录重复 GET 根+openid。
-     */
-    @Threading.Thread(Threading.ThreadRole.WORKER)
-    public void updateOAuthEndpoints(AuthServerKind kind, String apiRoot, OAuthEndpoints oauth) {
-        boolean changed = false;
-        synchronized (this) {
-            Key key = new Key(kind, apiRoot);
-            AuthServer existing = servers.get(key);
-            if (existing != null && oauth != null && !Objects.equals(existing.oauth(), oauth)) {
-                servers.put(key, new AuthServer(existing.apiRoot(), existing.kind(),
-                        existing.displayName(), OAuthEndpoints.merge(oauth, existing.oauth()), existing.cachedAt()));
-                changed = true;
-            }
-        }
-        if (changed && onChange != null)
-            onChange.run();
     }
 }

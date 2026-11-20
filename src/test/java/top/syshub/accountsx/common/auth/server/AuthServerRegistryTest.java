@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import top.syshub.accountsx.common.auth.oauth.OAuthEndpoints;
 import top.syshub.accountsx.common.auth.YggdrasilFixtures;
+import top.syshub.accountsx.common.auth.yggdrasil.YggdrasilDeviceCodeFlow;
 
 /**
  * P3.1 注册表：探测去重（同服务器多账号只探测一次）、元数据内存缓存、
@@ -30,6 +31,7 @@ class AuthServerRegistryTest {
     private final class FakeGateway implements HttpGateway {
         final Map<String, Integer> counts = new java.util.HashMap<>();
         boolean failGet = false;
+        final JsonObject openid = YggdrasilFixtures.openidConfig(API_ROOT);
 
         private void hit(String url) {
             counts.merge(url, 1, Integer::sum);
@@ -45,7 +47,7 @@ class AuthServerRegistryTest {
             if (failGet)
                 throw new IOException("fake gateway down");
             if (url.equals(API_ROOT + "/.well-known/openid"))
-                return YggdrasilFixtures.openidConfig(API_ROOT);
+                return openid.deepCopy();
             if (url.equals(API_ROOT)) {
                 try {
                     return YggdrasilFixtures.rootMeta(API_ROOT);
@@ -184,6 +186,31 @@ class AuthServerRegistryTest {
         // 条目里缺的端点仍由探测补全，displayName 也照常刷新
         assertThat(kept.oauth().deviceAuthorizationEndpoint()).isEqualTo(API_ROOT + "/oauth/device");
         assertThat(kept.displayName()).isEqualTo("FakeInjector");
+    }
+
+    @Test
+    void refreshAll_clearsCachedDeviceEndpointWhenRequiredScopeIsRejected() throws Exception {
+        AuthServer cached = registry.add(AuthServerKind.YGGDRASIL, LOCATOR, Map.of());
+        assertThat(YggdrasilDeviceCodeFlow.supportsDeviceCode(cached)).isTrue();
+        JsonArray stored = new JsonArray();
+        registry.persist(stored);
+        registry.load(stored);
+
+        JsonArray scopes = new JsonArray();
+        scopes.add("openid");
+        gateway.openid.add("scopes_supported", scopes);
+        gateway.openid.addProperty("shared_client_id", "fake-new-client");
+        gateway.openid.remove("token_endpoint");
+        registry.refreshAll(Map.of());
+
+        AuthServer refreshed = registry.byApiRoot(API_ROOT);
+        assertThat(YggdrasilDeviceCodeFlow.supportsDeviceCode(refreshed)).isFalse();
+        assertThat(refreshed.oauth().clientId()).isEqualTo("fake-shared-client");
+        assertThat(refreshed.oauth().tokenEndpoint()).isEqualTo(API_ROOT + "/oauth/token");
+
+        registry.persist(stored);
+        registry.load(stored);
+        assertThat(registry.byApiRoot(API_ROOT).oauth().deviceAuthorizationEndpoint()).isNull();
     }
 
     @Test

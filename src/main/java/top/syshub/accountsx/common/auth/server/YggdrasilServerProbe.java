@@ -23,7 +23,15 @@ public final class YggdrasilServerProbe {
     private YggdrasilServerProbe() {
     }
 
-    public record Probed(String displayName, AuthServerMetadata metadata, OAuthEndpoints oauth) {
+    public record Probed(String displayName, AuthServerMetadata metadata, OAuthEndpoints oauth,
+            boolean deviceScopesRejected) {
+        public Probed(String displayName, AuthServerMetadata metadata, OAuthEndpoints oauth) {
+            this(displayName, metadata, oauth, false);
+        }
+    }
+
+    private record OAuthDiscovery(OAuthEndpoints endpoints, boolean deviceScopesRejected) {
+        private static final OAuthDiscovery ABSENT = new OAuthDiscovery(null, false);
     }
 
     public static Probed probe(HttpGateway http, String apiRoot, Map<String, String> knownClientIds)
@@ -33,7 +41,9 @@ public final class YggdrasilServerProbe {
         String displayName = meta != null ? str(meta.get("serverName")) : null;
         if (displayName == null)
             displayName = hostOf(apiRoot);
-        return new Probed(displayName, readMetadata(root), oauthFromMeta(http, meta, apiRoot, knownClientIds));
+        AuthServerMetadata metadata = readMetadata(root);
+        OAuthDiscovery discovery = discoverOAuth(http, meta, apiRoot, knownClientIds);
+        return new Probed(displayName, metadata, discovery.endpoints(), discovery.deviceScopesRejected());
     }
 
     /** apiRoot 的 host；解析不出来时退回 apiRoot 本身（仅用于展示名兜底）。 */
@@ -129,13 +139,11 @@ public final class YggdrasilServerProbe {
         return false;
     }
 
-    static OAuthEndpoints oauthFromMeta(HttpGateway http, JsonObject meta, String apiRoot,
+    private static OAuthDiscovery discoverOAuth(HttpGateway http, JsonObject meta, String apiRoot,
             Map<String, String> knownClientIds) throws IOException {
-        if (meta == null)
-            return null;
-        String openidUrl = str(meta.get("feature.openid_configuration_url"));
+        String openidUrl = meta == null ? null : str(meta.get("feature.openid_configuration_url"));
         if (openidUrl == null)
-            return null;
+            return OAuthDiscovery.ABSENT;
         // clientId 只有两个来源：内置 apiRoot 表 > YGGC（Yggdrasil Connect）openid 配置里的 shared_client_id。
         // 表的键就是 apiRoot 本身，不是主机名：client_id 按 API 根注册，同一域名可以有不同 API 根，
         // 也不能用 ALI 解析过程中的中间域名（解析可能 301 跨域）。两处都取不到就判定该服务器不支持 OAuth。
@@ -144,7 +152,8 @@ public final class YggdrasilServerProbe {
         // 设备码登录申请的 scope 固定带 openid 与 Yggdrasil.PlayerProfiles.Select；服务器若明确
         // 声明了 scopes_supported 却不含它们，令牌请求只会拿回 invalid_scope。宁可不出设备码入口
         // （密码登录照旧可用），也不要给一个点了必然失败的按钮。
-        String device = scopesAllowDeviceFlow(config) ? str(config.get("device_authorization_endpoint")) : null;
+        boolean deviceScopesRejected = !scopesAllowDeviceFlow(config);
+        String device = deviceScopesRejected ? null : str(config.get("device_authorization_endpoint"));
         String token = str(config.get("token_endpoint"));
         String userinfo = str(config.get("userinfo_endpoint"));
         // issuer / jwks_uri 只服务于 id_token 校验：没有它们就无法确认令牌的签发者与签名密钥。
@@ -152,9 +161,8 @@ public final class YggdrasilServerProbe {
         String jwks = str(config.get("jwks_uri"));
         if (clientId == null)
             clientId = sharedClientId(config);
-        if (clientId == null)
-            return null;
-        return new OAuthEndpoints(clientId, token, device, userinfo, issuer, jwks);
+        OAuthEndpoints endpoints = clientId == null ? null : new OAuthEndpoints(clientId, token, device, userinfo, issuer, jwks);
+        return new OAuthDiscovery(endpoints, deviceScopesRejected);
     }
 
     /**
