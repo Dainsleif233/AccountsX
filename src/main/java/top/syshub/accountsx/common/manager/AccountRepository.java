@@ -82,6 +82,15 @@ public final class AccountRepository {
     private final Map<String, Long> pendingRemovals = new LinkedHashMap<>();
 
     /**
+     * 已删除账号见过的最高 revision（key → rev）。
+     *
+     * <p>rev 只在「同一个逻辑账号」（同类型 + 同 UUID + 同服务器）内比较。删掉再加回同一个账号时
+     * 磁盘上已经没有它的条目，若 rev 从 1 重新开始，另一个实例手里那份旧快照（rev=N）被采纳时就会
+     * 盖掉刚登录的新凭据。这里记住删除前的 rev，也并进磁盘墓碑，重加时从它继续往上戳。</p>
+     */
+    private final Map<String, Long> removedRevs = new HashMap<>();
+
+    /**
      * 本实例刚重新添加的账号 key。
      *
      * <p>墓碑是给"别的实例手里那份旧快照"用的：它不能让删掉的账号复活，但也不能永久封死这个
@@ -131,6 +140,9 @@ public final class AccountRepository {
                     revisions.put(key, longValue(jo.get("rev")));
             }
         }
+        // 磁盘墓碑里的 rev 是"这个账号曾经到过的最大的 rev"，重加它时必须超过这个值。
+        removedRevs.clear();
+        removedRevs.putAll(tombstoneRevs(root.raw()));
 
         // 注册表接管 servers（P3.1）：装载 + 补齐固定条目 + 安装到 provider 可见的单例槽。
         authServers.load(root.servers());
@@ -206,6 +218,8 @@ public final class AccountRepository {
         // 否则合并写会把它复活。
         String key = AccountKey.of(account);
         if (key != null) {
+            // 记住删除时的 rev：重加同一个账号时必须从它往上戳，否则对端旧快照的 rev=N 会盖掉新凭据。
+            removedRevs.merge(key, revisions.getOrDefault(key, 0L), Math::max);
             pendingRemovals.put(key, System.currentTimeMillis());
             revisions.remove(key);
             revivedAccounts.remove(key);
@@ -293,6 +307,7 @@ public final class AccountRepository {
 
         Map<String, JsonObject> diskByKey = new LinkedHashMap<>();
         Set<String> tombstoned = tombstoneKeys(disk);
+        tombstoneRevs(disk).forEach((key, rev) -> removedRevs.merge(key, rev, Math::max));
         for (JsonElement element : arrayOf(disk, "accounts")) {
             if (!(element instanceof JsonObject jo))
                 continue;
@@ -320,6 +335,7 @@ public final class AccountRepository {
                 if (!tombstoned.contains(key))
                     continue;
                 accounts.remove(account);
+                removedRevs.merge(key, revisions.getOrDefault(key, 0L), Math::max);
                 revisions.remove(key);
                 if (current == account) {
                     current = defaultAccount();
@@ -509,6 +525,7 @@ public final class AccountRepository {
         JsonArray diskAccounts = arrayOf(diskRaw, "accounts");
         Set<String> tombstoned = new LinkedHashSet<>(tombstoneKeys(diskRaw));
         tombstoned.addAll(pendingRemovals.keySet());
+        Map<String, Long> diskTombRevs = tombstoneRevs(diskRaw);
 
         Map<String, JsonObject> diskByKey = new LinkedHashMap<>();
         for (JsonElement element : diskAccounts) {
@@ -540,7 +557,11 @@ public final class AccountRepository {
             }
             JsonObject jo = toJson(account);
             JsonObject previous = diskByKey.get(key);
-            long rev = Math.max(revisions.getOrDefault(key, 0L), longValue(previous == null ? null : previous.get("rev"))) + 1L;
+            // 复用同一个 key 时磁盘条目可能已被删掉：此时 rev 的下界要算上删除前的高水位，
+            // 否则重加账号的 rev 从 1 重新开始，对端那份 rev=N 的旧快照会被当成更新的版本采纳。
+            long floor = Math.max(revisions.getOrDefault(key, 0L), longValue(previous == null ? null : previous.get("rev")));
+            floor = Math.max(floor, Math.max(removedRevs.getOrDefault(key, 0L), diskTombRevs.getOrDefault(key, 0L)));
+            long rev = floor + 1L;
             jo.addProperty("rev", rev);
             written.add(key);
             next.add(jo);
@@ -622,25 +643,43 @@ public final class AccountRepository {
         return keys;
     }
 
+    /** 磁盘墓碑里的 rev（key → rev）：该账号被删除时已经到过的最高 revision。 */
+    private static Map<String, Long> tombstoneRevs(JsonObject diskRaw) {
+        Map<String, Long> revs = new HashMap<>();
+        for (JsonElement element : arrayOf(diskRaw, "removed")) {
+            if (element instanceof JsonObject jo && str(jo.get("key")) != null)
+                revs.merge(str(jo.get("key")), longValue(jo.get("rev")), Math::max);
+        }
+        return revs;
+    }
+
     /** 墓碑只增不减会让文件一直长；保留最近若干条就够了（旧的复活风险远低于体积成本）。 */
     private void writeTombstones(JsonObject diskRaw, Set<String> keys, Set<String> written) {
         JsonArray removed = new JsonArray();
         Map<String, Long> merged = new LinkedHashMap<>();
+        Map<String, Long> revs = new HashMap<>();
         // 全局文件被移走后重建时，仍保留内存已有的删除记录。
         for (JsonElement element : arrayOf(root.raw(), "removed")) {
-            if (element instanceof JsonObject jo && str(jo.get("key")) != null)
+            if (element instanceof JsonObject jo && str(jo.get("key")) != null) {
                 merged.put(str(jo.get("key")), longValue(jo.get("at")));
+                revs.merge(str(jo.get("key")), longValue(jo.get("rev")), Math::max);
+            }
         }
         for (JsonElement element : arrayOf(diskRaw, "removed")) {
-            if (element instanceof JsonObject jo && str(jo.get("key")) != null)
+            if (element instanceof JsonObject jo && str(jo.get("key")) != null) {
                 merged.put(str(jo.get("key")), longValue(jo.get("at")));
+                revs.merge(str(jo.get("key")), longValue(jo.get("rev")), Math::max);
+            }
         }
         long now = System.currentTimeMillis();
-        for (String key : keys)
+        for (String key : keys) {
             merged.putIfAbsent(key, pendingRemovals.getOrDefault(key, now));
+            revs.merge(key, removedRevs.getOrDefault(key, 0L), Math::max);
+        }
         // 这次真的写进 accounts 的条目不是"已删除"：重新添加的账号必须把它的墓碑一起撤掉，
         // 否则文件里留着墓碑，下次启动读到它照样会被跳过。
         merged.keySet().removeAll(written);
+        revs.keySet().removeAll(written);
         List<Map.Entry<String, Long>> all = new ArrayList<>(merged.entrySet());
         if (all.size() > MAX_TOMBSTONES)
             all = all.subList(all.size() - MAX_TOMBSTONES, all.size());
@@ -649,8 +688,12 @@ public final class AccountRepository {
             JsonObject jo = new JsonObject();
             jo.addProperty("key", entry.getKey());
             jo.addProperty("at", entry.getValue());
+            // 墓碑带 rev，别的实例删除后再添加同一个账号时才知道该从哪个数字往上戳。
+            jo.addProperty("rev", revs.getOrDefault(entry.getKey(), 0L));
             removed.add(jo);
         }
+        // 即使墓碑被长度上限裁掉，本进程也记住这个高水位：重加账号仍要从它继续往上戳。
+        removedRevs.putAll(revs);
     }
 
     // ── 标脏合并写 ──

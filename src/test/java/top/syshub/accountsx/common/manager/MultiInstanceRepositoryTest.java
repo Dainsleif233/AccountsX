@@ -212,6 +212,37 @@ class MultiInstanceRepositoryTest {
     }
 
     @Test
+    void readdedAccountKeepsItsRevisionAheadOfAStaleSnapshot() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository first = instance(config);
+        first.add(offline("Steve", STEVE));
+        awaitWrite();
+        rotate(first, "fake-token-old");
+        awaitWrite();
+
+        // 第二个实例手里是「删除之前」的快照
+        AccountRepository second = instance(config);
+        assertThat(second.view().get(0).getAccountStorage().getAccessToken()).isEqualTo("fake-token-old");
+
+        // 删掉再加回同一个账号并登录出新令牌：磁盘上已经没有它的条目，rev 必须从旧高水位继续
+        first.drop(first.view().get(0));
+        awaitWrite();
+        first.add(offline("Steve", STEVE));
+        rotate(first, "fake-token-reborn");
+        awaitWrite();
+
+        // 旧快照的普通保存不能把刚登录的令牌盖回去
+        second.add(offline("Notch", NOTCH));
+        awaitWrite();
+
+        AccountRepository reloaded = instance(config);
+        BaseAccount steve = reloaded.view().stream()
+                .filter(a -> a.getAccountStorage().getPlayerName().equals("Steve"))
+                .findFirst().orElseThrow();
+        assertThat(steve.getAccountStorage().getAccessToken()).isEqualTo("fake-token-reborn");
+    }
+
+    @Test
     void dropThenWrite_doesNotResurrectTheAccountBeforeTheTombstoneLands() throws Exception {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);
