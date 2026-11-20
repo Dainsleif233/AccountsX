@@ -42,7 +42,7 @@ MC 26.1+ 是非混淆版本（无 ProGuard），Loom 没有 `remapJar` 任务，
 
 | 不变量                                                                                                                                                     | 为什么                                                                                                                                                                                                                                   | 违反后的症状                                                            | 强制机制                                                                                            |
 |------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
-| common 不得 import `net/minecraft/*` 或 `com/mojang/authlib/*`；`java/awt/*`、`javax/imageio/*` 已加入白名单（头像渲染位于 `common/utils/image` 包，允许） | common 被 13 个不同 MC 版本共用编译；头像渲染位于 common 的 `utils/image` 包，AWT 在 common 内白名单放行                                                                                                                                 | 编译失败（`checkArchitecture` 拒绝 net/minecraft / com/mojang/authlib） | `:checkArchitecture`：net/minecraft、com/mojang/authlib 硬性禁止；java.awt/javax.imageio 白名单放行 |
+| common 不得 import `net/minecraft/*` 或 `com/mojang/authlib/*`；`java/awt/*`、`javax/imageio/*` 不在禁止范围内 | common 被 13 个不同 MC 版本共用编译；头像渲染位于 common 的 `utils/image` 包，common 可使用 AWT                                                                                                                                 | 编译失败（`checkArchitecture` 拒绝 net/minecraft / com/mojang/authlib） | `:checkArchitecture`：net/minecraft、com/mojang/authlib 硬性禁止 |
 | `MinecraftAdapterImpl` 类名是数据契约                                                                                                                      | 写在各适配器 `fabric.mod.json` 的 `accountsx:adapter.mc.class` 里                                                                                                                                                                        | 13 个适配器中找不到实现，模组崩溃                                       | 人工校验 + fabric.mod.json 校验                                                                     |
 | 账号配置文件含明文 token                                                                                                                                   | 所有日志、报错、提交都不得包含其内容                                                                                                                                                                                                     | token 泄露                                                              | 人工 review                                                                                         |
 | `depends.minecraft` 使用 `>=` 无上界                                                                                                                       | Loader 在候选中取版本号最大者；适配器版本为 `${minecraft}-${version}`，MC 版本是最左的版本核心段（数字逐位比较，短者补 0），而 CI 注入的 `+build.N` 落在被忽略的 build 段，不会破坏排序                                                  | 版本排序被破坏时选错适配器 → mixin 目标不存在 → 崩溃                    | `:validateAdapterMatrix`                                                                            |
@@ -81,12 +81,12 @@ AccountsX（根项目 / common）
 │   │   │   ├── AccountRepository.java   # 账号仓储（集合+current+标脏合并写；装载并持有 AuthServerRegistry）
 │   │   │   └── AccountWorker.java       # @Deprecated 转发到 TaskScheduler（兼容旧适配器）
 │   │   ├── storage/                     # 全局单文件存储（ConfigStore / ConfigRoot / JsonConfigStore）
-│   │   │   └── migration/               # Migration / MigrationChain + 标准迁移链（0→1→2→3→4，含 UNIFY_AND_DECOUPLE）
-│   │   ├── sync/                        # 多实例协作（去中心化）：FileMutex / AccountKey / PeerRegistry / EventLog / CoordinationService
+│   │   │   └── migration/               # Migration / MigrationChain + 标准迁移链（0→1→2→4，兼容旧版 3→4）
+│   │   ├── sync/                        # 多实例协作：FileMutex / AccountKey / PeerRegistry / CoordinationService
 │   │   ├── ui/                          # 版本无关的 Translator / SelectionStyle / 列表模型
 │   │   ├── net/                         # HttpGateway 接口 + JdkHttpGateway（可注入网络层）
 │   │   └── utils/                       # Threading / NetworkUtils / UnsafeVM / AvatarService（头像获取+落盘编排，无 AWT）
-│   │       └── image/                  # 头像渲染+落盘+像素解码（AvatarRenderer / AwtAvatarRenderer / AvatarCache / AvatarPixels；AWT/ImageIO 在 common 内白名单放行）
+│   │       └── image/                  # 头像渲染+落盘+像素解码（AvatarRenderer / AwtAvatarRenderer / AvatarCache / AvatarPixels；common 可使用 AWT/ImageIO）
 ├── adapters/
 │   ├── authlib/<ver>/               # authlib API 桥接（6 个版本）
 │   └── mc/<mc-ver>/                 # MC 客户端 API + UI + Mixins（13 个版本）
@@ -150,16 +150,12 @@ universal 任务还会在嵌套的 common 元数据中添加 `fabric-api: *` 依
 
 同一份配置可能被多个游戏实例同时读写，而**同一账号不可能被两个进程各持一份有效令牌**：Yggdrasil 刷新即作废旧令牌，微软 `refresh_token` 是单次使用的。因此不做「实例隔离」，而是让所有实例共享令牌，并把「谁在换票」串行化。
 
-- 权威是磁盘，串行点是文件锁，广播是追加日志；没有中心进程、没有监听端口、没有 leader（`common/sync/`）。
-- 协调目录是配置文件旁的 `*.d/`（`SyncPaths`）：`config.lock`（全局写锁）、`instances/<id>.json`（pid + 当前账号 + 心跳）、`locks/<accountKey>.lock`（账号租约）、`events.log`（变更事件）。
-- 写路径：`AccountRepository.markDirty` → 串行通道 → 持 `config.lock` → 读盘 → **先对账再合并** → 原子写 → 追加事件。合并规则：不认识且未被墓碑标记的条目原样带回；被墓碑标记的账号不写回；我们认识的账号按内存顺序写并戳更大的 `rev`。先对账是为了不把内存里的旧令牌或已删账号盖回去。
-- 墓碑写在根节点的 `removed` 数组（`{key, at}`，最多保留 200 条）：删账号时追加，防止「另一个实例的旧快照把它写回来」。
-- 墓碑只约束**别人**的旧快照：本实例重新添加同一个账号（同类型、同 UUID、同服务器）时撤销它的墓碑（`AccountRepository.revivedKeys`），否则删掉再加的账号永远写不进磁盘。
-- 刷新路径：取账号租约 → 锁内先 `reconcileAccount`（采纳对方已换好的令牌）→ 再判 `canReuseToken` → 都不行才换票 → **立刻落盘**。拿不到租约（对面正在换票）就跳过本轮，改读盘复用。
-- 对账（`reconcile`）：磁盘上更新的令牌直接采纳；磁盘上新增的账号收进内存；被墓碑标记、内存里还在的账号丢弃（若是当前账号则回落默认账号）；对端新增认证服务器时重载注册表。
-- 发现延迟：`CoordinationService` 轮询 `events.log`（250ms）+ 心跳（2s）。日志只影响「多快发现」，正确性不依赖它——用令牌前一定先读盘。
-- 删除保护：删除一个正被别的存活实例用着的账号时，第一次点击只弹警告，3 秒内再点一次才真删（`DefaultAccountListModel`）；被删方的界面经 `AccountManager.addChangeListener` 回调重同步，当前账号被删则回落到默认账号，且**不会**再调 `signOut`（删它的那个实例已经撤销过）。
-- 崩溃处理：换票前写 `locks/<key>.intent`，成功落盘后清除；启动时发现属于已死进程的意图文件，说明令牌可能已被轮换却未落盘，提示用户重新登录。写到一半崩溃不会留下半个文件（临时文件带 pid+序号，只做原子替换）。
+- 各实例共享磁盘配置，使用文件锁协调。协调目录是配置文件旁的 `*.d/`，内有 `config.lock`、`peers/<id>.json`、`leases/<key 哈希>.lock` 和 `config.changed`（`SyncPaths`）。实例启动和切换账号时更新登记，读取方凭 PID 和启动时刻判断对方是否存活。
+- 保存时持 `config.lock` 读盘、对账并原子写入。配置无法读取或版本不匹配时放弃写入。未知账号原样带回，账号凭据通过 `rev` 判定是否比本地更新。
+- 删除账号会在 `removed` 数组中写入墓碑（`{key, at}`，最多 200 条），防止其他实例的旧快照写回已删除的账号。用户显式添加同账号时撤销墓碑。
+- 刷新时先取账号租约，再读盘采纳对端凭据、检查是否可复用。需要换票时在租约内提交新凭据，保存成功后才清除 `leases/<key 哈希>.intent` 并释放租约。启动发现已退出进程留下的意图文件时，提示相关账号可能需要重新登录。
+- 写入后更新 `config.changed`。`CoordinationService` 每 250ms 检查一次，标记改变时重新对账并通知界面。取租约后仍直接读配置。
+- 删除其他存活实例正在用的账号时，第一次点击显示警告，3 秒内再点一次才删除（`DefaultAccountListModel`）。对端发现当前账号被删后切回启动器账号，撤销令牌由执行删除的实例负责。
 
 `@Threading.Thread` 文档标注预期线程；`Threading.checkMinecraftClientThread()` / `checkAccountWorkerThread()` 强制执行。不要在 worker 线程外调用 profile 修改 API。
 
@@ -168,12 +164,12 @@ universal 任务还会在嵌套的 common 元数据中添加 `fabric-api: *` 依
 - 配置文件：`~/.config/accountsx.json`（v4：`version` / `servers` / `accounts`；可用 `ACCOUNTSX_CONFIG` 覆盖，`$XDG_CONFIG_HOME` 次之）。
 - `JsonConfigStore` 原子写；读取或迁移失败时备份并进入只读降级，保存被丢弃。
 - `servers` 里的外置认证服务器条目是账号的登录端点、公钥与 skinDomains 来源；移除条目时连带删除属于它的账号（`AccountRepository.dropAccountsOn`），否则这些账号既登录不了也刷新不了。
-- 旧版本按 `StandardMigrations` 链升级并回写；未知账号条目跳过但保留。
+- 旧版本按 `StandardMigrations` 链升级并回写。v0–v2 从内联账号直接转为 v4，已存在的 v3 配置读取其独立载荷；只有全局配置保存成功后才清理旧载荷。未知账号条目跳过但保留。
 - 令牌过期时间写在 `credentials.expiresAt`（毫秒，可选）：缺失或 0 表示未知，老配置无需迁移即可读；启动时用它判断能否跳过刷新。
 - `ENV_DEFAULT` 账号不写入磁盘
-- 如存在待迁移的实例配置，先触发一次迁移再加载；全局已有账号时不再重复触发。
+- 全局配置已是 v4 且账号列表为空，或全局配置不存在时，可导入旧实例配置。全局配置和旧实例配置均保留到新配置写入成功。
 - `servers` 由 `AuthServerRegistry`（`common/auth/server/`）接管：登录/刷新/建会话只读内存缓存（公钥、skinDomains、OIDC 端点），仅在启动预热与加服（用户在「添加认证服务器」里显式提交）时探测；登录路径直接用现有条目、不再解析 locator；探测失败保留 stale 条目不阻塞；`mojang` / `offline` 为固定条目（无 `apiRoot`），装载时自动补齐。
-- 探测 openid 配置时，若服务器发布了 `scopes_supported` 却不含 `openid` / `Yggdrasil.PlayerProfiles.Select`，就不记录 `deviceAuthorizationEndpoint`——设备码登录必然 `invalid_scope`，索性不给这个入口；密码登录不受影响。没发布该字段时不作判断。
+- 探测 openid 配置时，若服务器发布了 `scopes_supported` 却不含 `openid` / `Yggdrasil.PlayerProfiles.Select`，就清除 `deviceAuthorizationEndpoint`，包括缓存的旧地址。密码登录与已有账号的 token / userinfo 端点仍可使用。没发布该字段时不作判断。
 
 ### MC 适配器（`adapters/mc/<version>`）
 
