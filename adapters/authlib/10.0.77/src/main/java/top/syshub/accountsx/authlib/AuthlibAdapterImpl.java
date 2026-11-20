@@ -77,13 +77,12 @@ public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImp
         MinecraftServicesDiscoveryService discovery = ofDiscoveryService(proxy, discoveryResponse);
         SessionService sessionService = ofSessionService(proxy, discovery, context.security());
 
-        boolean lenient = !isMojangProd(server);
         UserApiService userAPIService = switch (context.policy()) {
-            case ONLINE -> createUserApiService(discovery, proxy, storage.getAccessToken(), lenient);
+            case ONLINE -> createUserApiService(discovery, proxy, storage.getAccessToken(), server);
             case OFFLINE -> UserApiService.OFFLINE;
             case TRY -> {
                 try {
-                    yield createUserApiService(discovery, proxy, storage.getAccessToken(), lenient);
+                    yield createUserApiService(discovery, proxy, storage.getAccessToken(), server);
                 } catch (Exception e) {
                     yield UserApiService.OFFLINE;
                 }
@@ -114,11 +113,12 @@ public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImp
                 && MicrosoftConstants.SERVICES.equals(server.serviceURL());
     }
 
-    private static UserApiService createUserApiService(MinecraftServicesDiscoveryService discovery, Proxy proxy, String accessToken, boolean lenient) {
-        if (lenient) {
-            return new LenientUserApiService(accessToken, discovery, proxy);
+    private static UserApiService createUserApiService(MinecraftServicesDiscoveryService discovery, Proxy proxy,
+                                                       String accessToken, AuthServerContext server) {
+        if (isMojangProd(server)) {
+            return discovery.createUserApiService(accessToken);
         }
-        return discovery.createUserApiService(accessToken);
+        return new LenientUserApiService(accessToken, discovery, proxy, server.profileKeySupported());
     }
 
     // ── 合成 Discovery：把 AuthServerContext 的固定路径映射到 authlib 10 的端点名 ──
@@ -298,13 +298,16 @@ public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImp
 
     /**
      * 注入器环境往往没有 player/attributes、privacy/blocklist、player/certificates 等端点。
-     * 与旧版 YggdrasilUserApiServiceMixin 语义对齐：失败时回退到离线默认值，避免切号直接炸。
+     * 兼容缺少这些端点的旧服务器；声明支持 profile key 时保留真实证书请求的结果。
      */
     private static final class LenientUserApiService implements UserApiService {
         private final MinecraftServicesUserApiService delegate;
+        private final boolean profileKeySupported;
 
-        LenientUserApiService(String accessToken, MinecraftServicesDiscoveryService discovery, Proxy proxy) {
+        LenientUserApiService(String accessToken, MinecraftServicesDiscoveryService discovery, Proxy proxy,
+                              boolean profileKeySupported) {
             this.delegate = new MinecraftServicesUserApiService(accessToken, discovery, proxy);
+            this.profileKeySupported = profileKeySupported;
         }
 
         @Override
@@ -335,11 +338,19 @@ public final class AuthlibAdapterImpl implements AuthlibBridge<AccountSessionImp
 
         @Override
         public KeyPairResponse getKeyPair() {
-            try {
+            // 声明支持的服务器需要真实签名，失败时保留 authlib 的结果与异常语义。
+            if (profileKeySupported) {
                 return delegate.getKeyPair();
-            } catch (Exception e) {
-                return syntheticKeyPair();
             }
+            try {
+                KeyPairResponse response = delegate.getKeyPair();
+                if (response != null) {
+                    return response;
+                }
+            } catch (Exception ignored) {
+            }
+            // authlib 也会用 null 表示请求失败；旧服务器仍需离线密钥对兜底。
+            return syntheticKeyPair();
         }
 
         @Override
