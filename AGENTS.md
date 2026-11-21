@@ -8,7 +8,7 @@ Accounts X 是一个**客户端 Fabric 模组**，用于 Minecraft 多账号切�
 
 - 基础包：`top.syshub.accountsx`
 - JDK **25** 构建；common 字节码目标 Java **17**，各 MC 适配器按 `gradle/adapters.toml` 的 `java` 字段取 17 / 21 / 25
-- Gradle **9.8.2**（wrapper），Fabric Loom **1.17-SNAPSHOT**
+- Gradle 版本由 `gradle/wrapper/gradle-wrapper.properties` 固定；Fabric Loom **1.17-SNAPSHOT**
 - Fabric Loader：**0.19.5**（13 个 MC 适配器共用；common 使用 `compileOnly`）
 - 版本号：`gradle.properties`
 - 许可：GPL-3.0
@@ -268,6 +268,8 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 ```
 
 - Windows 上等效使用 `gradlew.bat`。
+- Gradle Wrapper 的分发地址固定为腾讯云镜像。Dependabot 升级 Wrapper 时总把它写回官方源，`dependabot.yml` 没有开关能改，所以由 `.github/workflows/wrapper-mirror.yml` 在那类 PR 上改回镜像并重跑 CI；手工改动前先跑 `bash gradle/wrapper-mirror.sh <gradle-wrapper.properties>`。
+- 仓库**不提交 `distributionSha256Sum`**。Dependabot 从 `<distributionUrl>.sha256` 取校验和且 404 不兜底，腾讯镜像不发布该文件——留这个键，每一次 Wrapper 升级 PR 都会失败。完整性改在 CI 补：`setup-build` 只在 runner 工作树里换回官方地址并写入官方校验和。
 - 当只改一个 MC/authlib 版本时，优先构建该适配器而非全量 `build`。
 - 非混淆版本（26.1+）使用 `jar` 任务而非 `remapJar`。
 

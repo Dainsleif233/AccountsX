@@ -9,6 +9,38 @@ runs:
         distribution: temurin
         java-version: "25"
 
+    - name: Use official mirrors and set JVM args
+      shell: bash
+      run: |
+        set -euo pipefail
+        chmod +x gradlew
+        wrapper=gradle/wrapper/gradle-wrapper.properties
+        url="$(sed -n 's/^distributionUrl=//p' "$wrapper" | tr -d '\r')"
+        mirror='https\://mirrors.cloud.tencent.com/gradle/'
+        archive="${url#"$mirror"}"
+        if [[ ! "$archive" =~ ^gradle-[0-9]+[.][0-9]+([.][0-9]+)?-bin[.]zip$ ]]; then
+          echo '::error::The tracked Gradle Wrapper URL must use the Tencent mirror. Run: bash gradle/wrapper-mirror.sh gradle/wrapper/gradle-wrapper.properties'
+          exit 1
+        fi
+        # 只改 runner 的工作树，仓库里仍是镜像地址。
+        sed -i '/^distributionUrl=/s|mirrors[.]cloud[.]tencent[.]com/gradle/|services.gradle.org/distributions/|' "$wrapper"
+        # 校验和只在这里补：仓库里不能有 distributionSha256Sum，理由见 AGENTS.md「命令与代价」的 Wrapper 条目。
+        sum="$(curl -fsSL --retry 3 --max-time 30 "https://services.gradle.org/distributions/${archive}.sha256" | tr -d '\r[:space:]')"
+        if [[ ! "$sum" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "::error::Could not read the official SHA-256 for ${archive}."
+          exit 1
+        fi
+        sed -i "/^distributionSha256Sum=/d" "$wrapper"
+        printf 'distributionSha256Sum=%s\n' "$sum" >> "$wrapper"
+        # 追加到文件末尾：键重复时 Gradle 取最后一次出现的值，以此覆盖仓库里的国内镜像默认值。
+        {
+          echo "loom_libraries_base=https://libraries.minecraft.net/"
+          echo "loom_resources_base=https://resources.download.minecraft.net/"
+          echo "loom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest.json"
+          echo "loom_fabric_repository=https://maven.fabricmc.net/"
+          echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
+        } >> gradle.properties
+
     - uses: gradle/actions/setup-gradle@v6
       with:
         cache-read-only: ${{ github.ref != 'refs/heads/dev' }}
@@ -26,17 +58,3 @@ runs:
         key: loom-${{ runner.os }}-${{ hashFiles('gradle/adapters.toml', 'gradle.properties') }}
         restore-keys: loom-${{ runner.os }}-
 
-    - name: Use official mirrors and set JVM args
-      shell: bash
-      run: |
-        chmod +x gradlew
-        # Append overrides to the END of gradle.properties — Gradle uses the
-        # last occurrence when a key is duplicated, so these take precedence
-        # over the Chinese mirror defaults already in the file.
-        {
-          echo "loom_libraries_base=https://libraries.minecraft.net/"
-          echo "loom_resources_base=https://resources.download.minecraft.net/"
-          echo "loom_version_manifests=https://piston-meta.mojang.com/mc/game/version_manifest.json"
-          echo "loom_fabric_repository=https://maven.fabricmc.net/"
-          echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
-        } >> gradle.properties

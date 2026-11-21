@@ -1,0 +1,77 @@
+name: Gradle Wrapper mirror
+
+# Dependabot 更新 Wrapper 时总会把 distributionUrl 写回 services.gradle.org，且 dependabot.yml
+# 无法改变这一点，这里事后改回腾讯云镜像。
+# 安全边界：pull_request_target 下只检出 base 分支的脚本，PR 内容一律走 API 读取。
+on:
+  pull_request_target:
+    branches: [dev]
+    paths:
+      - gradle/wrapper/gradle-wrapper.properties
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: wrapper-mirror-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  retarget:
+    name: Point Wrapper at the Tencent mirror
+    if: >-
+      ${{ github.actor }} == 'dependabot[bot]'
+      && startsWith(github.head_ref, 'dependabot/gradle/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the trusted rewrite script
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Rewrite distributionUrl to the mirror
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          path=gradle/wrapper/gradle-wrapper.properties
+          work="$(mktemp -d)"
+          gh api "repos/$REPO/contents/$path?ref=$HEAD_SHA" --jq .content | base64 -d > "$work/props"
+          blob="$(gh api "repos/$REPO/contents/$path?ref=$HEAD_SHA" --jq .sha)"
+
+          status=0
+          bash base/gradle/wrapper-mirror.sh "$work/props" || status=$?
+          if [[ $status == 3 ]]; then
+            echo 'Wrapper already points at the mirror; nothing to do.'
+            exit 0
+          elif [[ $status != 0 ]]; then
+            echo "::error::wrapper-mirror.sh failed with status $status"
+            exit "$status"
+          fi
+
+          gh api -X PUT "repos/$REPO/contents/$path" \
+            -f message='chore(ci): 把 Wrapper 分发地址换回腾讯云镜像' \
+            -f content="$(base64 -w0 < "$work/props")" \
+            -f sha="$blob" \
+            -f branch="$BRANCH" > /dev/null
+          echo "Updated $path on $BRANCH."
+
+      # GITHUB_TOKEN 推的提交不触发 pull_request，CI 会停在上一个 commit 上。
+      - name: Re-run CI on the rewritten commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run ci.yml --repo "$REPO" --ref "$BRANCH"
