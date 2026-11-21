@@ -2,6 +2,7 @@ package top.syshub.accountsx.adapters.mc.mixins;
 
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import top.syshub.accountsx.adapters.mc.ui.I18N;
+import top.syshub.accountsx.adapters.mc.ui.TitleScreenAccountButton;
 import top.syshub.accountsx.common.AccountsX;
 import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
@@ -45,10 +46,11 @@ public class TitleScreenMixin extends Screen {
         if (minecraft == null) {
             return;
         }
-        this.addRenderableWidget((AbstractWidget) new ImageButton(
-                this.width / 2 + 104, this.height / 4 + 72, 20, 20, 0, 0, 20, SWITCH_ACCOUNT_ICON_TEXTURE, 32, 64,
+        AbstractWidget accountButton = this.addRenderableWidget((AbstractWidget) new ImageButton(
+                0, 0, 20, 20, 0, 0, 20, SWITCH_ACCOUNT_ICON_TEXTURE, 32, 64,
                 (buttonWidget) -> minecraft.setScreen(new AccountScreen(this)), Component.translatable("accountsx.account.general.add_account")
         ));
+        TitleScreenAccountButton.placeBesideMultiplayer(this, accountButton);
     }
 
     @Inject(method = "render", at = @At("RETURN"))
