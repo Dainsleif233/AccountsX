@@ -138,9 +138,13 @@ universal 任务还会在嵌套的 common 元数据中添加 `fabric-api: *` 依
 5. `loginAccount` → authlib 适配器构建 `AccountSession` → 客户端线程 `switchAccount` 重连 MC session/sessionService/skin 等
 6. 删除正在使用的账号：仓储把 current 指针落回默认账号（`ENV_DEFAULT`，即启动器会话），随后 Manager 在 worker 上登录它、在客户端线程上切回会话——与会话切换同一条链路；没有环境账号可回落时指针清空、游戏会话维持原样
 
-启动刷新先问 `AccountProvider.canReuseToken`：`expiresAt` 在未来就直接复用（不发请求）；否则外置账号分两类——OAuth 信封账号（带 refresh_token 的设备码账号）按 OIDC 惯例 GET `userinfo` 端点（Bearer 头，端点未知时保守判不能复用），会话令牌账号发 `/authserver/validate`（204 空体才算仍有效）；微软账号按落盘的 `expiresAt` 判断。能复用就跳过 refresh，否则每次启动都会轮换令牌，把同一账号在别的实例里顶掉。`expiresAt` 未知（0）时一律按需刷新。
+启动刷新先问 `AccountProvider.canReuseToken`：`expiresAt` 在未来就直接复用（不发请求）；否则外置账号分两类——OAuth 信封账号（带 refresh_token 的设备码账号）按 OIDC 惯例 GET `userinfo` 端点（Bearer 头），会话令牌账号发 `/authserver/validate`；微软账号按落盘的 `expiresAt` 判断。能复用就跳过 refresh，否则每次启动都会轮换令牌，把同一账号在别的实例里顶掉。`expiresAt` 未知（0）时一律按需刷新。
 
-删除账号、或删除账号所属的认证服务器时，Manager 在 worker 上逐个异步调用 `AccountProvider.signOut`：外置账号发 `/authserver/invalidate` 让服务端作废令牌，网络失败只记 debug 日志（账号已经删了，撤销失败不能把异常抛回删除链路）；微软没有单令牌撤销端点，实现为空。
+判定是**三态**的 `TokenReuse`（`common/accounts/model/`）：`YES` 复用、`NO` 换票、`UNKNOWN` 放弃本轮。两个探测端点都按状态码定档——2xx 且无错误体是 `YES`，4xx 或 2xx 带 `error` 体是 `NO`，5xx / 429 / 408 以及网关不支持状态码（`HttpGateway.getWithStatus` / `postJsonWithStatus` 的默认实现）是 `UNKNOWN`。**探测失败绝不能落成 `NO`**：那会去换票，当场作废另一个实例刚换好的令牌，把网络故障升级成账号互踢。离线账号的本地占位令牌恒定 `YES`（否则每次启动都重写盘）。
+
+删除账号、或删除账号所属的认证服务器时，Manager 在 worker 上逐个异步调用 `AccountProvider.signOut`：外置账号发 `/authserver/invalidate` 让服务端作废令牌，网络失败只记 debug 日志（账号已经删了，撤销失败不能把异常抛回删除链路）；微软没有单令牌撤销端点，实现为空。撤销端点取**账号自己记下的 `apiRoot`**，不查 `AuthServerRegistry`——删除服务器时是先摘条目再撤销它名下的账号，查表必然落空。
+
+换票成功但落盘失败时打警告并弹 `accountsx.account.fail.rotation_unsaved`：此时服务端已作废旧令牌、新令牌只在内存，重启后两个都失效，界面不能继续显示「正常可用」；刷新意图也刻意保留，让下次启动的 stale-intent 提示与事实一致。
 
 外置认证的密码登录分两段：先 `/authserver/authenticate` 只拿令牌与角色清单，用户在界面上勾选角色（单角色或服务端已 bound 时跳过）后，再对每个角色发一次带 `selectedProfile` 的 `/authserver/refresh` 完成绑定——一个账号有几个角色就建几个账号，全部入库后切换到服务端原本已绑定的那个角色（没有绑定记录则用第一个）。Yggdrasil 没有独立的「选角色」端点，绑定只能靠 refresh；而刷新时也带 `selectedProfile`（取账号的 preferredPlayerUUID），否则服务端不知道该把令牌绑回哪个角色。
 
@@ -152,7 +156,9 @@ universal 任务还会在嵌套的 common 元数据中添加 `fabric-api: *` 依
 
 - 各实例共享磁盘配置，使用文件锁协调。协调目录是配置文件旁的 `*.d/`，内有 `config.lock`、`peers/<id>.json`、`leases/<key 哈希>.lock` 和 `config.changed`（`SyncPaths`）。实例启动和切换账号时更新登记，读取方凭 PID 和启动时刻判断对方是否存活。
 - 保存时持 `config.lock` 读盘、对账并原子写入。配置无法读取或版本不匹配时放弃写入。未知账号原样带回，账号凭据通过 `rev` 判定是否比本地更新。
-- 删除账号会在 `removed` 数组中写入墓碑（`{key, at}`，最多 200 条），防止其他实例的旧快照写回已删除的账号。用户显式添加同账号时撤销墓碑。
+- 删除账号会在 `removed` 数组中写入墓碑（`{key, at, rev}`，最多 200 条），防止其他实例的旧快照写回已删除的账号。用户显式添加同账号时撤销墓碑，且重加后的 `rev` 从删除前的高水位继续递增——否则会以 `rev=1` 重新开始，被对端那份 `rev=N` 的旧快照盖回去，表现为「刚登录的账号又变成旧令牌」。
+- 认证服务器同样有墓碑：`removed` 里的 `server:<kind>|<apiRoot>`。`AuthServerRegistry.mergeFromDisk` 双向合并——对端新增的条目收进来、被墓碑标记的条目丢弃、同键且磁盘 `cachedAt` 更新时采纳对端重新探测的结果。缺任一方向都会丢数据：单向的「磁盘是否包含内存条目」判断会让本地保存把对端删掉的服务器写回，也会让本地旧端点覆盖对端刚探测到的新端点。启动预热只在内容真的变了（`sameContent` 比 displayName 与 oauth）时标脏，否则每次启动都白写盘，对端还会误判有变更。
+- 对账结论里 `recredentialedCurrent` 表示当前账号的令牌被对端换掉：只替换账号模型的 storage 不够，游戏里 `Minecraft` 的 `User` 还拿着已作废的旧令牌，必须重走一遍「worker 登录 + 客户端线程装会话」。
 - 刷新时先取账号租约，再读盘采纳对端凭据、检查是否可复用。需要换票时在租约内提交新凭据，保存成功后才清除 `leases/<key 哈希>.intent` 并释放租约。启动发现已退出进程留下的意图文件时，提示相关账号可能需要重新登录。
 - 写入后更新 `config.changed`。`CoordinationService` 每 250ms 检查一次，标记改变时重新对账并通知界面。取租约后仍直接读配置。
 - 删除其他存活实例正在用的账号时，第一次点击显示警告，3 秒内再点一次才删除（`DefaultAccountListModel`）。对端发现当前账号被删后切回启动器账号，撤销令牌由执行删除的实例负责。
