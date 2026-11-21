@@ -1,5 +1,6 @@
 package top.syshub.accountsx.common.accounts;
 
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.accounts.model.context.AccountContext;
 
 import java.io.IOException;
@@ -23,11 +24,14 @@ public interface AccountProvider<T extends BaseAccount> {
      * 而账号的 {@code state} 是 transient 的，每次启动都按「未授权」处理。若启动时无条件 refresh，
      * 同一账号每启动一次就换一次令牌，同账号在别的客户端/实例上会立刻 401。</p>
      *
-     * <p>默认返回 {@code false}（无法判定就按老路子刷新）。实现抛 {@link IOException} 时调用方
-     * 会退回刷新，因此这里不需要自行降级。</p>
+     * <p><b>三态而不是布尔：</b>「确定无效」和「问不出来」是两件事。前者该刷新，后者该<b>放弃本轮</b>
+     * ——探测失败（网络抖动、网关超时、服务端 5xx）时令牌很可能仍然是好的，此时刷新会当场作废
+     * 另一个实例刚换好的令牌，把一次网络故障升级成账号互踢。所以实现无法判定时返回
+     * {@link TokenReuse#UNKNOWN}；只有实现自己判断不了的意外异常才抛 {@link IOException}，
+     * 调用方同样按「问不出来」处理。</p>
      */
-    default boolean canReuseToken(T account) throws IOException {
-        return false;
+    default TokenReuse canReuseToken(T account) throws IOException {
+        return TokenReuse.NO;
     }
 
     /**

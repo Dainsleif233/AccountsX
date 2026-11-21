@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import top.syshub.accountsx.common.accounts.AccountProvider;
 import top.syshub.accountsx.common.accounts.AccountUUID;
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.accounts.model.context.AccountContext;
 import top.syshub.accountsx.common.accounts.model.context.AuthPolicy;
 import top.syshub.accountsx.common.net.HttpGateway;
@@ -319,11 +320,12 @@ public class MicrosoftAccountProvider implements AccountProvider<MicrosoftAccoun
      * 微软的 MC accessToken 自带 {@code expires_in}，到期前可以直接复用，省掉整条
      * MSA → Xbox Live → XSTS → Minecraft 换票（五次请求）。
      *
-     * <p>过期时刻未知（0）时返回 {@code false}：宁可多刷新一次，也不要把死令牌带进游戏。</p>
+     * <p>过期时刻未知（0）时返回 {@link TokenReuse#NO}：宁可多刷新一次，也不要把死令牌带进游戏。
+     * 这条路不做任何网络请求，所以永远给不出 {@link TokenReuse#UNKNOWN}——本地时钟说了算。</p>
      */
     @Override
-    public boolean canReuseToken(MicrosoftAccount account) {
-        return account.getAccountStorage().isTokenKnownUnexpired();
+    public TokenReuse canReuseToken(MicrosoftAccount account) {
+        return account.getAccountStorage().isTokenKnownUnexpired() ? TokenReuse.YES : TokenReuse.NO;
     }
 
     /**

@@ -5,6 +5,7 @@ import top.syshub.accountsx.common.accounts.AccountProvider;
 import top.syshub.accountsx.common.accounts.BaseAccount;
 import top.syshub.accountsx.common.accounts.model.AccountState;
 import top.syshub.accountsx.common.accounts.model.AccountType;
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.accounts.impl.injector.AbstractInjectorAccount;
 import top.syshub.accountsx.common.accounts.impl.injector.InjectorProfileKeys;
 import top.syshub.accountsx.common.accounts.impl.microsoft.MicrosoftAccount;
@@ -480,17 +481,30 @@ public final class AccountManager {
     /**
      * 问 provider「现有令牌还能直接复用吗」（B4）。
      *
-     * <p>任何异常都按「不能复用」处理：判定失败退回刷新，虽然多换一次令牌，但绝不会因为一次
-     * 探测失败就把账号留在未授权状态。</p>
+     * <p>判定的意外异常一律记成 {@link TokenReuse#UNKNOWN}，<b>不是</b>「不可复用」。退回刷新看起来
+     * 更安全，实际相反：刷新会让服务端作废旧令牌，而探测失败（网络抖动、5xx、网关超时）时旧令牌
+     * 很可能仍然有效——顺手换票等于把另一个实例刚换好的凭据作废，一次网络故障升级成账号互踢。
+     * 「问不出来」就什么都不做，下一轮再问。</p>
      */
     @Threading.Thread(Threading.ThreadRole.WORKER)
-    private static boolean isTokenReusable(BaseAccount account) {
+    private static TokenReuse checkTokenReuse(BaseAccount account) {
         try {
-            return AccountProvider.getProvider(account).canReuseToken(account);
+            TokenReuse reuse = AccountProvider.getProvider(account).canReuseToken(account);
+            return reuse == null ? TokenReuse.UNKNOWN : reuse;
         } catch (IOException | RuntimeException e) {
-            AccountsX.LOGGER.debug("Cannot check whether the token can be reused; refreshing instead.", e);
-            return false;
+            AccountsX.LOGGER.debug("Cannot check whether the token can be reused; leaving it alone this round.", e);
+            return TokenReuse.UNKNOWN;
         }
+    }
+
+    /**
+     * 判定为「问不出来」时放弃本轮刷新。
+     *
+     * <p>不做任何状态改写：state 留在原处（启动时就是 UNAUTHORIZED），下一轮启动或用户重试会
+     * 再问一次。这里唯一的动作是留下一条可诊断的日志——静默跳过会让用户以为模组没动。</p>
+     */
+    private static void abandonRefresh(String key) {
+        AccountsX.LOGGER.debug("Token reuse could not be determined; skipping this refresh of {}.", key);
     }
 
     /** 令牌是否已知过期；{@code expiresAt == 0}（未知）时不作判断，交给 state 与 validate。 */
@@ -514,10 +528,21 @@ public final class AccountManager {
             });
         } catch (SyncBusyException e) {
             // 对端可能恰好写完，只尝试采纳磁盘上的令牌。
-            if (!Thread.currentThread().isInterrupted()
-                    && repository().prepareRefresh(account, key) && isTokenReusable(account)) {
-                account.setProfileState(AccountState.AUTHORIZED);
-                return;
+            if (!Thread.currentThread().isInterrupted()) {
+                if (repository().prepareRefresh(account, key)) {
+                    TokenReuse reuse = checkTokenReuse(account);
+                    if (reuse == TokenReuse.YES) {
+                        account.setProfileState(AccountState.AUTHORIZED);
+                        return;
+                    }
+                    if (reuse == TokenReuse.UNKNOWN) {
+                        abandonRefresh(key);
+                        return;
+                    }
+                } else {
+                    abandonRefresh(key);
+                    return;
+                }
             }
             throw e;
         } catch (IOException | RuntimeException e) {
@@ -537,8 +562,14 @@ public final class AccountManager {
             account.setProfileState(AccountState.UNAUTHORIZED);
             return;
         }
-        if (isTokenReusable(account)) {
+        TokenReuse reuse = checkTokenReuse(account);
+        if (reuse == TokenReuse.YES) {
             account.setProfileState(AccountState.AUTHORIZED);
+            return;
+        }
+        if (reuse == TokenReuse.UNKNOWN) {
+            // 问不出来：不换票、也不改 state。带着旧 state 进游戏比作废有效令牌安全得多。
+            abandonRefresh(key);
             return;
         }
         if (key != null && repository.store().isReadOnly())

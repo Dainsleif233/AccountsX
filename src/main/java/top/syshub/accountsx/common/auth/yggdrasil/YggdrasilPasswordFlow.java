@@ -9,6 +9,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import top.syshub.accountsx.common.accounts.AccountUUID;
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.accounts.impl.injector.AbstractInjectorAccount;
 import top.syshub.accountsx.common.accounts.impl.injector.InjectorAuthException;
 import top.syshub.accountsx.common.auth.yggdrasil.YggdrasilProfiles.Profile;
@@ -333,12 +334,18 @@ public final class YggdrasilPasswordFlow {
      * {@link #refresh} 的关键区别是它**不轮换令牌**——启动时该走这条：令牌还有效就不要重新签发，
      * 否则同一账号在别的客户端/实例上会立刻失效（drasl 刷新即作废旧 accessToken）。</p>
      *
-     * <p>只在服务端**明确确认**有效时返回 {@code true}（空响应体）。任何有内容的响应都按「不确定」
-     * 处理返回 {@code false}，让调用方退回刷新：刷新虽然会轮换令牌，但至少能拿到可用令牌；
-     * 反过来把 500 的错误体误判成有效，会让账号带着一个已死的令牌进入游戏。</p>
+     * <p><b>必须看状态码，不能只看响应体。</b>规范说 204 有效、403 + error 体无效，但「空响应体」
+     * 本身不是有效性证据：负载均衡后面的 502/504 常常没有响应体，按「空即有效」处理会让账号带着
+     * 一个已死的令牌进游戏。因此把结论分成三档：</p>
+     * <ul>
+     *   <li>{@code 2xx} 且无错误体 → {@link TokenReuse#YES}（个别实现回 200 + 空对象，同样算确认）；</li>
+     *   <li>{@code 4xx}（401/403 等）或 2xx 带 error 体 → {@link TokenReuse#NO}：服务端明确否认；</li>
+     *   <li>{@code 5xx} / 429 / 408、或网关压根不支持查状态码 → {@link TokenReuse#UNKNOWN}：
+     *       这时刷新会把另一个实例刚换好的令牌当场作废，宁可等下一轮。</li>
+     * </ul>
      */
     @Threading.Thread(Threading.ThreadRole.WORKER)
-    public static boolean validate(HttpGateway http, AuthServer server, String accessToken, String clientToken)
+    public static TokenReuse validate(HttpGateway http, AuthServer server, String accessToken, String clientToken)
             throws IOException {
         JsonObject root = new JsonObject();
         root.addProperty("accessToken", accessToken);
@@ -347,10 +354,30 @@ public final class YggdrasilPasswordFlow {
             root.addProperty("clientToken", clientToken);
         }
 
-        // ignoreHttpStatus=true：403 的错误体要留给调用方判断，状态码由网关校验只会剩下 "HTTP 403"。
-        JsonObject json = http.postJson(server.apiRoot() + "/authserver/validate", root, true);
-        // 204 无响应体：网关把空响应体解析成 null。个别实现回 200 + 空对象，同样视为明确确认。
-        return json == null || json.isEmpty();
+        HttpGateway.Result result;
+        try {
+            result = http.postJsonWithStatus(server.apiRoot() + "/authserver/validate", root);
+        } catch (UnsupportedOperationException e) {
+            // 假网关、或第三方实现的网关没有这个方法：问不出来，别拿它当「无效」去换票。
+            return TokenReuse.UNKNOWN;
+        }
+        return classify(result);
+    }
+
+    /**
+     * 把 validate 的响应归入三档。
+     *
+     * <p>抽出来是为了让设备码流程的 userinfo 校验共用同一套判据——两个端点用状态码表达的
+     * 语义完全一致（2xx 有效 / 4xx 无效 / 5xx 问不出来）。</p>
+     */
+    static TokenReuse classify(HttpGateway.Result result) {
+        if (result.isTransient())
+            return TokenReuse.UNKNOWN;
+        if (!result.isSuccess())
+            return TokenReuse.NO;
+        JsonObject body = result.body();
+        // 2xx 也可能带 Yggdrasil 错误体（个别实现回 200 + {error}）：那同样是否认。
+        return body == null || body.isEmpty() ? TokenReuse.YES : TokenReuse.NO;
     }
 
     /**

@@ -47,6 +47,39 @@ public interface HttpGateway {
     byte[] getBinary(String url) throws IOException;
 
     /**
+     * 判定类请求的结果：状态码 + 解析后的响应体。
+     *
+     * <p>只有「令牌还能不能用」这类问题需要它——这些端点用状态码本身表达结论（204 有效、
+     * 401/403 无效、5xx 未知），而普通解析路径把状态码压成一句 "HTTP 500" 就再无差别。</p>
+     */
+    record Result(int statusCode, JsonObject body) {
+        /** 服务端临时故障（5xx / 429 / 408）：这次答复说不清结论。 */
+        public boolean isTransient() {
+            return statusCode >= 500 || statusCode == 429 || statusCode == 408;
+        }
+
+        /** 2xx 且没有错误体：请求成功。 */
+        public boolean isSuccess() {
+            return statusCode / 100 == 2;
+        }
+    }
+
+    /**
+     * 带状态码的 GET（带请求头），不因状态码抛异常。
+     *
+     * <p>接口不强制实现：查状态码是给判定路径用的，绝大多数假实现用不到。调用方必须自己
+     * 处理 {@link UnsupportedOperationException}（按「问不出来」处理）。</p>
+     */
+    default Result getWithStatus(String url, Map<String, String> headers) throws IOException {
+        throw new UnsupportedOperationException("getWithStatus is not implemented by " + getClass().getName());
+    }
+
+    /** 带状态码的 POST JSON，不因状态码抛异常（语义同 {@link #getWithStatus}）。 */
+    default Result postJsonWithStatus(String url, JsonElement body) throws IOException {
+        throw new UnsupportedOperationException("postJsonWithStatus is not implemented by " + getClass().getName());
+    }
+
+    /**
      * {@link #getHeaders(String)} 的结果。
      *
      * @param finalUri 跟随重定向后的最终 URL；规范要求把它当作「当前 URL」参与 ALI 解析

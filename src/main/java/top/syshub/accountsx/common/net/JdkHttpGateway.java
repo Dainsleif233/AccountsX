@@ -139,6 +139,50 @@ public final class JdkHttpGateway implements HttpGateway {
         }
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public Result getWithStatus(String url, Map<String, String> headers) throws IOException {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).timeout(requestTimeout).GET();
+        headers.forEach(builder::header);
+        return sendWithStatus(builder.build());
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public Result postJsonWithStatus(String url, JsonElement body) throws IOException {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(requestTimeout)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(NetworkUtils.GSON.toJson(body)))
+                .build();
+        return sendWithStatus(request);
+    }
+
+    /**
+     * 发一次请求并把状态码原样交回，不做 2xx 校验。
+     *
+     * <p>判定端点（{@code /authserver/validate}、userinfo）用状态码本身表达结论，把它们压成
+     * "HTTP 500" 吞掉之后，调用方就再也分不清「令牌死了」和「服务端坏了」。</p>
+     */
+    private Result sendWithStatus(HttpRequest request) throws IOException {
+        try {
+            HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            JsonObject parsed = null;
+            try (Reader reader = NetworkUtils.readResponse(response, true)) {
+                JsonElement element = NetworkUtils.GSON.fromJson(reader, JsonElement.class);
+                parsed = element instanceof JsonObject object ? object : null;
+            } catch (com.google.gson.JsonParseException ignored) {
+                // 判定端点正常时本来就没有响应体（204）；解析不出 JSON 不等于请求失败。
+            }
+            return new Result(response.statusCode(), parsed);
+        } catch (HttpTimeoutException e) {
+            throw new IOException("Request to " + request.uri() + " timed out after " + requestTimeout.toSeconds() + "s", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted.", e);
+        }
+    }
+
     private JsonObject sendJson(HttpRequest request, boolean ignoreHttpStatus) throws IOException {
         try {
             HttpResponse<byte[]> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());

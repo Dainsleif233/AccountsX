@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 import top.syshub.accountsx.common.accounts.impl.injector.InjectorAuthException;
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.net.HttpGateway;
 
 import java.util.HashSet;
@@ -90,6 +91,8 @@ class YggdrasilPasswordFlowTest {
         private final Map<String, JsonObject> responses = new LinkedHashMap<>();
         private final Map<String, JsonElement> bodies = new LinkedHashMap<>();
         private final Set<String> empties = new HashSet<>();
+        /** 按 URL 指定状态码；未指定的按「有响应体 → 200，空响应体 → 204」推断。 */
+        private final Map<String, Integer> statuses = new LinkedHashMap<>();
 
         RoutingGateway reply(String path, JsonObject response) {
             this.responses.put(API_ROOT + path, response);
@@ -100,6 +103,36 @@ class YggdrasilPasswordFlowTest {
         RoutingGateway replyEmpty(String path) {
             this.empties.add(API_ROOT + path);
             return this;
+        }
+
+        /** 指定状态码（validate 的 403 / 502 等判定用例）。 */
+        RoutingGateway replyStatus(String path, int status) {
+            this.statuses.put(API_ROOT + path, status);
+            return this;
+        }
+
+        /** 模拟不支持查状态码的网关（第三方实现）。 */
+        private boolean withoutStatusSupport;
+
+        RoutingGateway withoutStatusSupport() {
+            this.withoutStatusSupport = true;
+            return this;
+        }
+
+        private int statusOf(String url) {
+            Integer explicit = this.statuses.get(url);
+            if (explicit != null)
+                return explicit;
+            return this.empties.contains(url) ? 204 : 200;
+        }
+
+        @Override
+        public Result postJsonWithStatus(String url, JsonElement body) {
+            if (this.withoutStatusSupport)
+                throw new UnsupportedOperationException("fake: no status");
+            this.bodies.put(url, body);
+            JsonObject response = this.empties.contains(url) ? null : this.responses.get(url);
+            return new Result(statusOf(url), response);
         }
 
         @Override
@@ -371,10 +404,10 @@ class YggdrasilPasswordFlowTest {
     void validate_noContent_confirmsTokenAndSendsClientToken() throws Exception {
         RoutingGateway fake = new RoutingGateway().replyEmpty("/authserver/validate");
 
-        boolean valid = YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", "fake-client-token");
+        TokenReuse valid = YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", "fake-client-token");
 
         // 只有 204（空响应体）才算明确有效——这是唯一「令牌还能用」的确定信号。
-        assertThat(valid).isTrue();
+        assertThat(valid).isEqualTo(TokenReuse.YES);
         JsonObject body = fake.body("/authserver/validate");
         assertThat(body.get("accessToken").getAsString()).isEqualTo("fake-access");
         assertThat(body.get("clientToken").getAsString()).isEqualTo("fake-client-token");
@@ -384,16 +417,41 @@ class YggdrasilPasswordFlowTest {
     void validate_withoutClientToken_omitsTheField() throws Exception {
         RoutingGateway fake = new RoutingGateway().replyEmpty("/authserver/validate");
 
-        assertThat(YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", "")).isTrue();
+        assertThat(YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", "")).isEqualTo(TokenReuse.YES);
         assertThat(fake.body("/authserver/validate").has("clientToken")).isFalse();
     }
 
     @Test
     void validate_errorBody_isNotTreatedAsValid() throws Exception {
-        // 403 + error 体（ignoreHttpStatus=true 才读得到）：判无效，调用方退回刷新而不是带着死令牌进游戏。
+        // 403 + error 体：判无效，调用方退回刷新而不是带着死令牌进游戏。
         RoutingGateway fake = new RoutingGateway()
+                .replyStatus("/authserver/validate", 403)
                 .reply("/authserver/validate", error("ForbiddenOperationException", "Invalid token."));
 
-        assertThat(YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", null)).isFalse();
+        assertThat(YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", null)).isEqualTo(TokenReuse.NO);
+    }
+
+    @Test
+    void validate_serverError_isUnknownNotInvalid() throws Exception {
+        // 网关后面的 502 常常没有响应体：按「空即有效」会把死令牌当活的，按「空即无效」又会去换票
+        // 作掉别的实例刚换好的令牌——两种都错，正确答案是「问不出来」。
+        RoutingGateway fake = new RoutingGateway().replyStatus("/authserver/validate", 502);
+
+        assertThat(YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", null)).isEqualTo(TokenReuse.UNKNOWN);
+    }
+
+    @Test
+    void validate_rateLimited_isUnknownNotInvalid() throws Exception {
+        RoutingGateway fake = new RoutingGateway().replyStatus("/authserver/validate", 429);
+
+        assertThat(YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", null)).isEqualTo(TokenReuse.UNKNOWN);
+    }
+
+    @Test
+    void validate_gatewayWithoutStatusSupport_isUnknown() throws Exception {
+        // 没有 postJsonWithStatus 的网关（第三方实现）：无从判定，同样不能当成无效。
+        RoutingGateway fake = new RoutingGateway().withoutStatusSupport().replyEmpty("/authserver/validate");
+
+        assertThat(YggdrasilPasswordFlow.validate(fake, SERVER, "fake-access", null)).isEqualTo(TokenReuse.UNKNOWN);
     }
 }

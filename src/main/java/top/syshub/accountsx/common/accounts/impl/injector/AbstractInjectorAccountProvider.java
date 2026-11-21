@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import top.syshub.accountsx.common.accounts.AccountProvider;
 import top.syshub.accountsx.common.accounts.AccountUUID;
 import top.syshub.accountsx.common.accounts.BaseAccount.AccountStorage;
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.accounts.model.context.AccountContext;
 import top.syshub.accountsx.common.accounts.model.context.AuthPolicy;
 import top.syshub.accountsx.common.accounts.model.context.AuthSecurityContext;
@@ -195,15 +196,18 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
      * <p>两类令牌各问各的端点：会话令牌走 {@code /authserver/validate}；OAuth 信封账号的访问令牌
      * 是 OIDC 令牌，validate 不认识它，按 issue 268 改问 userinfo（401 即无效）。过期时刻已知且
      * 仍新鲜时（OAuth 令牌才有的 expires_in）直接复用，连校验请求都不发。</p>
+     *
+     * <p>端点答不上话（超时、5xx、没有端点可问）时返回 {@link TokenReuse#UNKNOWN}，绝不返回
+     * {@code NO}——那会让调用方去换票，当场作废另一个实例刚换好的令牌。</p>
      */
     @Override
-    public boolean canReuseToken(T account) throws IOException {
+    public TokenReuse canReuseToken(T account) throws IOException {
         AccountStorage storage = account.getAccountStorage();
         String accessToken = storage.getAccessToken();
         if (accessToken == null || accessToken.isEmpty())
-            return false;
+            return TokenReuse.NO;
         if (storage.isTokenKnownUnexpired())
-            return true;
+            return TokenReuse.YES;
         if (AccountOAuth.isEnvelope(account.getLoginToken()))
             return YggdrasilDeviceCodeFlow.validateAccessToken(http, serverFor(account), accessToken);
         return YggdrasilPasswordFlow.validate(http, serverFor(account), accessToken, account.getClientToken());

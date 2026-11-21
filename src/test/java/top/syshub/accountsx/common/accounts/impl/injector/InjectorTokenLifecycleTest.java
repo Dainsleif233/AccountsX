@@ -11,6 +11,7 @@ import top.syshub.accountsx.common.auth.server.AuthServer;
 import top.syshub.accountsx.common.auth.server.AuthServerKind;
 import top.syshub.accountsx.common.auth.server.AuthServerRegistry;
 import top.syshub.accountsx.common.auth.oauth.OAuthEndpoints;
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.net.HttpGateway;
 import top.syshub.accountsx.common.net.JdkHttpGateway;
 
@@ -46,20 +47,46 @@ class InjectorTokenLifecycleTest {
             throw new UnsupportedOperationException("fake: get not expected");
         }
 
-        /** userinfo 校验（OAuth 信封账号）的答案：null → 401（无效），否则 200 响应。 */
+        /** userinfo 校验（OAuth 信封账号）的答案：默认按「有响应体 → 200」答复。 */
         private JsonObject getResponse;
+
+        /** userinfo 的状态码；{@code getResponse == null} 时用它表达「无效 / 服务端故障」。 */
+        private int getUserinfoStatus = 401;
 
         @Override
         public JsonObject get(String url, Map<String, String> headers) throws IOException {
             this.urls.add(url);
             if (this.getResponse == null)
-                throw new IOException("HTTP 401");
+                throw new IOException("HTTP " + this.getUserinfoStatus);
             return this.getResponse;
+        }
+
+        @Override
+        public Result getWithStatus(String url, Map<String, String> headers) {
+            this.urls.add(url);
+            if (this.getResponse != null)
+                return new Result(200, this.getResponse);
+            return new Result(this.getUserinfoStatus, null);
         }
 
         @Override
         public JsonObject postJson(String url, JsonElement body) throws IOException {
             return postJson(url, body, false);
+        }
+
+        /**
+         * validate 走这条：真服务端用状态码表达结论——204 = 有效，403 + error 体 = 无效。
+         * 假网关照这个形状答复，判定逻辑才不会被一个「什么都回 200」的桩掩盖。
+         */
+        @Override
+        public Result postJsonWithStatus(String url, JsonElement body) throws IOException {
+            this.urls.add(url);
+            this.bodies.add(body);
+            if (this.offline)
+                throw new IOException("fake: network down");
+            if (this.response == null)
+                return new Result(204, null);
+            return new Result(403, this.response);
         }
 
         @Override
@@ -123,7 +150,7 @@ class InjectorTokenLifecycleTest {
         AuthlibInjectorAccountProvider.AuthlibInjectorAccount account = account("fake-access");
         account.setClientTokenForMigration("fake-client-token");
 
-        assertThat(this.provider.canReuseToken(account)).isTrue();
+        assertThat(this.provider.canReuseToken(account)).isEqualTo(TokenReuse.YES);
 
         assertThat(this.gateway.urls).containsExactly(API_ROOT + "/authserver/validate");
         assertThat(this.gateway.body(0).get("accessToken").getAsString()).isEqualTo("fake-access");
@@ -136,12 +163,12 @@ class InjectorTokenLifecycleTest {
         error.addProperty("error", "ForbiddenOperationException");
         this.gateway.response = error;
 
-        assertThat(this.provider.canReuseToken(account("fake-access"))).isFalse();
+        assertThat(this.provider.canReuseToken(account("fake-access"))).isEqualTo(TokenReuse.NO);
     }
 
     @Test
     void canReuseToken_withoutToken_skipsNetwork() throws Exception {
-        assertThat(this.provider.canReuseToken(account(null))).isFalse();
+        assertThat(this.provider.canReuseToken(account(null))).isEqualTo(TokenReuse.NO);
         assertThat(this.gateway.urls).isEmpty();
     }
 
@@ -197,26 +224,35 @@ class InjectorTokenLifecycleTest {
         installRegistryWithUserinfo();
         this.gateway.getResponse = new JsonObject();
 
-        assertThat(this.provider.canReuseToken(envelopeAccount())).isTrue();
+        assertThat(this.provider.canReuseToken(envelopeAccount())).isEqualTo(TokenReuse.YES);
 
         // OIDC 令牌必须问 userinfo（issue 268）；validate 不认识它，绝不能发。
         assertThat(this.gateway.urls).containsExactly(API_ROOT + "/oauth/userinfo");
     }
 
     @Test
-    void canReuseToken_envelope_userinfoRejects_throws() {
+    void canReuseToken_envelope_userinfoRejects_returnsNo() throws Exception {
         installRegistryWithUserinfo();
-        // get() 的 getResponse 为 null → 401：无效要能被上游感知（AccountManager 统一吞成 false）。
-        assertThatThrownBy(() -> this.provider.canReuseToken(envelopeAccount()))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("401");
+        // 401 是服务端明确否认：该刷新。
+        this.gateway.getUserinfoStatus = 401;
+
+        assertThat(this.provider.canReuseToken(envelopeAccount())).isEqualTo(TokenReuse.NO);
         assertThat(this.gateway.urls).containsExactly(API_ROOT + "/oauth/userinfo");
+    }
+
+    @Test
+    void canReuseToken_envelope_userinfoServerError_isUnknown() throws Exception {
+        installRegistryWithUserinfo();
+        // 503：userinfo 端点自己坏了，说明不了令牌的死活；此时刷新会作废别的实例刚换好的令牌。
+        this.gateway.getUserinfoStatus = 503;
+
+        assertThat(this.provider.canReuseToken(envelopeAccount())).isEqualTo(TokenReuse.UNKNOWN);
     }
 
     @Test
     void canReuseToken_envelope_withoutUserinfoEndpoint_isFalse() throws Exception {
         // 注册表条目没有 userinfo 端点（老探测缓存）：无处可问，保守判不可复用且零网络。
-        assertThat(this.provider.canReuseToken(envelopeAccount())).isFalse();
+        assertThat(this.provider.canReuseToken(envelopeAccount())).isEqualTo(TokenReuse.UNKNOWN);
         assertThat(this.gateway.urls).isEmpty();
     }
 
@@ -226,7 +262,7 @@ class InjectorTokenLifecycleTest {
         AuthlibInjectorAccountProvider.AuthlibInjectorAccount account = envelopeAccount();
         account.setTokenExpiryForLoad(System.currentTimeMillis() + 3_600_000L);
 
-        assertThat(this.provider.canReuseToken(account)).isTrue();
+        assertThat(this.provider.canReuseToken(account)).isEqualTo(TokenReuse.YES);
         assertThat(this.gateway.urls).isEmpty();
     }
 
@@ -237,7 +273,7 @@ class InjectorTokenLifecycleTest {
         account.setClientTokenForMigration("fake-client-token");
         account.setTokenExpiryForLoad(System.currentTimeMillis() + 3_600_000L);
 
-        assertThat(this.provider.canReuseToken(account)).isTrue();
+        assertThat(this.provider.canReuseToken(account)).isEqualTo(TokenReuse.YES);
         assertThat(this.gateway.urls).isEmpty();
     }
 }

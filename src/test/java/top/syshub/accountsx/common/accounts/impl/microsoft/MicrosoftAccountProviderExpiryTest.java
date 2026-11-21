@@ -1,6 +1,7 @@
 package top.syshub.accountsx.common.accounts.impl.microsoft;
 
 import org.junit.jupiter.api.Test;
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.net.JdkHttpGateway;
 
 import java.util.UUID;
@@ -25,24 +26,24 @@ class MicrosoftAccountProviderExpiryTest {
 
     @Test
     void canReuseToken_beforeExpiry_returnsTrue() {
-        assertThat(this.provider.canReuseToken(account(System.currentTimeMillis() + 600_000L))).isTrue();
+        assertThat(this.provider.canReuseToken(account(System.currentTimeMillis() + 600_000L))).isEqualTo(TokenReuse.YES);
     }
 
     @Test
-    void canReuseToken_afterExpiry_returnsFalse() {
-        assertThat(this.provider.canReuseToken(account(System.currentTimeMillis() - 1_000L))).isFalse();
+    void canReuseToken_afterExpiry_returnsNo() {
+        assertThat(this.provider.canReuseToken(account(System.currentTimeMillis() - 1_000L))).isEqualTo(TokenReuse.NO);
     }
 
     @Test
-    void canReuseToken_unknownExpiry_returnsFalse() {
+    void canReuseToken_unknownExpiry_returnsNo() {
         // 0 = 未知（老配置、解析不出 expires_in）：宁可刷新一次，也不要把死令牌带进游戏。
-        assertThat(this.provider.canReuseToken(account(0L))).isFalse();
+        assertThat(this.provider.canReuseToken(account(0L))).isEqualTo(TokenReuse.NO);
     }
 
     @Test
     void signOut_isNoOp() {
         // 微软没有单令牌撤销端点：删除只清本地凭据。
-        assertThat(this.provider.canReuseToken(account(0L))).isFalse();
+        assertThat(this.provider.canReuseToken(account(0L))).isEqualTo(TokenReuse.NO);
         this.provider.signOut(account(0L));
     }
 }

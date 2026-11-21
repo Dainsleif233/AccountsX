@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
+import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.net.HttpGateway;
 import top.syshub.accountsx.common.utils.AvatarService;
 import top.syshub.accountsx.common.utils.Threading;
@@ -160,19 +161,25 @@ public final class YggdrasilDeviceCodeFlow {
      * 用 userinfo 端点确认 OAuth 访问令牌仍有效（issue 268：授权服务器回 401 即无效）。
      *
      * <p>OIDC 访问令牌不是 Yggdrasil 会话令牌，/authserver/validate 不认识它；
-     * userinfo 端点就是规范规定的令牌校验入口（GET + Bearer）。端点未知（老探测缓存、
-     * 或服务器尚未重新探测）时保守返回无效——让账号走一次刷新，刷新会给出更可读的错误；
-     * 请求失败（含 401）则以 {@link IOException} 抛出，由调用方的统一兜底记日志并判定不可复用。</p>
+     * userinfo 端点就是规范规定的令牌校验入口（GET + Bearer）。结论分三档，判据与
+     * {@link YggdrasilPasswordFlow#validate} 相同：2xx → {@link TokenReuse#YES}；
+     * 401/403 等 4xx → {@link TokenReuse#NO}；5xx / 429 或网关无法给出状态码 →
+     * {@link TokenReuse#UNKNOWN}。端点未知时无从询问，同样按「问不出来」处理，绝不据此刷新。</p>
      */
     @Threading.Thread(Threading.ThreadRole.WORKER)
-    public static boolean validateAccessToken(HttpGateway http, AuthServer server, String accessToken)
+    public static TokenReuse validateAccessToken(HttpGateway http, AuthServer server, String accessToken)
             throws IOException {
         OAuthEndpoints oauth = server.oauth();
         String userinfo = oauth == null ? null : oauth.userinfoEndpoint();
         if (userinfo == null || userinfo.isBlank())
-            return false;
-        http.get(userinfo, Map.of("Authorization", "Bearer " + accessToken));
-        return true;
+            return TokenReuse.UNKNOWN;
+        HttpGateway.Result result;
+        try {
+            result = http.getWithStatus(userinfo, Map.of("Authorization", "Bearer " + accessToken));
+        } catch (UnsupportedOperationException e) {
+            return TokenReuse.UNKNOWN;
+        }
+        return YggdrasilPasswordFlow.classify(result);
     }
 
     /** OAuth 刷新（信封 JSON 即 loginToken 去掉前缀的部分）。 */
