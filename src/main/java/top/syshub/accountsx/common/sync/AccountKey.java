@@ -70,7 +70,6 @@ public final class AccountKey {
             case "offline" -> "offline";
             case "microsoft" -> "microsoft";
             case "yggdrasil", "injector.authlib-injector" -> "yggdrasil";
-            case "united", "injector.united" -> "united";
             default -> null;
         };
     }
