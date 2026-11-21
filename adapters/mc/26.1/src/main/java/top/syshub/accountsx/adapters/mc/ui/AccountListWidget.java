@@ -124,7 +124,7 @@ public class AccountListWidget extends ObjectSelectionList<AccountListWidget.Acc
             int entryWidth = getRowWidth();
 
             context.text(minecraft.font, this.account.getAccountStorage().getPlayerName(), x + 32 + 3, y + 1, 0xFFFFFFFF, false);
-            context.text(minecraft.font, this.account.getAccountName() == null ? I18N.TRANSLATOR.translate(this.account.getAccountType()) : Component.nullToEmpty(this.account.getAccountName()), x + 32 + 3, y + 1 + 9, 0xFFFFFFFF, false);
+            context.text(minecraft.font, I18N.accountSource(this.account), x + 32 + 3, y + 1 + 9, 0xFFFFFFFF, false);
             context.text(minecraft.font, I18N.TRANSLATOR.translate(this.account.getAccountStorage().getState()), x + 32 + 3, y + 1 + 18, 0xFFFFFFFF, false);
             context.blit(RenderPipelines.GUI_TEXTURED, avatarTextureId, x, y, 1, 1, 30, 30, 32, 32);
 

@@ -1,7 +1,6 @@
 package top.syshub.accountsx.adapters.mc.mixins.mixins;
 
 import top.syshub.accountsx.common.AccountsX;
-import top.syshub.accountsx.common.manager.AccountManager;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import top.syshub.accountsx.adapters.mc.ui.I18N;
 import net.minecraft.Util;
@@ -60,7 +59,7 @@ public class TitleScreenMixin extends Screen {
         int i = Mth.ceil(g * 255.0F) << 24;
 
         if ((i & -67108864) != 0) {
-            context.drawCenteredString(this.font, I18N.TRANSLATOR.translate(AccountManager.getCurrentAccount()), this.width / 2, 15, 0xFFFFFF | i);
+            context.drawCenteredString(this.font, I18N.currentAccount(), this.width / 2, 15, 0xFFFFFF | i);
         }
     }
 }

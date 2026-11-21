@@ -120,7 +120,7 @@ public class AccountListWidget extends ObjectSelectionList<AccountListWidget.Acc
         @Override
         public void render(GuiGraphics context, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float tickDelta) {
             context.drawString(minecraft.font, this.account.getAccountStorage().getPlayerName(), x + 32 + 3, y + 1, 0xFFFFFF, false);
-            context.drawString(minecraft.font, this.account.getAccountName() == null ? I18N.TRANSLATOR.translate(this.account.getAccountType()) : Component.nullToEmpty(this.account.getAccountName()), x + 32 + 3, y + 1 + 9, 0xFFFFFF, false);
+            context.drawString(minecraft.font, I18N.accountSource(this.account), x + 32 + 3, y + 1 + 9, 0xFFFFFF, false);
             context.drawString(minecraft.font, I18N.TRANSLATOR.translate(this.account.getAccountStorage().getState()), x + 32 + 3, y + 1 + 18, 0xFFFFFF, false);
             context.blit(RenderType::guiTexturedOverlay, avatarTextureId, x, y, 1, 1, 30, 30, 32, 32);
 

@@ -24,6 +24,7 @@
   "accountsx.account.sync.title": "多客户端协作",
   "accountsx.account.type.authlib_injector.name": "外置登录账号",
   "accountsx.account.type.authlib_injector.using": "正在使用外置登录账号：%s",
+  "accountsx.account.type.authlib_injector.using_server": "正在使用 %s 账号：%s",
   "accountsx.account.type.env_default.name": "游戏默认账户",
   "accountsx.account.type.env_default.using": "正在使用游戏默认账号：%s",
   "accountsx.account.type.microsoft.name": "微软账号",

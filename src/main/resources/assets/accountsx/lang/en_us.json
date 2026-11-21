@@ -24,6 +24,7 @@
   "accountsx.account.sync.title": "Multiple Clients",
   "accountsx.account.type.authlib_injector.name": "Yggdrasil API Authentication",
   "accountsx.account.type.authlib_injector.using": "Using Yggdrasil API Authentication Account: %s",
+  "accountsx.account.type.authlib_injector.using_server": "Using %s Account: %s",
   "accountsx.account.type.env_default.name": "Game Default Account",
   "accountsx.account.type.env_default.using": "Using Game Default Account: %s",
   "accountsx.account.type.microsoft.name": "Microsoft Account",
