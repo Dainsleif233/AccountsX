@@ -2,6 +2,9 @@ package top.syshub.accountsx.common.manager;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonParser;
+import top.syshub.accountsx.common.auth.server.AuthServerKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import top.syshub.accountsx.common.accounts.BaseAccount;
@@ -396,5 +399,64 @@ class MultiInstanceRepositoryTest {
             assertThat(reader.getMicrosoftAccountRefreshToken()).isEqualTo("fake-msa-new");
             return null;
         });
+    }
+
+    private static final String API_ROOT = "https://injector.invalid/api/yggdrasil";
+
+    /** 写一份只带一个外置认证服务器、没有账号的 v4 配置。 */
+    private Path seedServer(long cachedAt) throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        Files.writeString(config, """
+                {"version":4,"accounts":[],"servers":[{"type":"yggdrasil","apiRoot":"%s","displayName":"Example","cachedAt":%d}]}
+                """.formatted(API_ROOT, cachedAt));
+        return config;
+    }
+
+    private static JsonArray diskServers(Path config) throws Exception {
+        return JsonParser.parseString(Files.readString(config)).getAsJsonObject().getAsJsonArray("servers");
+    }
+
+    @Test
+    void serverDeletedByAnotherInstance_isNotResurrectedByOurSave() throws Exception {
+        Path config = seedServer(100L);
+        AccountRepository first = instance(config);
+        AccountRepository second = instance(config);
+        assertThat(second.authServers().byApiRoot(API_ROOT)).isNotNull();
+
+        // 第一个实例删掉服务器；第二个实例内存里还留着旧副本
+        first.authServers().remove(AuthServerKind.YGGDRASIL, API_ROOT);
+        awaitWrite();
+        assertThat(diskServers(config)).isEmpty();
+
+        second.add(offline("Steve", STEVE));
+        awaitWrite();
+
+        // 旧副本不能写回去：删掉的服务器不能因为"我还没发现"而复活
+        assertThat(diskServers(config)).isEmpty();
+        assertThat(instance(config).authServers().byApiRoot(API_ROOT)).isNull();
+    }
+
+    @Test
+    void newerServerMetadataFromDisk_isAdoptedInsteadOfOverwritten() throws Exception {
+        Path config = seedServer(100L);
+        AccountRepository second = instance(config);
+        assertThat(second.authServers().byApiRoot(API_ROOT).cachedAt()).isEqualTo(100L);
+
+        // 另一个实例重新探测过（cachedAt 变大、显示名变了）并已落盘
+        Files.writeString(config, """
+                {"version":4,"accounts":[],"servers":[{"type":"yggdrasil","apiRoot":"%s","displayName":"Renamed","cachedAt":200}]}
+                """.formatted(API_ROOT));
+        long refreshed = diskServers(config).get(0).getAsJsonObject().get("cachedAt").getAsLong();
+        assertThat(refreshed).isGreaterThan(100L);
+
+        // 第二个实例只是加了个账号：保存时不能把旧端点/旧 cachedAt 盖回去
+        second.add(offline("Steve", STEVE));
+        awaitWrite();
+
+        assertThat(diskServers(config).get(0).getAsJsonObject().get("cachedAt").getAsLong())
+                .isEqualTo(refreshed);
+        assertThat(diskServers(config).get(0).getAsJsonObject().get("displayName").getAsString())
+                .isEqualTo("Renamed");
+        assertThat(second.authServers().byApiRoot(API_ROOT).cachedAt()).isEqualTo(refreshed);
     }
 }

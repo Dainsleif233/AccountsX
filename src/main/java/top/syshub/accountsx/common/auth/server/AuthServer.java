@@ -64,6 +64,21 @@ public record AuthServer(String apiRoot, AuthServerKind kind, String displayName
         return jo;
     }
 
+    /**
+     * 服务器墓碑的 key：与账号墓碑共用根节点的 {@code removed} 数组，用前缀区分。
+     *
+     * <p>账号 key 的首段是 {@code offline} / {@code microsoft} / {@code yggdrasil} / {@code united}，
+     * 永远不可能以 {@code server:} 开头，两条命名空间因此不会撞车。旧版本读到这些条目只会当成
+     * 认不出的账号墓碑（与任何账号 key 都不相等），不会误删账号。</p>
+     */
+    public static String tombstoneKey(AuthServerKind kind, String apiRoot) {
+        return "server:" + kind.v4type() + "|" + apiRoot;
+    }
+
+    public static boolean isServerTombstone(String key) {
+        return key != null && key.startsWith("server:");
+    }
+
     public static List<AuthServer> readAll(JsonArray servers) {
         List<AuthServer> out = new ArrayList<>();
         if (servers == null)

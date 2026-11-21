@@ -51,6 +51,24 @@ public final class AuthServerRegistry {
 
     private final Map<String, AuthServerMetadata> metadata = new LinkedHashMap<>();
 
+    /**
+     * 本实例显式加过（或重新探测覆盖过）的条目 key。
+     *
+     * <p>墓碑是给「别的实例手里那份旧快照」用的：它不能让删掉的服务器复活，但也不能永久封死
+     * 这个服务器——用户删掉再加回来完全正常。只有本实例显式 {@link #store} 过的 key 才压在
+     * 墓碑之上；另一实例内存里那份旧副本仍然会被墓碑挡住。</p>
+     */
+    private final java.util.Set<String> addedLocally = new java.util.LinkedHashSet<>();
+
+    /**
+     * 本实例显式删掉的条目（key → 时刻）。
+     *
+     * <p>与账号墓碑共用根节点的 {@code removed} 数组（见 {@link AuthServer#tombstoneKey}）：
+     * 落盘时由仓储并进文件，别的实例保存时据此拒绝把条目写回。落盘成功后由仓储调用
+     * {@link #forgetLocalIntents()} 清掉。</p>
+     */
+    private final Map<String, Long> removedLocally = new LinkedHashMap<>();
+
     public AuthServerRegistry(HttpGateway http) {
         this(http, null);
     }
@@ -92,15 +110,116 @@ public final class AuthServerRegistry {
         return probed;
     }
 
-    /** 启动装载：读 servers 数组（builtin kind 不进入 servers 列表）。 */
+    /** 启动装载：读 servers 数组（builtin kind 不进入 servers 列表）。本地意图也一并复位。 */
     public synchronized void load(JsonArray array) {
+        load(array, java.util.Set.of());
+        addedLocally.clear();
+        removedLocally.clear();
+    }
+
+    /**
+     * 装载并跳过墓碑标记的条目（{@code tombstoned} 是 {@link AuthServer#tombstoneKey} 形式的 key）。
+     *
+     * <p>本地显式加过的条目不受墓碑约束（删掉再加回来的服务器必须能写回文件）。</p>
+     */
+    public synchronized void load(JsonArray array, java.util.Set<String> tombstoned) {
         servers.clear();
         metadata.clear();
         for (AuthServer server : AuthServer.readAll(array)) {
             if (server.kind().builtin())
                 continue;
+            String key = AuthServer.tombstoneKey(server.kind(), server.apiRoot());
+            if (tombstoned.contains(key) && !addedLocally.contains(key))
+                continue;
             servers.put(Key.of(server), server);
         }
+    }
+
+    /**
+     * 与磁盘上的条目合并（对账用），返回是否有变化、是否新增了条目。
+     *
+     * <p>两个方向都要合并，缺一个就会丢数据：</p>
+     * <ul>
+     *   <li>磁盘上新增的条目收进内存——否则本地保存会把它当成「多余」抹掉；</li>
+     *   <li>同键条目磁盘上更新（{@code cachedAt} 更大：对端重新探测过）就采纳——否则本地
+     *       手里那份旧端点会在下一次普通保存时把对端刚拿到的结果盖回去。</li>
+     * </ul>
+     */
+    public synchronized Merge mergeFromDisk(JsonArray diskServers, java.util.Set<String> tombstoned) {
+        boolean changed = false;
+        boolean needsWarm = false;
+        for (AuthServer disk : AuthServer.readAll(diskServers)) {
+            if (disk.kind().builtin())
+                continue;
+            String tombstone = AuthServer.tombstoneKey(disk.kind(), disk.apiRoot());
+            if (tombstoned.contains(tombstone) && !addedLocally.contains(tombstone))
+                continue;
+            Key key = Key.of(disk);
+            AuthServer existing = servers.get(key);
+            if (existing == null) {
+                servers.put(key, disk);
+                // 元数据（公钥 / skinDomains）不随条目一起同步，留给预热重新探测。
+                metadata.remove(disk.apiRoot());
+                needsWarm = true;
+                changed = true;
+            } else if (disk.cachedAt() > existing.cachedAt()) {
+                // 对端重新探测过：采纳它拿到的端点，并丢掉我们的元数据缓存——
+                // 同一份探测结果里的公钥 / skinDomains 也可能已经变了，下次用前必须重取。
+                servers.put(key, disk);
+                metadata.remove(disk.apiRoot());
+                needsWarm = true;
+                changed = true;
+            }
+        }
+        return new Merge(changed, needsWarm);
+    }
+
+    /** {@link #mergeFromDisk} 的结果：{@code needsWarm} 表示有条目需要重新探测元数据。 */
+    public record Merge(boolean changed, boolean needsWarm) {
+    }
+
+    /**
+     * 丢弃被墓碑标记且本地没有显式加过的条目（对账：对端删掉了服务器）。
+     *
+     * @return 是否有条目被丢弃
+     */
+    public synchronized boolean dropTombstoned(java.util.Set<String> tombstoned) {
+        boolean changed = false;
+        var it = servers.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Key, AuthServer> entry = it.next();
+            String key = AuthServer.tombstoneKey(entry.getKey().kind(), entry.getKey().apiRoot());
+            if (tombstoned.contains(key) && !addedLocally.contains(key)) {
+                it.remove();
+                metadata.remove(entry.getKey().apiRoot());
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * 本次落盘要写进 {@code removed} 数组的服务器墓碑，以及要撤销的墓碑。
+     *
+     * <p>两者必须一起给出：本实例刚删掉的条目要写成墓碑（挡住对端手里的旧副本），而刚加回来的
+     * 条目要从文件里撤掉墓碑——否则下次启动装载时会把自己的条目当成「已删除」跳过。</p>
+     */
+    public record Tombstones(Map<String, Long> removed, java.util.Set<String> resurrected) {
+        static final Tombstones NONE = new Tombstones(Map.of(), java.util.Set.of());
+    }
+
+    /** 本实例的服务器墓碑意图（写入用）。 */
+    public synchronized Tombstones localTombstones() {
+        java.util.Set<String> resurrected = java.util.Set.copyOf(addedLocally);
+        Map<String, Long> removed = new LinkedHashMap<>(removedLocally);
+        removed.keySet().removeAll(resurrected);
+        return new Tombstones(removed, resurrected);
+    }
+
+    /** 落盘成功后调用：本次意图已经写进文件，内存里不必再留着。 */
+    public synchronized void forgetLocalIntents() {
+        addedLocally.clear();
+        removedLocally.clear();
     }
 
     /**
@@ -175,6 +294,10 @@ public final class AuthServerRegistry {
             Key key = new Key(kind, apiRoot);
             stored = preserveClientId(probed, servers.get(key));
             servers.put(key, stored);
+            // 用户显式加服：这个 key 高于墓碑（删掉再加回来必须能落盘）。
+            String tombstone = AuthServer.tombstoneKey(kind, apiRoot);
+            addedLocally.add(tombstone);
+            removedLocally.remove(tombstone);
         }
         if (onChange != null)
             onChange.run();
@@ -211,10 +334,14 @@ public final class AuthServerRegistry {
                 merged = preserveClientId(merged, server);
                 synchronized (this) {
                     Key key = new Key(server.kind(), server.apiRoot());
-                    if (servers.containsKey(key))
+                    if (servers.containsKey(key)) {
                         servers.put(key, merged);
+                        // 只有语义变化才标脏：每次启动都重写一遍配置文件既无意义，
+                        // 又会让另一个实例误以为"有变更"而去读盘对账。
+                        if (!sameContent(server, merged))
+                            changed = true;
+                    }
                 }
-                changed = true;
             } catch (Exception e) {
                 LOGGER.warn("认证服务器启动探测失败，保留旧元数据: {}", server.apiRoot(), e);
             }
@@ -240,6 +367,12 @@ public final class AuthServerRegistry {
                 : new OAuthEndpoints(clientId, oauth.tokenEndpoint(), oauth.deviceAuthorizationEndpoint(),
                         oauth.userinfoEndpoint(), oauth.issuer(), oauth.jwksUri());
         return new AuthServer(probed.apiRoot(), probed.kind(), probed.displayName(), merged, probed.cachedAt());
+    }
+
+    /** 两个条目除了 {@code cachedAt} 是否完全一样（探测结果没变时不必落盘）。 */
+    private static boolean sameContent(AuthServer a, AuthServer b) {
+        return Objects.equals(a.displayName(), b.displayName())
+                && Objects.equals(a.oauth(), b.oauth());
     }
 
     /** locator → apiRoot。Yggdrasil 对输入地址发 GET 并跟随重定向，取 X-Authlib-Injector-API-Location 头或最终 URL；固定条目原样返回。 */
@@ -278,6 +411,10 @@ public final class AuthServerRegistry {
         synchronized (this) {
             removed = servers.remove(new Key(kind, apiRoot)) != null;
             metadata.remove(apiRoot);
+            // 记墓碑：对端内存里的旧副本下一次保存不能把它写回来（与账号墓碑同一机制）。
+            String tombstone = AuthServer.tombstoneKey(kind, apiRoot);
+            removedLocally.put(tombstone, System.currentTimeMillis());
+            addedLocally.remove(tombstone);
         }
         if (removed && onChange != null) {
             onChange.run();

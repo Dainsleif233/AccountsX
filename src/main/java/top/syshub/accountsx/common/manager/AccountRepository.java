@@ -15,6 +15,8 @@ import top.syshub.accountsx.common.accounts.impl.offline.OfflineAccount;
 import top.syshub.accountsx.common.accounts.model.AccountType;
 
 import top.syshub.accountsx.common.adapters.Platforms;
+import top.syshub.accountsx.common.auth.server.AuthServer;
+import top.syshub.accountsx.common.auth.server.AuthServerKind;
 import top.syshub.accountsx.common.auth.server.AuthServerRegistry;
 import top.syshub.accountsx.common.accounts.impl.injector.AbstractInjectorAccount;
 import top.syshub.accountsx.common.accounts.impl.injector.AbstractInjectorAccountProvider;
@@ -165,7 +167,8 @@ public final class AccountRepository {
         removedRevs.putAll(tombstoneRevs(root.raw()));
 
         // 注册表接管 servers（P3.1）：装载 + 补齐固定条目 + 安装到 provider 可见的单例槽。
-        authServers.load(root.servers());
+        // 被墓碑标记的条目跳过：删掉的服务器不能在重启后从自己留下的墓碑旁边复活。
+        authServers.load(root.servers(), serverTombstones(root.raw()));
         AbstractInjectorAccountProvider.installRegistry(authServers);
     }
 
@@ -407,12 +410,19 @@ public final class AccountRepository {
                     LOGGER.warn("对账时跳过无法解析的账号条目。", e);
                 }
             }
-            // 3) 别的实例新增了认证服务器：注册表跟着磁盘重载（元数据缓存失效，重新探测即可）
-            if (!serversMatch(disk)) {
-                authServers.load(arrayOf(disk, "servers"));
+            // 3) 认证服务器：双向合并，缺一个方向就会丢数据
+            //    - 对端新增的条目：本地保存会把它当成"多余"抹掉，必须收进来；
+            //    - 对端删除的条目（驱动墓碑）：本地内存里那份旧副本不能写回去；
+            //    - 对端重新探测过的同键条目：本地旧端点会在下一次普通保存时盖回去。
+            // 本地刚删掉、还没落盘的条目也算墓碑：否则这次写入会从磁盘把它当"对端新增"收回来。
+            Set<String> serverTombstoned = new LinkedHashSet<>(serverTombstones(disk));
+            serverTombstoned.addAll(authServers.localTombstones().removed().keySet());
+            boolean serversChanged = authServers.dropTombstoned(serverTombstoned);
+            AuthServerRegistry.Merge mergedServers =
+                    authServers.mergeFromDisk(arrayOf(disk, "servers"), serverTombstoned);
+            if (mergedServers.needsWarm())
                 warmAuthServers();
-                changed = true;
-            }
+            changed |= serversChanged || mergedServers.changed();
         }
 
         return new ReconcileResult(changed, removedCurrent);
@@ -487,15 +497,22 @@ public final class AccountRepository {
         return changed;
     }
 
-    private boolean serversMatch(JsonObject disk) {
-        JsonArray diskServers = arrayOf(disk, "servers");
-        for (JsonElement element : diskServers) {
-            if (!(element instanceof JsonObject jo))
-                continue;
-            if (!hasServer(root.servers(), jo))
-                return false;
+    /**
+     * 我们从磁盘那份文件里读到的服务器墓碑（{@link AuthServer#tombstoneKey} 形式）。
+     *
+     * <p>只取本次读到的：内存里的 {@code removedRevs} 可能还留着更早的条目，而这里要回答的是
+     * "对面这份快照认为哪些服务器已经被删了"。</p>
+     */
+    private static Set<String> serverTombstones(JsonObject disk) {
+        Set<String> result = new LinkedHashSet<>();
+        for (JsonElement element : arrayOf(disk, "removed")) {
+            if (element instanceof JsonObject jo) {
+                String key = str(jo.get("key"));
+                if (AuthServer.isServerTombstone(key))
+                    result.add(key);
+            }
         }
-        return true;
+        return result;
     }
 
     /** 对账结果：有没有变化、当前账号是否被别处删除（需要切回默认账号）。 */
@@ -650,11 +667,23 @@ public final class AccountRepository {
         }
         replaceContent(root.accounts(), next);
 
-        // servers：先写我们的注册表，再把别的实例新增、我们还不认识的条目补回去
+        // servers：先写我们的注册表，再把别的实例新增、我们还不认识的条目补回去。
+        // 被墓碑标记的条目例外——那正是"对端删掉了它，我们的旧副本不能把它写回来"。
         JsonArray servers = root.servers();
+        Set<String> serverTombstoned = new LinkedHashSet<>(serverTombstones(diskRaw));
+        serverTombstoned.addAll(authServers.localTombstones().removed().keySet());
         List<JsonObject> unknownServers = new ArrayList<>();
         for (JsonElement element : arrayOf(diskRaw, "servers")) {
-            if (element instanceof JsonObject jo && !hasServer(servers, jo))
+            if (!(element instanceof JsonObject jo))
+                continue;
+            String type = str(jo.get("type"));
+            AuthServerKind kind = AuthServerKind.fromV4(type != null ? type : str(jo.get("kind")));
+            String apiRoot = str(jo.get("apiRoot"));
+            if (apiRoot == null)
+                apiRoot = str(jo.get("server"));
+            boolean tombstone = kind != null && apiRoot != null
+                    && serverTombstoned.contains(AuthServer.tombstoneKey(kind, apiRoot));
+            if (!tombstone && !hasServer(servers, jo))
                 unknownServers.add(jo);
         }
         authServers.persist(servers);
@@ -663,7 +692,7 @@ public final class AccountRepository {
                 servers.add(jo);
         }
 
-        writeTombstones(diskRaw, tombstoned, written);
+        writeTombstones(diskRaw, tombstoned, written, authServers.localTombstones());
         // 不在这里清 pendingRemovals：落盘失败时墓碑必须留着，否则下一次写会忘了"这条已删除"，
         // 另一个实例的旧快照就能把它复活。清理交给落盘成功的调用方。
         return written;
@@ -721,7 +750,8 @@ public final class AccountRepository {
     }
 
     /** 墓碑只增不减会让文件一直长；保留最近若干条就够了（旧的复活风险远低于体积成本）。 */
-    private void writeTombstones(JsonObject diskRaw, Set<String> keys, Set<String> written) {
+    private void writeTombstones(JsonObject diskRaw, Set<String> keys, Set<String> written,
+            AuthServerRegistry.Tombstones serverTombstones) {
         JsonArray removed = new JsonArray();
         Map<String, Long> merged = new LinkedHashMap<>();
         Map<String, Long> revs = new HashMap<>();
@@ -739,6 +769,9 @@ public final class AccountRepository {
             }
         }
         long now = System.currentTimeMillis();
+        // 服务器墓碑与账号墓碑共用 removed 数组，靠 "server:" 前缀区分（见 AuthServer.tombstoneKey）。
+        // 磁盘与内存里已有的服务器墓碑原样保留，只把本实例新删掉的并进来。
+        merged.putAll(serverTombstones.removed());
         for (String key : keys) {
             merged.putIfAbsent(key, pendingRemovals.getOrDefault(key, now));
             revs.merge(key, removedRevs.getOrDefault(key, 0L), Math::max);
@@ -747,6 +780,9 @@ public final class AccountRepository {
         // 否则文件里留着墓碑，下次启动读到它照样会被跳过。
         merged.keySet().removeAll(written);
         revs.keySet().removeAll(written);
+        // 本实例刚显式加回来的服务器：撤掉它的墓碑，否则下次启动装载时会当成已删除跳过。
+        merged.keySet().removeAll(serverTombstones.resurrected());
+        revs.keySet().removeAll(serverTombstones.resurrected());
         List<Map.Entry<String, Long>> all = new ArrayList<>(merged.entrySet());
         if (all.size() > MAX_TOMBSTONES)
             all = all.subList(all.size() - MAX_TOMBSTONES, all.size());
@@ -836,6 +872,8 @@ public final class AccountRepository {
             }
             removals.forEach(pendingRemovals::remove);
             revivals.forEach(revivedAccounts::remove);
+            // 服务器墓碑意图同样在落盘成功后才清：写失败时留着，下一次写还得挡住复活。
+            authServers.forgetLocalIntents();
             // 落盘成功：本次快照里的顺序已经在文件里，之后的对账可以采纳别处的顺序。
             // 用「快照时的版本」而不是当前版本：保存期间又拖过一次时不能把新的意图也标成已落盘。
             persistedOrderVersion = Math.max(persistedOrderVersion, snapshotOrderVersion);
