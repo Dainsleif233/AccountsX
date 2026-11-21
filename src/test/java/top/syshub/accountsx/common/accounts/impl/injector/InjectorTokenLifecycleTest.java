@@ -185,6 +185,19 @@ class InjectorTokenLifecycleTest {
     }
 
     @Test
+    void signOut_stillInvalidatesAfterTheServerEntryIsGone() {
+        // 删除认证服务器时是先摘条目再撤销名下账号的令牌（AccountManager.removeServer）。
+        // 撤销端点必须来自账号自己记下的 apiRoot，否则这里会静默发不出去。
+        AbstractInjectorAccountProvider.installRegistry(new AuthServerRegistry(JdkHttpGateway.INSTANCE));
+        AuthlibInjectorAccountProvider.AuthlibInjectorAccount account = account("fake-access");
+
+        this.provider.signOut(account);
+
+        assertThat(this.gateway.urls).containsExactly(API_ROOT + "/authserver/invalidate");
+        assertThat(this.gateway.body(0).get("accessToken").getAsString()).isEqualTo("fake-access");
+    }
+
+    @Test
     void signOut_networkFailure_isSwallowed() {
         // 账号已经删了：撤销失败只能留个日志，绝不能把异常抛回删除链路。
         this.gateway.offline = true;

@@ -332,6 +332,7 @@ public final class AccountRepository {
     private synchronized ReconcileResult reconcileWith(JsonObject disk, String onlyKey) {
         boolean changed = false;
         BaseAccount removedCurrent = null;
+        BaseAccount recredentialedCurrent = null;
 
         Map<String, JsonObject> diskByKey = new LinkedHashMap<>();
         Set<String> tombstoned = tombstoneKeys(disk);
@@ -376,7 +377,11 @@ public final class AccountRepository {
                 continue;
             long diskRev = longValue(entry.get("rev"));
             if (diskRev > revisions.getOrDefault(key, 0L)) {
-                changed |= adopt(account, entry, arrayOf(disk, "servers"));
+                boolean adopted = adopt(account, entry, arrayOf(disk, "servers"));
+                // 当前账号的令牌被对端换掉了：游戏里那条 User 还是旧的，等调用方决定怎么补。
+                if (adopted && current == account)
+                    recredentialedCurrent = account;
+                changed |= adopted;
                 revisions.put(key, diskRev);
             }
         }
@@ -425,7 +430,7 @@ public final class AccountRepository {
             changed |= serversChanged || mergedServers.changed();
         }
 
-        return new ReconcileResult(changed, removedCurrent);
+        return new ReconcileResult(changed, removedCurrent, recredentialedCurrent);
     }
 
     /**
@@ -515,9 +520,15 @@ public final class AccountRepository {
         return result;
     }
 
-    /** 对账结果：有没有变化、当前账号是否被别处删除（需要切回默认账号）。 */
-    public record ReconcileResult(boolean changed, BaseAccount removedCurrent) {
-        public static final ReconcileResult NONE = new ReconcileResult(false, null);
+    /**
+     * 对账结果。
+     *
+     * @param changed               内存里的账号/服务器是否变了（界面需要刷新）
+     * @param removedCurrent        当前账号被别处删掉（需要切回默认账号）
+     * @param recredentialedCurrent 当前账号的凭据被别处换掉（游戏里那条会话还拿着旧令牌）
+     */
+    public record ReconcileResult(boolean changed, BaseAccount removedCurrent, BaseAccount recredentialedCurrent) {
+        public static final ReconcileResult NONE = new ReconcileResult(false, null, null);
     }
 
     /**
@@ -882,7 +893,7 @@ public final class AccountRepository {
             coordination.publishWrite();
         // 落盘成功后才把结论交出去：写失败时内存已经改成"删掉了"，但磁盘还没确认，
         // 此时若已经切走游戏会话，用户会看到账号突然消失。
-        if (reconciled != null && reconciled.removedCurrent() != null) {
+        if (reconciled != null && (reconciled.removedCurrent() != null || reconciled.recredentialedCurrent() != null)) {
             java.util.function.Consumer<ReconcileResult> listener = this.reconcileListener;
             if (listener != null)
                 listener.accept(reconciled);

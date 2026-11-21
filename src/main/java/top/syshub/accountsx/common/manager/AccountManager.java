@@ -226,6 +226,9 @@ public final class AccountManager {
         }
         Platforms.getMinecraftPlatform().execute(() -> {
             notifyChangeListeners();
+            if (result.recredentialedCurrent() != null) {
+                reinstallSession(result.recredentialedCurrent());
+            }
             if (result.removedCurrent() != null) {
                 // 当前账号被别的客户端删了：回落到默认账号，别把游戏会话留在已删除账号上。
                 // 这里不调 signOut——删它的那个实例已经撤销过令牌了。
@@ -234,6 +237,36 @@ public final class AccountManager {
                 Platforms.getMinecraftPlatform().showToast(
                         "accountsx.account.sync.title", "accountsx.account.sync.removed_current",
                         result.removedCurrent().getAccountStorage().getPlayerName());
+            }
+        });
+    }
+
+    /**
+     * 当前账号的令牌被别的实例换掉后，把游戏里那条会话也换成新令牌（P3-j）。
+     *
+     * <p>只改账号模型是不够的：{@code Minecraft.getInstance().getUser()} 里还是旧令牌，下一次
+     * 连服务器、验证会话、拉皮肤都会拿它去请求，而服务端在换票时已经把它作废了。</p>
+     *
+     * <p>重新走一遍「worker 登录 + 客户端线程装会话」：账号此刻是 AUTHORIZED 且未过期，
+     * {@link #loginAccount} 不会再换票，只是按新 storage 重建会话对象。装配期间若用户正好
+     * 切走了，{@code switchAccount} 会把这个已不是当前的账号装上去——所以装配前再确认一次。</p>
+     */
+    private static void reinstallSession(BaseAccount account) {
+        TaskScheduler.submit(() -> {
+            if (repository().getCurrent() != account) {
+                return;
+            }
+            try {
+                AccountSession session = loginAccount(account);
+                Platforms.getMinecraftPlatform().execute(() -> {
+                    if (repository().getCurrent() != account) {
+                        return;
+                    }
+                    switchAccount(account, session);
+                });
+            } catch (IOException | RuntimeException e) {
+                // 装不上不是数据错误：账号本身已经有可用令牌，下一次切号/重连会自然用上。
+                AccountsX.LOGGER.warn("当前账号的令牌已被其他客户端更新，但重建游戏会话失败。", e);
             }
         });
     }
@@ -607,12 +640,28 @@ public final class AccountManager {
         persistRotation(key, sync);
     }
 
+    /**
+     * 把刚换到的令牌落盘。
+     *
+     * <p>失败必须让用户知道：服务端已经作废旧令牌，新令牌只在内存里——这一次游戏里能用，
+     * 重启后两个令牌都失效，账号会「莫名其妙又要重新登录」。之前这里只把异常往上抛，
+     * 界面照样显示「正常可用」，提示要等到二十天后用户自己发现。</p>
+     *
+     * <p>不清刷新意图：留着它，下次启动的 stale-intent 提示正好是对的。</p>
+     */
     private static void persistRotation(String key, CoordinationService sync) throws IOException {
-        if (key != null) {
+        if (key == null)
+            return;
+        try {
             repository().persistRefresh(key);
-            if (sync != null)
-                sync.clearRefreshIntent(key);
+        } catch (IOException | RuntimeException e) {
+            AccountsX.LOGGER.warn("换票成功但未能保存到磁盘，重启后需要重新登录。", e);
+            Platforms.getMinecraftPlatform().showToast(
+                    "accountsx.account.fail.title", "accountsx.account.fail.rotation_unsaved");
+            throw e;
         }
+        if (sync != null)
+            sync.clearRefreshIntent(key);
     }
 
     private static void markUnauthorizedUnlessAlreadyAuthorized(BaseAccount account) {

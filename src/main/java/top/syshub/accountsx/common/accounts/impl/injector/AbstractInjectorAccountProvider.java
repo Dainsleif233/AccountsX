@@ -219,11 +219,19 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
      * <p>必须自己吞掉异常——账号已经从界面上消失，这里失败最多留下一个服务端仍有效的令牌，
      * 不能让删除报错或回滚。令牌已经失效时服务端回 403，同样属于正常收尾，用
      * {@code ignoreHttpStatus=true} 避免把它当异常。</p>
+     *
+     * <p>端点直接取账号自己记下的 apiRoot，**不查注册表**：删除认证服务器时是先摘条目、
+     * 再撤销它名下账号的令牌（{@code AccountManager.removeServer}），此时
+     * {@code registry().byApiRoot()} 已经查不到了。查表会让撤销静默变成「服务器不在列表中」
+     * 的异常，服务端令牌就会一直有效到自然过期。</p>
      */
     @Override
     public void signOut(T account) {
         String accessToken = account.getAccountStorage().getAccessToken();
         if (accessToken == null || accessToken.isEmpty())
+            return;
+        String apiRoot = account.getServer();
+        if (apiRoot == null || apiRoot.isEmpty())
             return;
         try {
             JsonObject body = new JsonObject();
@@ -231,7 +239,7 @@ public abstract class AbstractInjectorAccountProvider<T extends AbstractInjector
             String clientToken = account.getClientToken();
             if (clientToken != null && !clientToken.isEmpty())
                 body.addProperty("clientToken", clientToken);
-            http.postJson(serverFor(account).apiRoot() + "/authserver/invalidate", body, true);
+            http.postJson(apiRoot + "/authserver/invalidate", body, true);
         } catch (IOException | RuntimeException e) {
             LOGGER.debug("Cannot invalidate the token of the removed account.", e);
         }

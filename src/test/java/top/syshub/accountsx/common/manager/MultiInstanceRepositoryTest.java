@@ -199,6 +199,41 @@ class MultiInstanceRepositoryTest {
     }
 
     @Test
+    void reconcile_reportsAdoptedCredentialsWhenTheAccountIsCurrent() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository first = instance(config);
+        first.add(offline("Steve", STEVE));
+        first.add(offline("Alex", ALEX));
+        awaitWrite();
+
+        AccountRepository second = instance(config);
+        // 当前账号是 Alex：对账采纳它的新令牌时，调用方要把游戏会话也重装一遍。
+        BaseAccount current = second.view().get(1);
+        assertThat(current.getAccountStorage().getPlayerName()).isEqualTo("Alex");
+        second.setCurrent(current);
+
+        BaseAccount rotated = first.view().get(1);
+        TaskScheduler.submit(() -> rotated.setProfile("fake-token-rotated", "Alex",
+                UUID.fromString(toDashed(ALEX)))).get(10, TimeUnit.SECONDS);
+        first.touch(rotated);
+        awaitWrite();
+
+        AccountRepository.ReconcileResult result = second.reconcile();
+        assertThat(result.recredentialedCurrent()).isSameAs(current);
+        assertThat(result.removedCurrent()).isNull();
+        assertThat(current.getAccountStorage().getAccessToken()).isEqualTo("fake-token-rotated");
+
+        // 非当前账号采纳令牌不算：它的会话本来就不在游戏里。
+        BaseAccount other = first.view().get(0);
+        TaskScheduler.submit(() -> other.setProfile("fake-token-rotated-2", "Steve",
+                UUID.fromString(toDashed(STEVE)))).get(10, TimeUnit.SECONDS);
+        first.touch(other);
+        awaitWrite();
+
+        assertThat(second.reconcile().recredentialedCurrent()).isNull();
+    }
+
+    @Test
     void readdedAccountIsNotBlockedByItsTombstone() throws Exception {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);

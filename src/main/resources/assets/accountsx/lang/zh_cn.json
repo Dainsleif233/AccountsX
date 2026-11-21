@@ -5,6 +5,7 @@
   "accountsx.account.fail.startup_refresh": "有 %d 个账号在启动时刷新失败，请在列表中重新登录；若仍失败，请删除后重新添加。",
   "accountsx.account.fail.title": "账户操作失败",
   "accountsx.account.fail.unknown": "未知错误。请查看日志，或询问社区帮助",
+  "accountsx.account.fail.rotation_unsaved": "新令牌已拿到但没能写进配置文件，重启游戏后这个账号需要重新登录。",
   "accountsx.account.general.account_list": "账户列表",
   "accountsx.account.general.add_account": "添加账户",
   "accountsx.account.general.login": "登陆",

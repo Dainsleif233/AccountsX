@@ -5,6 +5,7 @@
   "accountsx.account.fail.startup_refresh": "%d account(s) could not be refreshed at startup. Sign them in again from the list; if that still fails, remove and re-add them.",
   "accountsx.account.fail.title": "Account Operation Failed",
   "accountsx.account.fail.unknown": "Unknown exceptions have occurred. Please check the logs or seek help.",
+  "accountsx.account.fail.rotation_unsaved": "A new token was obtained but could not be saved to the config file; this account will need to be signed in again after a restart.",
   "accountsx.account.general.account_list": "Accounts",
   "accountsx.account.general.add_account": "Add Account",
   "accountsx.account.general.login": "Login",
