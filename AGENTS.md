@@ -144,6 +144,8 @@ universal 任务还会在嵌套的 common 元数据中添加 `fabric-api: *` 依
 
 删除账号、或删除账号所属的认证服务器时，Manager 在 worker 上逐个异步调用 `AccountProvider.signOut`：外置账号发 `/authserver/invalidate` 让服务端作废令牌，网络失败只记 debug 日志（账号已经删了，撤销失败不能把异常抛回删除链路）；微软没有单令牌撤销端点，实现为空。撤销端点取**账号自己记下的 `apiRoot`**，不查 `AuthServerRegistry`——删除服务器时是先摘条目再撤销它名下的账号，查表必然落空。
 
+OAuth 令牌端点拒绝请求时，`invalid_grant` / `invalid_token` 抛带 `accountsx.account.fail.injector_invalid_token` 的 `InjectorAuthException`，界面因此能显示「删除后重新添加」；其余错误码各有用因（客户端未获授权、用户拒绝），一律退回「未知错误」——把用户指引到删账号只是让他白删一次。
+
 换票成功但落盘失败时打警告并弹 `accountsx.account.fail.rotation_unsaved`：此时服务端已作废旧令牌、新令牌只在内存，重启后两个都失效，界面不能继续显示「正常可用」；刷新意图也刻意保留，让下次启动的 stale-intent 提示与事实一致。
 
 外置认证的密码登录分两段：先 `/authserver/authenticate` 只拿令牌与角色清单，用户在界面上勾选角色（单角色或服务端已 bound 时跳过）后，再对每个角色发一次带 `selectedProfile` 的 `/authserver/refresh` 完成绑定——一个账号有几个角色就建几个账号，全部入库后切换到服务端原本已绑定的那个角色（没有绑定记录则用第一个）。Yggdrasil 没有独立的「选角色」端点，绑定只能靠 refresh；而刷新时也带 `selectedProfile`（取账号的 preferredPlayerUUID），否则服务端不知道该把令牌绑回哪个角色。

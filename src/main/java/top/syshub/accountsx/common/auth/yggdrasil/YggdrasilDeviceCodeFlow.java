@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
+import top.syshub.accountsx.common.accounts.impl.injector.InjectorAuthException;
 import top.syshub.accountsx.common.accounts.model.TokenReuse;
 import top.syshub.accountsx.common.net.HttpGateway;
 import top.syshub.accountsx.common.utils.AvatarService;
@@ -265,8 +266,18 @@ public final class YggdrasilDeviceCodeFlow {
         if (error == null)
             throw new IOException("Token endpoint returned an unreadable error.");
         String description = str(token.get("error_description"));
-        throw new IOException("Token endpoint rejected the request: " + error
-                + (description == null ? "" : " (" + description + ")"));
+        // 只映射「重新添加账号确实是解药」的那两个错误码：invalid_grant / invalid_token 表示
+        // 服务端不认这份凭据（refresh_token 被用过、被撤销或已过期）。其余错误码各有用因，
+        // 提示用户去删账号只会让他白删一次，宁可退回「未知错误」。
+        String key = switch (error) {
+            case "invalid_grant", "invalid_token" -> "accountsx.account.fail.injector_invalid_token";
+            default -> null;
+        };
+        String message = "Token endpoint rejected the request: " + error
+                + (description == null ? "" : " (" + description + ")");
+        if (key == null)
+            throw new IOException(message);
+        throw new InjectorAuthException(key, message);
     }
 
     /** 校验 token 响应里能校验的元信息：{@code token_type} 必须是 Bearer，{@code expires_in} 必须为正。 */

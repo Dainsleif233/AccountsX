@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import top.syshub.accountsx.common.accounts.impl.injector.AbstractInjectorAccount;
 import top.syshub.accountsx.common.accounts.impl.injector.AbstractInjectorAccountProvider;
+import top.syshub.accountsx.common.accounts.impl.injector.InjectorAuthException;
 import top.syshub.accountsx.common.accounts.impl.injector.impl.AuthlibInjectorAccountProvider;
 import top.syshub.accountsx.common.net.JdkHttpGateway;
 import top.syshub.accountsx.common.task.TaskScheduler;
@@ -277,6 +278,31 @@ class DeviceCodeFlowTest {
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("invalid_grant")
                 .hasMessageContaining("refresh token was revoked");
+    }
+
+    @Test
+    void refresh_mapsRevokedCredentialsToAnActionableMessage() {
+        // 服务端说「这份凭据不认了」，界面要给出「删除后重新添加」，而不是「未知错误」。
+        tokenErrorBody = "{\"error\":\"invalid_grant\",\"error_description\":\"refresh token was revoked\"}";
+        String envelope = AccountOAuth.envelope("fake-refresh1", apiRoot + "/oauth/token", "fake-shared-client")
+                .substring(AccountOAuth.PREFIX.length());
+
+        assertThatThrownBy(() -> YggdrasilDeviceCodeFlow.refresh(JdkHttpGateway.INSTANCE, envelope, authServer))
+                .isInstanceOf(InjectorAuthException.class)
+                .extracting(e -> ((InjectorAuthException) e).getTranslationKey())
+                .isEqualTo("accountsx.account.fail.injector_invalid_token");
+    }
+
+    @Test
+    void refresh_leavesOtherOauthErrorsUnactionable() {
+        // access_denied 是用户自己拒绝授权，删掉账号重加解决不了问题：不该给出「凭据已失效」。
+        tokenErrorBody = "{\"error\":\"access_denied\",\"error_description\":\"user said no\"}";
+        String envelope = AccountOAuth.envelope("fake-refresh1", apiRoot + "/oauth/token", "fake-shared-client")
+                .substring(AccountOAuth.PREFIX.length());
+
+        assertThatThrownBy(() -> YggdrasilDeviceCodeFlow.refresh(JdkHttpGateway.INSTANCE, envelope, authServer))
+                .isExactlyInstanceOf(IOException.class)
+                .hasMessageContaining("access_denied");
     }
 
     @Test
