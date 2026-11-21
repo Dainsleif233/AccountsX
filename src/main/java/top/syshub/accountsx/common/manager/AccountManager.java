@@ -27,7 +27,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -620,24 +619,66 @@ public final class AccountManager {
     }
 
     private static void rotate(BaseAccount account, String key, CoordinationService sync) throws IOException {
-        MicrosoftAccount microsoft = account instanceof MicrosoftAccount ms ? ms : null;
-        String previousRefreshToken = microsoft == null ? null : microsoft.getMicrosoftAccountRefreshToken();
+        Credentials before = Credentials.of(account);
         account.setProfileState(AccountState.AUTHORIZING);
         try {
             AccountProvider.getProvider(account).refresh(account);
         } catch (IOException | RuntimeException e) {
             markUnauthorizedUnlessAlreadyAuthorized(account);
-            // MSA 换票可能已经成功，之后的 Xbox 或 Minecraft 请求才失败。
-            if (microsoft != null && !Objects.equals(previousRefreshToken, microsoft.getMicrosoftAccountRefreshToken())) {
-                try {
-                    persistRotation(key, sync);
-                } catch (IOException saveFailure) {
-                    e.addSuppressed(saveFailure);
-                }
+            try {
+                settleFailedRotation(account, before, key, sync, () -> persistRotation(key, sync));
+            } catch (IOException saveFailure) {
+                // 换到了票却没落盘：挂到原始失败上，两个原因都要留在日志里。
+                e.addSuppressed(saveFailure);
             }
             throw e;
         }
         persistRotation(key, sync);
+    }
+
+    /**
+     * 一次失败的换票要在多实例协调目录里留下什么痕迹。
+     *
+     * <p>「刷新意图」是给崩溃兜底用的：它假定「服务端可能已经换票、新凭据还没落盘」。所以只有
+     * 真的换到票时才该保留（落盘失败的话 {@link #persistRotation} 刻意不清）。一个令牌都没换到
+     * 的失败（{@code invalid_grant} 一类）必须清掉——否则下次启动会误报「令牌可能在未保存的
+     * 情况下被轮换过」，而真实原因是凭据已失效，另有可操作提示。</p>
+     */
+    static void settleFailedRotation(BaseAccount account, Credentials before, String key, CoordinationService sync,
+            RotationSink persist) throws IOException {
+        if (!Credentials.of(account).equals(before)) {
+            persist.persist();
+            return;
+        }
+        if (sync != null && key != null) {
+            sync.clearRefreshIntent(key);
+        }
+    }
+
+    /** 失败收尾里唯一需要落盘的动作；抽成参数只为让「换到票就该落盘」可被测试。 */
+    @FunctionalInterface
+    interface RotationSink {
+        void persist() throws IOException;
+    }
+
+    /**
+     * 账号里与「换票」有关的字段快照。
+     *
+     * <p>用来回答「这次失败的刷新到底换到票没有」：相等就是服务端没动过凭据（刷新在发出请求的
+     * 路上就失败了），不等就是新凭据已经进了内存、只是后续步骤把刷新搞崩了。状态（{@code state}）
+     * 不参与比较——失败处理本来就会改写它。</p>
+     */
+    record Credentials(String accessToken, long expiresAt, String loginToken, String clientToken,
+            String microsoftRefreshToken) {
+        static Credentials of(BaseAccount account) {
+            BaseAccount.AccountStorage storage = account.getAccountStorage();
+            AbstractInjectorAccount injector = account instanceof AbstractInjectorAccount i ? i : null;
+            MicrosoftAccount microsoft = account instanceof MicrosoftAccount m ? m : null;
+            return new Credentials(storage.getAccessToken(), storage.getExpiresAt(),
+                    injector == null ? null : injector.getLoginToken(),
+                    injector == null ? null : injector.getClientToken(),
+                    microsoft == null ? null : microsoft.getMicrosoftAccountRefreshToken());
+        }
     }
 
     /**
