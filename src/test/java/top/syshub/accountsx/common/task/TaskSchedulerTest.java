@@ -79,6 +79,24 @@ class TaskSchedulerTest {
         assertThat(TaskScheduler.isRunning()).isFalse();
     }
 
+    /**
+     * CI 回归（run 44733445512，{@code isRunning_trueWhileTaskExecutes_falseAfter} 在 :79 随机红）：
+     * 任务完成信号必须晚于「正在操作」清零。顺序反了时，调用方拿到已完成 future 却还能读到
+     * isRunning() == true，界面会按繁忙渲染一个其实已经结束的任务。
+     */
+    @Test
+    void futureCompletionImpliesNotRunning() throws Exception {
+        // 任务超过 100 ms 去抖窗口，保证「正在操作」真的会对外可见，竞态才暴露得出来。
+        java.util.concurrent.atomic.AtomicBoolean runningAtCompletion = new java.util.concurrent.atomic.AtomicBoolean(true);
+        CompletableFuture<Void> future = TaskScheduler.submit(() -> Thread.sleep(150));
+        // thenRun 在 complete() 里同步执行：它读到的就是「任务完成那一刻」的状态，
+        // 比 future.get() 返回后再读更能稳定地暴露旧顺序（那时窗口往往已经自己合上了）。
+        future.thenRun(() -> runningAtCompletion.set(TaskScheduler.isRunning()));
+        future.get(5, TimeUnit.SECONDS);
+
+        assertThat(runningAtCompletion).as("future 完成时 isRunning() 必须已经是 false").isFalse();
+    }
+
     @Test
     void parallelPool_boundedAtFourConcurrentTasks() throws Exception {
         int tasks = 8;

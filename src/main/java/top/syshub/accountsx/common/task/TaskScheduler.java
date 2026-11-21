@@ -118,42 +118,43 @@ public final class TaskScheduler {
 
             serialBusy = true;
             serialStart = System.currentTimeMillis();
-            try {
-                task.run();
-            } finally {
-                serialBusy = false;
-            }
+            // 打包后的任务在 run() 里自己清 serialBusy（见 submit 的顺序说明）。
+            task.run();
         }
     }
 
-    /** 提交一个保序任务到串行通道，返回的 future 在任务结束后完成。 */
+    /** 提交一个保序任务到串行通道，返回的 future 在任务结束、空闲标志清除之后完成。 */
     public static CompletableFuture<Void> submit(Task task) {
         CompletableFuture<Void> future = new CompletableFuture<>();
-        serialQueue.add(() -> executeWrapped(task, future));
+        serialQueue.add(() -> {
+            Outcome outcome = runTask(task);
+            // 必须先清「正在操作」再完成 future：调用方（以及挂在 future 上的回调）拿到完成信号时，
+            // isRunning() 必须已经是 false。顺序反过来时，界面会按「繁忙」渲染一个其实已经结束的任务。
+            serialBusy = false;
+            settle(future, outcome);
+        });
         return future;
     }
 
-    /** 提交一个独立任务到有界并行池，返回的 future 在任务结束后完成。 */
+    /** 提交一个独立任务到有界并行池，返回的 future 在任务结束、计数归还之后完成。 */
     public static CompletableFuture<Void> submitParallel(Task task) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         if (parallelInFlight.getAndIncrement() == 0) {
             parallelStart = System.currentTimeMillis();
         }
         parallelPool.execute(() -> {
-            try {
-                executeWrapped(task, future);
-            } finally {
-                if (parallelInFlight.decrementAndGet() == 0) {
-                    parallelStart = -1L;
-                }
+            Outcome outcome = runTask(task);
+            if (parallelInFlight.decrementAndGet() == 0) {
+                parallelStart = -1L;
             }
+            settle(future, outcome);
         });
         return future;
     }
 
     /**
      * 批量并行执行相互独立的任务，全部完成后整体 future 才完成。任一个任务失败会让整体 future 异常完成，
-     * 但每个失败任务已各自 toast（见 {@link #executeWrapped}）。
+     * 但每个失败任务已各自 toast（见 {@link #runTask}）。
      */
     public static CompletableFuture<Void> runParallel(Collection<? extends Task> tasks) {
         if (tasks.isEmpty()) {
@@ -183,31 +184,64 @@ public final class TaskScheduler {
         return t == Thread.currentThread() && ON_WORKER.get();
     }
 
-    /** 串行与并行任务共用的执行包装：打标、执行、异常处理。 */
-    private static void executeWrapped(Task task, CompletableFuture<Void> future) {
+    /** 任务结局：正常返回 / 被取消 / 失败，交给 {@link #settle} 结算 future。 */
+    private sealed interface Outcome {
+    }
+
+    private record Finished() implements Outcome {
+    }
+
+    private record Cancelled() implements Outcome {
+    }
+
+    private record Failed(Exception error) implements Outcome {
+    }
+
+    private record Crashed(Error error) implements Outcome {
+    }
+
+    /** 串行与并行任务共用的执行包装：打标、执行、异常处理，不碰 future。 */
+    private static Outcome runTask(Task task) {
         ON_WORKER.set(true);
         try {
             task.run();
-            future.complete(null);
+            return new Finished();
         } catch (InterruptedException ie) {
             // 任务自身被中断按取消处理；这是任务级取消，不代表调度器要关闭，
             // 因此不重设线程中断状态（否则串行线程下一次 take() 会抛中断、误杀 worker）。
             // 真正的「关闭中」中断来自串行线程在 take() 上被外部中断，由 runSerialLoop 处理。
-            future.cancel(true);
+            return new Cancelled();
         } catch (Exception e) {
-            future.completeExceptionally(e);
             LOGGER.warn("An exception has occurred in AccountsX Background Thread.", e);
             try {
                 Platforms.getMinecraftPlatform().showToast("accountsx.account.fail.title", failureMessage(e));
             } catch (Throwable t) {
                 // 适配器不可用（如单元测试环境）；上面已记录日志。
             }
+            return new Failed(e);
         } catch (Error e) {
             // 任务抛出 Error（链接错误、断言、OOM 之后的一次分配失败……）时也必须在这里收口：
             // 一旦让它穿出串行循环，唯一的后台线程就没了，之后所有 submit() 的任务永远不会执行、
             // 对应的 future 永远不完成，表现为整个模组卡死。已经记录并传递失败，不再向上抛。
-            future.completeExceptionally(e);
             LOGGER.error("A fatal error has occurred in AccountsX Background Thread.", e);
+            return new Crashed(e);
+        }
+    }
+
+    /**
+     * 状态已经归零之后再结算 future，保证「future 完成 ⇒ isRunning() 为 false」。
+     *
+     * <p>common 的字节码目标是 Java 17，不能用 switch 的模式匹配，这里按类型分派。</p>
+     */
+    private static void settle(CompletableFuture<Void> future, Outcome outcome) {
+        if (outcome instanceof Finished) {
+            future.complete(null);
+        } else if (outcome instanceof Cancelled) {
+            future.cancel(true);
+        } else if (outcome instanceof Failed failed) {
+            future.completeExceptionally(failed.error());
+        } else if (outcome instanceof Crashed crashed) {
+            future.completeExceptionally(crashed.error());
         }
     }
 
