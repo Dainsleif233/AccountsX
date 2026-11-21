@@ -75,6 +75,14 @@ public final class AccountRepository {
     /** 普通对账和保存跳过这些账号的凭据，直到换票结束。 */
     private final Set<String> refreshingKeys = new LinkedHashSet<>();
 
+    /**
+     * 保存路径在锁内对账得到的结论（目前只关心"当前账号被别处删掉了"）。
+     *
+     * <p>写路径先对账再合并写，所以它比轮询更早看到中间态；如果只有轮询负责回落，
+     * 这次删除就可能被写成"别人的旧快照"，游戏会话却一直留在已删除的账号上。</p>
+     */
+    private volatile java.util.function.Consumer<ReconcileResult> reconcileListener;
+
     /** 每个账号最后一次落盘/采纳的 revision（缺省 0）。用来判断磁盘上的条目是不是比内存里的新。 */
     private final Map<String, Long> revisions = new HashMap<>();
 
@@ -164,6 +172,11 @@ public final class AccountRepository {
     /** 当前协调器；{@code null} 表示单实例模式。 */
     public CoordinationService sync() {
         return sync;
+    }
+
+    /** 订阅保存路径里的对账结论。回调在写线程上同步发生，实现方自己切到界面线程。 */
+    public void onReconciled(java.util.function.Consumer<ReconcileResult> listener) {
+        this.reconcileListener = listener;
     }
 
     /**
@@ -745,10 +758,11 @@ public final class AccountRepository {
         Map<String, Long> removals;
         Map<String, BaseAccount> revivals;
         String snapshotText;
+        ReconcileResult reconciled = null;
         synchronized (this) {
             // 全局锁覆盖读-改-写，仓储锁只保护内存变更和序列化，避免阻塞客户端线程。
             if (diskRaw != null)
-                reconcileWith(diskRaw, null);
+                reconciled = reconcileWith(diskRaw, null);
             Set<String> written = writeSnapshot(diskRaw, freshlyRotatedKey);
             removals = Map.copyOf(pendingRemovals);
             revivals = new HashMap<>(revivedAccounts);
@@ -769,6 +783,13 @@ public final class AccountRepository {
         }
         if (coordination != null)
             coordination.publishWrite();
+        // 落盘成功后才把结论交出去：写失败时内存已经改成"删掉了"，但磁盘还没确认，
+        // 此时若已经切走游戏会话，用户会看到账号突然消失。
+        if (reconciled != null && reconciled.removedCurrent() != null) {
+            java.util.function.Consumer<ReconcileResult> listener = this.reconcileListener;
+            if (listener != null)
+                listener.accept(reconciled);
+        }
     }
 
     // ── 新↔旧双向映射 ──

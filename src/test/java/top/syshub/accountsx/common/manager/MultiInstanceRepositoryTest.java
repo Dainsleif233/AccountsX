@@ -147,6 +147,31 @@ class MultiInstanceRepositoryTest {
     }
 
     @Test
+    void savePathReportsDeletionThatPollingMissed() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository first = instance(config);
+        first.add(offline("Steve", STEVE));
+        awaitWrite();
+
+        AccountRepository second = instance(config);
+        BaseAccount mine = second.view().get(0);
+        second.setCurrent(mine);
+        java.util.List<AccountRepository.ReconcileResult> reported = new java.util.ArrayList<>();
+        second.onReconciled(reported::add);
+
+        first.drop(first.view().get(0));
+        awaitWrite();
+
+        // 不调用 reconcile()：只靠保存路径在锁内的那次对账发现（模拟轮询错过中间态）
+        second.add(offline("Notch", NOTCH));
+        awaitWrite();
+
+        assertThat(reported).hasSize(1);
+        assertThat(reported.get(0).removedCurrent()).isSameAs(mine);
+        assertThat(second.getCurrent()).isNull();
+    }
+
+    @Test
     void reconcile_adoptsTokenRotatedByAnotherInstance() throws Exception {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);

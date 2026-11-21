@@ -122,6 +122,14 @@ public final class AccountManager {
             repository.initialize(environment, null);
         }
         sync.setListener(AccountManager::onRemoteChange);
+        // 保存路径自己也会对账：它发现当前账号被删掉时同样要回落游戏会话。
+        repository.onReconciled(result -> {
+            try {
+                handleReconcileResult(result);
+            } catch (RuntimeException e) {
+                AccountsX.LOGGER.warn("处理保存路径的对账结论失败。", e);
+            }
+        });
         sync.start();
         warnStaleIntents(sync);
 
@@ -201,21 +209,31 @@ public final class AccountManager {
                 AccountsX.LOGGER.warn("多实例对账失败。", e);
                 return;
             }
-            if (!result.changed()) {
-                return;
+            handleReconcileResult(result);
+        });
+    }
+
+    /**
+     * 处理一次对账结论（轮询与保存路径共用）。
+     *
+     * <p>保存路径在锁内对账时可能刚刚发现「当前账号已被别的实例删掉」：轮询只看得见最终状态，
+     * 中间态会漏掉。因此两条路径都收到同一个回调，界面通知与游戏会话回落只写一份。</p>
+     */
+    private static void handleReconcileResult(AccountRepository.ReconcileResult result) {
+        if (result == null || !result.changed()) {
+            return;
+        }
+        Platforms.getMinecraftPlatform().execute(() -> {
+            notifyChangeListeners();
+            if (result.removedCurrent() != null) {
+                // 当前账号被别的客户端删了：回落到默认账号，别把游戏会话留在已删除账号上。
+                // 这里不调 signOut——删它的那个实例已经撤销过令牌了。
+                announceCurrent(repository().getCurrent());
+                switchToFallback();
+                Platforms.getMinecraftPlatform().showToast(
+                        "accountsx.account.sync.title", "accountsx.account.sync.removed_current",
+                        result.removedCurrent().getAccountStorage().getPlayerName());
             }
-            Platforms.getMinecraftPlatform().execute(() -> {
-                notifyChangeListeners();
-                if (result.removedCurrent() != null) {
-                    // 当前账号被别的客户端删了：回落到默认账号，别把游戏会话留在已删除账号上。
-                    // 这里不调 signOut——删它的那个实例已经撤销过令牌了。
-                    announceCurrent(repository().getCurrent());
-                    switchToFallback();
-                    Platforms.getMinecraftPlatform().showToast(
-                            "accountsx.account.sync.title", "accountsx.account.sync.removed_current",
-                            result.removedCurrent().getAccountStorage().getPlayerName());
-                }
-            });
         });
     }
 
