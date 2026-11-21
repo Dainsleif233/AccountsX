@@ -268,6 +268,30 @@ class MultiInstanceRepositoryTest {
     }
 
     @Test
+    void moveInOneInstance_isNotRevertedByAnotherInstancesPlainSave() throws Exception {
+        Path config = dir.resolve("accountsx.json");
+        AccountRepository first = instance(config);
+        first.add(offline("Steve", STEVE));
+        first.add(offline("Alex", ALEX));
+        awaitWrite();
+
+        // 第二实例晚启动，内存里还是旧顺序
+        AccountRepository second = instance(config);
+
+        // 第一实例把 Alex 拖到最前
+        first.move(first.view().get(1), 0);
+        awaitWrite();
+
+        // 第二实例只做一次无关的普通保存：不能把内存里的旧顺序写回去
+        second.add(offline("Notch", NOTCH));
+        awaitWrite();
+
+        AccountRepository reloaded = instance(config);
+        assertThat(reloaded.view()).extracting(a -> a.getAccountStorage().getPlayerName())
+                .containsExactly("Alex", "Steve", "Notch");
+    }
+
+    @Test
     void dropThenWrite_doesNotResurrectTheAccountBeforeTheTombstoneLands() throws Exception {
         Path config = dir.resolve("accountsx.json");
         AccountRepository first = instance(config);

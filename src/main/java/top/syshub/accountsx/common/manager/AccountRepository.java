@@ -99,6 +99,18 @@ public final class AccountRepository {
     private final Map<String, Long> removedRevs = new HashMap<>();
 
     /**
+     * 本地拖动排名的版本号。
+     *
+     * <p>列表顺序也是共享状态：对端拖动过之后，本地一次无关的普通保存若按内存里的旧顺序写回，
+     * 就会把对端的调整抹掉。这里只在用户真的拖过（{@link #move}）时递增，普通增删不改顺序；
+     * 版本号与已落盘的对齐之前，对账都按磁盘顺序重排。</p>
+     */
+    private long orderVersion;
+
+    /** 已落盘的顺序版本；小于 {@link #orderVersion} 表示本地还有没写出去的排名。 */
+    private long persistedOrderVersion;
+
+    /**
      * 本实例刚重新添加的账号 key。
      *
      * <p>墓碑是给"别的实例手里那份旧快照"用的：它不能让删掉的账号复活，但也不能永久封死这个
@@ -368,6 +380,10 @@ public final class AccountRepository {
 
         // 2) 磁盘上别的实例新增的账号：收进内存，界面才能看见
         if (onlyKey == null) {
+            // 顺序也属于共享状态：本地这次没有改过顺序时，按磁盘顺序重排，
+            // 否则下一次普通保存会把对端拖动过的排名写回旧顺序。
+            if (orderVersion == persistedOrderVersion)
+                changed |= adoptDiskOrder(diskByKey);
             Set<String> local = new LinkedHashSet<>();
             for (BaseAccount account : accounts) {
                 String key = AccountKey.of(account);
@@ -400,6 +416,43 @@ public final class AccountRepository {
         }
 
         return new ReconcileResult(changed, removedCurrent);
+    }
+
+    /**
+     * 把内存账号顺序调整为磁盘顺序（本地没有未落盘的顺序变更时才调用）。
+     *
+     * <p>环境账号永远第一且不落盘；磁盘上暂时没有的账号（刚添加、本地刚删除）保持在末尾的
+     * 原有相对顺序，等它们自己写进文件后自然会归位。</p>
+     */
+    private boolean adoptDiskOrder(Map<String, JsonObject> diskByKey) {
+        List<BaseAccount> reordered = new ArrayList<>(accounts.size());
+        Map<String, BaseAccount> pending = new LinkedHashMap<>();
+        BaseAccount environment = null;
+        for (BaseAccount account : accounts) {
+            if (account.getAccountType() == AccountType.ENV_DEFAULT) {
+                environment = account;
+                continue;
+            }
+            String key = AccountKey.of(account);
+            if (key == null)
+                // 没有稳定身份的账号无法参加排序，按出现顺序放末尾
+                pending.put("no-key:" + pending.size(), account);
+            else
+                pending.put(key, account);
+        }
+        if (environment != null)
+            reordered.add(environment);
+        for (String key : diskByKey.keySet()) {
+            BaseAccount account = pending.remove(key);
+            if (account != null)
+                reordered.add(account);
+        }
+        reordered.addAll(pending.values());
+        if (reordered.equals(accounts))
+            return false;
+        accounts.clear();
+        accounts.addAll(reordered);
+        return true;
     }
 
     private boolean adopt(BaseAccount account, JsonObject entry, JsonArray servers) {
@@ -514,6 +567,7 @@ public final class AccountRepository {
         if (account == null || !accounts.remove(account))
             return;
         accounts.add(Math.max(0, Math.min(index, accounts.size())), account);
+        orderVersion++;
         markDirty();
     }
 
@@ -759,6 +813,7 @@ public final class AccountRepository {
         Map<String, BaseAccount> revivals;
         String snapshotText;
         ReconcileResult reconciled = null;
+        long snapshotOrderVersion;
         synchronized (this) {
             // 全局锁覆盖读-改-写，仓储锁只保护内存变更和序列化，避免阻塞客户端线程。
             if (diskRaw != null)
@@ -768,6 +823,7 @@ public final class AccountRepository {
             revivals = new HashMap<>(revivedAccounts);
             revivals.keySet().retainAll(written);
             snapshotText = top.syshub.accountsx.common.utils.NetworkUtils.GSON.toJson(root.raw());
+            snapshotOrderVersion = orderVersion;
         }
         store.saveSnapshot(snapshotText);
         synchronized (this) {
@@ -780,6 +836,9 @@ public final class AccountRepository {
             }
             removals.forEach(pendingRemovals::remove);
             revivals.forEach(revivedAccounts::remove);
+            // 落盘成功：本次快照里的顺序已经在文件里，之后的对账可以采纳别处的顺序。
+            // 用「快照时的版本」而不是当前版本：保存期间又拖过一次时不能把新的意图也标成已落盘。
+            persistedOrderVersion = Math.max(persistedOrderVersion, snapshotOrderVersion);
         }
         if (coordination != null)
             coordination.publishWrite();
