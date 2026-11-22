@@ -275,12 +275,49 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 - 当只改一个 MC/authlib 版本时，优先构建该适配器而非全量 `build`。
 - 非混淆版本（26.1+）使用 `jar` 任务而非 `remapJar`。
 
+## 测试与验收
+
+三层，各守一段，别把单元测试当验收标准：
+
+- **单元测试**（`:test`，common + authlib）：纯 JUnit，假 `HttpGateway` + 临时目录，不起游戏。守仓储对账、迁移幂等、令牌复用三态、认证流程、只读降级。是**重构安全网**，不是功能验收。
+- **客户端游戏测试**（Fabric client-gametest）：真起一个 Minecraft 客户端，点界面、断言控件与 `Minecraft.getUser()`。这是功能验收的主力。
+- **人工**：自动化够不到的出口（微软设备码登录、真实外置服务器、打开浏览器、多实例并发、视觉排版）。清单见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+### 客户端游戏测试的接线
+
+- 只有 **1.21.4 / 1.21.6 / 1.21.9 / 1.21.11 / 26.1 / 26.2 / 26.3** 这 7 个版本有 `fabric-client-gametest-api-v1`。**1.20–1.21.2 只有服务端 gametest**，而本模组 `environment: client`，服务端框架碰不到它——这 6 个版本只能人工测，不是能靠努力补上的缺口。
+- 哪些版本接入由 `gradle/adapters.toml` 的 `clientGametest = true` 决定（`AdapterMatrix.McAdapter.clientGametest`），不在插件里硬编码版本列表。
+- 测试源码**共享**在根 `src/client-gametest/`（java + resources），由插件挂进各版本的 `gametest` 源集，一份源码编译 7 次。因此只能用跨版本 API 交集（见下）。
+- 接线全在 buildSrc：`Loom.configureClientGameTests`（`fabricApi.configureTests` 建 `gametest` 源集 + `clientGameTest` run 配置）与 `Loom.configureAuthlibInjectorGameTest`（继承前者、挂 agent）。混淆版本依赖配置名 `modGametestImplementation`，非混淆 `gametestImplementation`。
+- 配置隔离：run 配置注入 `ACCOUNTSX_CONFIG` 环境变量 + `user.home` 系统属性，都指向 `build/run/<run 名>/`，不污染 `~/.config`。
+- 命令：`:adapters:mc:<版本>:runClientGameTest`（入口 / 离线 / 外置三用例）与 `:adapters:mc:<版本>:runClientAuthlibInjectorGameTest`（挂 authlib-injector 再跑外置全流程）。截图与日志在 `adapters/mc/<版本>/build/run/<run 名>/`。
+- CI：PR 跑 3 个代表版本（1.21.4 混淆 / 26.1 首个非混淆 / 26.3 最新），nightly 扫全 7 个（`gametest-nightly.yml`）。Linux runner 上 Loom 见 `CI=true` 自动套 xvfb；断言是控件级而非像素级，llvmpipe 软件渲染不会抖。
+
+### 写跨版本测试的硬约束（踩过的坑）
+
+- **入口图标点不到**：标题屏入口是 `SpriteIconButton`，`getMessage()` 为空（只有 tooltip），`clickScreenButton(key)` 按 message 匹配永远命中不了。必须扫 `screen.children()` 按结构定位，再用 `TestInput` 点。
+- **鼠标键编号两代分裂**：26.x 的 `isValidClickButton` 要 SDL 编号（左键=1），1.21.x 要 GLFW 编号（左键=0）。一律用 `InputConstants.MOUSE_BUTTON_LEFT`，别硬编码 0。
+- **坐标是窗口像素**：`TestInput.setCursorPos` 收窗口像素，GUI 坐标要乘 `getWindow().getGuiScale()`。
+- **读当前界面不通用**：26.x 是 `client.gui.screen()`，1.21.x 是 `client.screen` 字段（`Screens.current` 用反射兜底）。
+- **键入要先设界面级焦点**：`charTyped` 只路由给 `screen.getFocused()`，光 `box.setFocused(true)` 不够，必须 `screen.setFocused(box)`（`Screens.focusEditBox`）。
+- **用例结束必须回标题屏**：`context.setScreen(TitleScreen::new)`，否则框架抛 "did not finish on the title screen"。
+
+### authlib-injector 兼容测试
+
+- agent jar 由 `downloadAuthlibInjector` 任务从 GitHub release 下载（v1.2.8，固定 URL），不在 Maven Central。
+- run 配置挂 `-javaagent:<jar>=http://127.0.0.1:25599` + `-Dauthlibinjector.yggdrasil.prefetched=<base64>`。**prefetched 值必须 Base64 编码**（agent 会解码；裸 JSON 的 PEM 头空格还会把 JVM 命令行拆散）。假服务器在测试内绑固定端口 25599。
+- 用例靠系统属性 `accountsx.gametest.injector=true` 区分：普通 `clientGameTest` 也会发现这个 entrypoint，无标记直接跳过。
+- 断言 agent 已加载要用 `ClassLoader.getSystemClassLoader().loadClass(...)`——Fabric Knot 不把 agent jar 暴露给游戏类，`Class.forName` 会失败。
+- 兼容性靠**外置全流程在 agent 下跑通**证明（会话构造 / signOut 走被变换的 authlib 类），不是靠读某个常量。
+
+**硬规则：改了 `adapters/mc/` 必须真机手测并在 PR 写明版本，CI 绿灯不能代替手测。**
+
 ## 常见任务操作手册
 
 ### 加一个 MC 版本
 
 1. 确定该 MC 版本不能正常运行，非正式版的版本识别可能不正确，需要手动调整依赖再测试
-2. 在 `gradle/adapters.toml` 追加 `[[mc]]` 条目（version / authlib / fabricApi / modmenu / java / obfuscated），**漏这步子项目不会被 `include`**
+2. 在 `gradle/adapters.toml` 追加 `[[mc]]` 条目（version / authlib / fabricApi / modmenu / java / obfuscated），**漏这步子项目不会被 `include`**；该版本若有客户端游戏测试 API（1.21.4+）再加 `clientGametest = true`，让它接入共享测试（见「测试与验收」）
 3. 只建 `build.gradle.kts`，不要整目录拷贝：新版本的 Java 文件放 `adapters/mc/<新版本>/src/main/java/...`，
    与近邻相同的文件一律不复制（回落会继承），编译报错再按缺口补文件
 4. 改 `adapters/mc/<新版本>/build.gradle.kts` 里的 Loom 插件 id（26.1+ 用 `net.fabricmc.fabric-loom`，否则 `net.fabricmc.fabric-loom-remap`），版本号不写在这里
