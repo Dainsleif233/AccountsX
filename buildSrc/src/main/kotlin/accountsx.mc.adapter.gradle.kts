@@ -3,6 +3,9 @@ import accountsx.build.AdapterSourceResolver
 import accountsx.build.Catalog
 import accountsx.build.Loom
 import accountsx.build.MixinDeps
+import java.net.URI
+import java.security.KeyPairGenerator
+import java.util.Base64
 
 plugins {
     java
@@ -70,6 +73,47 @@ if (adapter.clientGametest) {
         java.srcDir(rootProject.file("src/client-gametest/java"))
         resources.srcDir(rootProject.file("src/client-gametest/resources"))
     }
+
+    // Acceptance 6: a second run configuration boots the game with authlib-injector
+    // attached as a -javaagent. The agent jar is pinned and downloaded once; prefetched
+    // root metadata (generated here in memory, a throwaway test key) keeps the agent off
+    // the network at startup. The matching test binds injectorPort on the loopback.
+    val injectorVersion = "1.2.8"
+    val injectorJar = project.file("build/authlib-injector/authlib-injector-" + injectorVersion + ".jar")
+    val downloadInjector = project.tasks.register("downloadAuthlibInjector") {
+        group = "fabric"
+        outputs.file(injectorJar)
+        doLast {
+            if (!injectorJar.exists()) {
+                injectorJar.parentFile.mkdirs()
+                val url = URI(
+                    "https://github.com/yushijinhun/authlib-injector/releases/download/v" +
+                        injectorVersion + "/authlib-injector-" + injectorVersion + ".jar"
+                ).toURL()
+                url.openStream().use { input ->
+                    injectorJar.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        }
+    }
+    val injectorPort = 25599
+    val injectorApiRoot = "http://127.0.0.1:" + injectorPort
+    val prefetchedMeta = run {
+        val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        val pem = "-----BEGIN PUBLIC KEY-----\n" +
+            Base64.getMimeEncoder(64, "\n".toByteArray()).encodeToString(pair.public.encoded) +
+            "\n-----END PUBLIC KEY-----"
+        val json = com.google.gson.Gson().toJson(mapOf(
+            "signaturePublickey" to pem,
+            "skinDomains" to listOf("127.0.0.1"),
+            "meta" to mapOf("serverName" to "GtYggdrasil")
+        ))
+        // The agent Base64-decodes this property; encoding also keeps spaces out of
+        // the JVM command line (the PEM header would otherwise split into stray args).
+        Base64.getEncoder().encodeToString(json.toByteArray(Charsets.UTF_8))
+    }
+    Loom.configureAuthlibInjectorGameTest(project, injectorJar, injectorApiRoot, prefetchedMeta)
+    project.tasks.named("runClientAuthlibInjectorGameTest") { dependsOn(downloadInjector) }
 }
 
 java.withSourcesJar()

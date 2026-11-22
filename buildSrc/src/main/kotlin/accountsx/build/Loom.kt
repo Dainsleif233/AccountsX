@@ -2,6 +2,7 @@ package accountsx.build
 
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Dependency
+import org.gradle.api.tasks.Delete
 import org.gradle.api.model.ObjectFactory
 import org.gradle.kotlin.dsl.support.serviceOf
 import java.lang.invoke.MethodHandles
@@ -132,6 +133,79 @@ object Loom {
         sysProps.javaClass.methods.first { it.name == "put" && it.parameterCount == 2 && it.parameterTypes[1].name != "org.gradle.api.provider.Provider" }
             .invoke(sysProps, "user.home", File(runDir, "home").absolutePath)
     }
+
+
+    /**
+     * Adds a second client gametest run configuration that boots the game with
+     * authlib-injector attached as a -javaagent (acceptance point 6). It inherits
+     * clientGameTest, then redirects authlib's URL constants at a fixed local API
+     * root and supplies prefetched root metadata so the agent does no network fetch
+     * at startup. The matching test binds that same fixed port.
+     *
+     * The run directory is isolated and cleared like clientGameTest's; the marker
+     * property accountsx.gametest.injector lets the shared test class tell this run
+     * apart from the plain one (it skips when the marker is absent).
+     *
+     * @param agentJar      the authlib-injector agent jar (downloaded by the caller)
+     * @param apiRoot       fixed local API root the agent redirects to, e.g. http://127.0.0.1:25599
+     * @param prefetchedMeta root metadata JSON for -Dauthlibinjector.yggdrasil.prefetched
+     */
+    fun configureAuthlibInjectorGameTest(project: Project, agentJar: File, apiRoot: String, prefetchedMeta: String) {
+        val loom = project.extensions.getByName("loom")
+        val runConfigs = loom.javaClass.methods.first { it.name == "getRunConfigs" && it.parameterCount == 0 }
+            .invoke(loom)
+        val clientGameTest = runConfigs.javaClass.methods.first {
+            it.name == "getByName" && it.parameterCount == 1 && it.parameterTypes[0] == String::class.java
+        }.invoke(runConfigs, "clientGameTest")
+
+        val runDir = project.file("build/run/clientAuthlibInjectorGameTest")
+        val create = runConfigs.javaClass.methods.first {
+            it.name == "create" && it.parameterCount == 2 &&
+                it.parameterTypes[0] == String::class.java &&
+                it.parameterTypes[1].name == "org.gradle.api.Action"
+        }
+        val actionType = create.parameterTypes[1]
+        val configAction = Proxy.newProxyInstance(
+            actionType.classLoader, arrayOf(actionType)
+        ) { proxy, method, args ->
+            when (method.name) {
+                "execute" -> {
+                    val run = args!![0]
+                    fun call(name: String, vararg a: Any) {
+                        run.javaClass.methods.first { m ->
+                            m.name == name && m.parameterCount == a.size &&
+                                a.indices.all { i -> m.parameterTypes[i].isAssignableFrom(a[i].javaClass) || primitiveMatch(m.parameterTypes[i], a[i]) }
+                        }.invoke(run, *a)
+                    }
+                    call("inherit", clientGameTest)
+                    call("runDir", "build/run/clientAuthlibInjectorGameTest")
+                    call("environmentVariable", "ACCOUNTSX_CONFIG", File(runDir, "config/accountsx.json").absolutePath)
+                    call("property", "user.home", File(runDir, "home").absolutePath)
+                    call("property", "accountsx.gametest.injector", "true")
+                    call("property", "authlibinjector.yggdrasil.prefetched", prefetchedMeta)
+                    call("vmArg", "-javaagent:" + agentJar.absolutePath + "=" + apiRoot)
+                    null
+                }
+                "toString" -> "accountsx authlib-injector gametest run"
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> args!![0] === proxy
+                else -> null
+            }
+        }
+        create.invoke(runConfigs, "clientAuthlibInjectorGameTest", configAction)
+
+        val deleteRunDir = project.tasks.register("deleteAuthlibInjectorGameTestRunDir", Delete::class.java) {
+            group = "fabric"
+            delete(runDir)
+        }
+        project.tasks.named("runClientAuthlibInjectorGameTest") {
+            dependsOn(deleteRunDir)
+        }
+    }
+
+    private fun primitiveMatch(paramType: Class<*>, value: Any): Boolean =
+        (paramType == java.lang.Boolean.TYPE && value is Boolean) ||
+            (paramType == Integer.TYPE && value is Int)
 
     private fun setProperty(settings: Any, getter: String, value: Any) {
         val property = settings.javaClass.methods.first { it.name == getter && it.parameterCount == 0 }

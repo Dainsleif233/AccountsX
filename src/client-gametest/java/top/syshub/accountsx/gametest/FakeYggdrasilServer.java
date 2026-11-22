@@ -30,8 +30,17 @@ final class FakeYggdrasilServer implements AutoCloseable {
     final String base;
 
     FakeYggdrasilServer() throws IOException {
+        this(0);
+    }
+
+    /**
+     * @param port local port to bind; 0 picks an ephemeral one. The authlib-injector
+     *             compatibility run needs a fixed port because the agent's API root
+     *             is baked into its run configuration before the test JVM starts.
+     */
+    FakeYggdrasilServer(int port) throws IOException {
         String pem = rsaPublicKeyPem();
-        this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         this.base = "http://127.0.0.1:" + server.getAddress().getPort();
 
         server.createContext("/", exchange -> {
