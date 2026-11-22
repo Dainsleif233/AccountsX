@@ -3,7 +3,6 @@ package top.syshub.accountsx.gametest;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.TitleScreen;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
@@ -30,32 +29,9 @@ public class OfflineAccountLifecycleGameTest implements FabricClientGameTest {
         context.waitForScreen(OfflineLoginScreen.class);
 
         // Focus the player-name box (first EditBox) and type through the real input path.
-        // charTyped routes through screen.getFocused(), so the screen-level focus must be
-        // set too — box.setFocused(true) alone leaves the keystrokes unrouted.
-        context.runOnClient(client -> {
-            var screen = Screens.current(client);
-            EditBox nameBox = null;
-            for (var child : screen.children()) {
-                if (child instanceof EditBox box) {
-                    nameBox = box;
-                    break;
-                }
-            }
-            if (nameBox == null) {
-                throw new AssertionError("Offline login screen has no name input");
-            }
-            screen.setFocused(nameBox);
-            nameBox.setFocused(true);
-        });
+        Screens.focusEditBox(context, 0);
         context.getInput().typeChars(PLAYER);
-        String typed = context.computeOnClient(client -> {
-            for (var child : Screens.current(client).children()) {
-                if (child instanceof EditBox box) {
-                    return box.getValue();
-                }
-            }
-            return "";
-        });
+        String typed = Screens.editBoxValue(context, 0);
         if (!PLAYER.equals(typed)) {
             throw new AssertionError("Name input did not take the typed text: '" + typed + "'");
         }

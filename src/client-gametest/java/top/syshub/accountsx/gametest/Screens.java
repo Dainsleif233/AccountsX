@@ -1,6 +1,8 @@
 package top.syshub.accountsx.gametest;
 
+import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 
 /**
@@ -24,5 +26,37 @@ public final class Screens {
                 throw new AssertionError("Cannot read the current screen on this Minecraft version", noField);
             }
         }
+    }
+
+    /**
+     * Focuses the index-th EditBox of the current screen. charTyped routes through
+     * screen.getFocused(), so the screen-level focus must be set too —
+     * box.setFocused(true) alone leaves the keystrokes unrouted.
+     */
+    public static void focusEditBox(ClientGameTestContext context, int index) {
+        context.runOnClient(client -> {
+            Screen screen = current(client);
+            int i = 0;
+            for (var child : screen.children()) {
+                if (child instanceof EditBox box && i++ == index) {
+                    screen.setFocused(box);
+                    box.setFocused(true);
+                    return;
+                }
+            }
+            throw new AssertionError("No EditBox at index " + index + " on " + screen.getClass().getSimpleName());
+        });
+    }
+
+    public static String editBoxValue(ClientGameTestContext context, int index) {
+        return context.computeOnClient(client -> {
+            int i = 0;
+            for (var child : current(client).children()) {
+                if (child instanceof EditBox box && i++ == index) {
+                    return box.getValue();
+                }
+            }
+            throw new AssertionError("No EditBox at index " + index);
+        });
     }
 }
