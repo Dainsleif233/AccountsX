@@ -6,7 +6,8 @@
   "environment": "client",
   "entrypoints": {
     "fabric-client-gametest": [
-      "top.syshub.accountsx.gametest.TitleScreenEntryGameTest"
+      "top.syshub.accountsx.gametest.TitleScreenEntryGameTest",
+      "top.syshub.accountsx.gametest.OfflineAccountLifecycleGameTest"
     ]
   },
   "depends": {

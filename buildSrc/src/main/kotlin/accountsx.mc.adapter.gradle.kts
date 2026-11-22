@@ -37,13 +37,10 @@ dependencies {
         add("modImplementation", Catalog.notation(project, "fabric-loader", loaderVersion))
         add("modImplementation", "com.terraformersmc:modmenu:${adapter.modmenu}")
 
-        addProvider("modRuntimeOnly", provider {
-            Loom.fabricApiModule(
-                project,
-                "fabric-resource-loader-v0",
-                "${adapter.fabricApi}+${adapter.version.split(Regex("-"), 2)[0]}"
-            )
-        })
+        // Full fabric-api, not just resource-loader: modmenu <= 17 publishes an empty
+        // POM, so its fabric.mod.json dependencies (screen/key-binding/lifecycle) are
+        // only satisfied when the whole API is present — same as a real installation.
+        add("modRuntimeOnly", "net.fabricmc.fabric-api:fabric-api:${adapter.fabricApi}+${adapter.version.split(Regex("-"), 2)[0]}")
     } else {
         add("implementation", MixinDeps.MIXINEXTRAS_FABRIC_PLAIN)
         add("implementation", MixinDeps.SPONGE_MIXIN)
