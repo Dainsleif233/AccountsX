@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "accountsx-gametest",
+  "version": "1.0.0",
+  "name": "AccountsX Client Game Tests",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "top.syshub.accountsx.gametest.TitleScreenEntryGameTest"
+    ]
+  },
+  "depends": {
+    "accountsx": "*",
+    "accountsx-adapter-mc": "*",
+    "accountsx-adapter-authlib": "*"
+  }
+}

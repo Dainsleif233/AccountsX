@@ -14,6 +14,9 @@ import java.io.File
  * @param sourceBase   optional override of the source-fallback parent: another declared MC version,
  *                     or {@code "none"} to start a new root; null keeps the default "previous version"
  * @param java         bytecode target for this adapter
+ * @param clientGametest whether this MC version can run Fabric client game tests
+ *                     (fabric-client-gametest-api-v1 exists only from 1.21.4; the mod is
+ *                     client-only, so the server gametest framework on older versions is useless)
  */
 data class McAdapter(
     val version: String,
@@ -23,7 +26,8 @@ data class McAdapter(
     val obfuscated: Boolean,
     val loader: String?,
     val java: String,
-    val sourceBase: String? = null
+    val sourceBase: String? = null,
+    val clientGametest: Boolean = false
 ) {
     val projectPath: String get() = "adapters:mc:$version"
 
@@ -75,7 +79,8 @@ class AdapterMatrix(
                     java = (row["java"] as? String) ?: "17",
                     obfuscated = row.boolean("mc", "obfuscated"),
                     loader = row["loader"] as String?,
-                    sourceBase = row["sourceBase"] as String?
+                    sourceBase = row["sourceBase"] as String?,
+                    clientGametest = (row["clientGametest"] as? Boolean) ?: false
                 )
             }
             val authlib = tables["authlib"].orEmpty().map { row ->

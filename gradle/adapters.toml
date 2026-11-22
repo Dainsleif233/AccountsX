@@ -11,7 +11,9 @@
 ##   - `obfuscated = false` 表示该 MC 版本没有 ProGuard 混淆（26.1+），
 ##     构建用 `fabric-loom` + `jar`，而不是 `fabric-loom-remap` + `remapJar`，
 ##     且 `officialMojangMappings()` 不可用；
-##   - `loader` 可选，缺省取 `gradle/libs.versions.toml` 的 `fabric-loader`。
+##   - `loader` 可选，缺省取 `gradle/libs.versions.toml` 的 `fabric-loader`；
+##   - `clientGametest` 可选，缺省 false：该版本是否接入 Fabric 客户端游戏测试
+##     （fabric-client-gametest-api-v1 从 1.21.4 才有，更老版本只有服务端框架）。
 ##
 ## 解析器只支持这里用到的 TOML 子集（`[[表]]` + 引号字符串 / 布尔值），
 ## 见 `buildSrc/src/main/kotlin/accountsx/build/Toml.kt`。
@@ -119,6 +121,7 @@ fabricApi = "0.160.5"
 modmenu = "21.0.0-beta.1"
 java = "25"
 obfuscated = false
+clientGametest = true
 
 [[authlib]]
 version = "4.0.43"

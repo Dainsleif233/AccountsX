@@ -55,6 +55,26 @@ dependencies {
     add("implementation", project(":adapters:authlib:${adapter.authlib}"))
 }
 
+// Client game tests (REFACTORING/10-testing-strategy.md §5). Only versions whose
+// fabric-api ships fabric-client-gametest-api-v1 participate; the shared test sources
+// in src/client-gametest are compiled once per participating version against that
+// version's own Minecraft, so they must stick to the cross-version API intersection.
+if (adapter.clientGametest) {
+    Loom.configureClientGameTests(project)
+
+    val gametestImplementation = if (adapter.obfuscated) "modGametestImplementation" else "gametestImplementation"
+    val fabricApiVersion = "${adapter.fabricApi}+${adapter.version.split(Regex("-"), 2)[0]}"
+
+    dependencies.addProvider(gametestImplementation, provider {
+        Loom.fabricApiModule(project, "fabric-client-gametest-api-v1", fabricApiVersion)
+    })
+
+    sourceSets.named("gametest") {
+        java.srcDir(rootProject.file("src/client-gametest/java"))
+        resources.srcDir(rootProject.file("src/client-gametest/resources"))
+    }
+}
+
 java.withSourcesJar()
 
 val generatedSourcesDir = layout.buildDirectory.dir("generated/adapter-sources/main/java")
