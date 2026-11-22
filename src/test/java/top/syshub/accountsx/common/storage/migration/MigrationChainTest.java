@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * P2.2：迁移链接口骨架的测试。具体迁移实现（0→1 … 3→4）在 P2.3 落地并各自有跳测试；
+ * 迁移链接口骨架的测试。具体迁移实现（0→1 … 3→4）各自有跳测试；
  * 本类锁住链本身的推进 / 回写 / 防死循环语义。
  */
 class MigrationChainTest {

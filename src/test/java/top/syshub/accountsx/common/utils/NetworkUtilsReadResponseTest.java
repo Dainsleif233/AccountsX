@@ -14,7 +14,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 现状快照测试：{@link NetworkUtils#readResponse} 的 charset 解析行为。
- * 作为 P1–P3 重构的安全网。
  *
  * <p>通过构造 {@code HttpResponse<byte[]>} 的匿名实现来隔离网络层，
  * 只测试 charset 提取逻辑。所有 Reader 均经 {@link #readAll} 统一以

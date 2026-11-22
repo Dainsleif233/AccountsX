@@ -20,7 +20,7 @@ import top.syshub.accountsx.common.auth.YggdrasilFixtures;
 import top.syshub.accountsx.common.auth.yggdrasil.YggdrasilDeviceCodeFlow;
 
 /**
- * P3.1 注册表：探测去重（同服务器多账号只探测一次）、元数据内存缓存、
+ * 注册表：探测去重（同服务器多账号只探测一次）、元数据内存缓存、
  * stale 降级、servers[] 往返（迁移形状不动）。网关全假，无网络。
  */
 class AuthServerRegistryTest {

@@ -6,21 +6,22 @@ import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/** Guards the authlib API shapes this adapter compiles against but cannot express in types. */
 class AuthlibBridgeContractTest {
     @Test
-    void reflectionTargetsExist() throws Exception {
-        Class<?> yas = Class.forName("com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService");
-        assertThat(yas).isNotNull();
-
-        Class<?> ymss = Class.forName("com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService");
-        Method ut = ymss.getMethod("unpackTextures", Class.forName("com.mojang.authlib.properties.Property"));
-        assertThat(ut).isNotNull();
-
-        Method cms = yas.getMethod("createMinecraftSessionService");
-        assertThat(cms).isNotNull();
-
+    void environmentShape() throws Exception {
         Class<?> env = Class.forName("com.mojang.authlib.Environment");
         assertThat(env.isRecord()).isTrue();
         assertThat(env.getRecordComponents()).hasSize(3);
+    }
+
+    @Test
+    void signatureStateReflectionTarget() throws Exception {
+        // AuthlibAdapterImpl resolves this private method lazily via MethodHandles,
+        // so compilation does not guard it — the lookup must match this exact shape.
+        Class<?> session = Class.forName("com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService");
+        Method method = session.getDeclaredMethod("getPropertySignatureState",
+                Class.forName("com.mojang.authlib.properties.Property"));
+        assertThat(method.getReturnType().getName()).isEqualTo("com.mojang.authlib.SignatureState");
     }
 }

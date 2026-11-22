@@ -15,7 +15,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * P1.3 安全网：{@link MicrosoftConstants#computeMicrosoftPublicKeys(HttpGateway)} 可用假网关驱动，
+ * 安全网：{@link MicrosoftConstants#computeMicrosoftPublicKeys(HttpGateway)} 可用假网关驱动，
  * 验证 Microsoft 公钥获取路径的注入缝（无需真实网络，也无需 RSA 硬编码 fixture）。
  */
 class MicrosoftConstantsGatewayTest {

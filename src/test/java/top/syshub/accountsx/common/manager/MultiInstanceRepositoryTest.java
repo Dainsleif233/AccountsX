@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 多实例协作（P6）：两个仓储指向同一份配置文件，模拟两个客户端同时运行。
+ * 多实例协作：两个仓储指向同一份配置文件，模拟两个客户端同时运行。
  *
  * <p>这里不启动 {@link CoordinationService} 的后台线程：协调器的线程只负责"尽快发现"，
  * 而正确性来自写入时持锁合并、用令牌前对账。把线程关掉反而让断言确定。</p>

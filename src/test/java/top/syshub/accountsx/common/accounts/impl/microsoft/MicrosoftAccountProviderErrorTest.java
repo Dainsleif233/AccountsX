@@ -12,7 +12,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 令牌端点错误体的可读性（复检 P2）：微软侧 refresh 与设备码轮询都要能解析
+ * 令牌端点错误体的可读性：微软侧 refresh 与设备码轮询都要能解析
  * RFC 6749 §5.2 的 {@code error} / {@code error_description}，且 error 非
  * 字符串时给出「不可读」消息而不是 UnsupportedOperationException。
  */

@@ -9,7 +9,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 现状快照测试：{@link SkinURLVerifier} 的域名白名单/黑名单逻辑。
- * 作为 P1–P3 重构的安全网。
  */
 class SkinURLVerifierTest {
 

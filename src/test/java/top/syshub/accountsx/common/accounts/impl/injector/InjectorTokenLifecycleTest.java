@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 令牌生命周期：启动复用（B4）与删除撤销（B13）。
+ * 令牌生命周期：启动复用与删除撤销。
  *
  * <p>两件事必须在 provider 层验证，因为它们都是「发哪个请求、失败怎么办」的决定：复用走
  * {@code /authserver/validate}（不轮换令牌），撤销走 {@code /authserver/invalidate}（失败必须静默）。</p>

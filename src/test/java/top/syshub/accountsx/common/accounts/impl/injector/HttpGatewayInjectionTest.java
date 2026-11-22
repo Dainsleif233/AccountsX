@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * P1.3 安全网：证明网络层已可注入 —— 认证流程可在单测中用假 {@link HttpGateway} 驱动，
+ * 安全网：证明网络层已可注入 —— 认证流程可在单测中用假 {@link HttpGateway} 驱动，
  * 无需真实网络或 MC 适配器。
  *
  * <p>用 {@link AuthlibInjectorAccountProvider#refresh} 的非 OAuth 单 profile 路径：

@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * P2.4 仓储测试：集合语义、标脏合并写、新旧映射往返、首启动旧配置触发迁移。
+ * 仓储测试：集合语义、标脏合并写、新旧映射往返、首启动旧配置触发迁移。
  * 全程 jimfs；标脏写走真实 TaskScheduler 串行通道（用轮询等写任务落地）。
  */
 class AccountRepositoryTest {
@@ -476,7 +476,7 @@ class AccountRepositoryTest {
         AccountRepository repository = new AccountRepository(store(MigrationChain.EMPTY));
         repository.initialize(null, null);
 
-        // P3.1：注册表装载 servers 条目（builtin mojang/offline 不再补齐）
+        // 注册表装载 servers 条目（builtin mojang/offline 不再补齐）
         assertThat(repository.authServers().byApiRoot("https://example.invalid/api/yggdrasil")).isNotNull();
         assertThat(repository.authServers().servers()).hasSize(1);
         // 装载本身不标脏；下一次快照把固定条目写回磁盘

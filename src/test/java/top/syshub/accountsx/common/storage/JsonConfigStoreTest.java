@@ -27,7 +27,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * P2.2 存储层测试（05 文档 1.3b 的"读失败不覆写"是本类核心断言）。
+ * 存储层测试（"读失败不覆写"是本类核心断言）。
  * 全程 jimfs，不碰真实磁盘；所有凭据值用 fake- 前缀。
  */
 class JsonConfigStoreTest {
@@ -69,7 +69,7 @@ class JsonConfigStoreTest {
         return map::get;
     }
 
-    // ── 路径解析（决策 D3） ──────────────────────────────────────────
+    // ── 路径解析 ──────────────────────────────────────────
 
     @Test
     void resolvePath_prefersAccountsxConfig() {
@@ -104,7 +104,7 @@ class JsonConfigStoreTest {
         assertThat(root.version()).isEqualTo(ConfigStore.CURRENT_VERSION);
         assertThat(root.servers()).isEmpty();
         assertThat(root.accounts()).isEmpty();
-        // 首次运行落盘空配置（08 文档）；旧实现的问题不是"写空配置"，而是"读失败后也写"
+        // 首次运行落盘空配置；旧实现的问题不是"写空配置"，而是"读失败后也写"
         assertThat(Files.exists(path)).isTrue();
         assertThat(store(MigrationChain.EMPTY).isReadOnly()).isFalse();
     }
@@ -271,7 +271,7 @@ class JsonConfigStoreTest {
 
     @Test
     void load_afterMigration_persistsUpgradedFile() throws IOException {
-        // P2.3 回写语义：迁移成功后立刻落盘，不依赖调用方 save() 自愈
+        // 回写语义：迁移成功后立刻落盘，不依赖调用方 save() 自愈
         Files.createDirectories(path.getParent());
         Files.writeString(path, "{\"version\":3,\"accounts\":[{\"type\":\"offline\"}]}", StandardCharsets.UTF_8);
 

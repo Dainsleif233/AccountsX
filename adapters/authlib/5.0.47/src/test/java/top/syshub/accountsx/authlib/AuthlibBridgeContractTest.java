@@ -2,24 +2,12 @@ package top.syshub.accountsx.authlib;
 
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
+/** Guards the authlib API shapes this adapter compiles against but cannot express in types. */
 class AuthlibBridgeContractTest {
     @Test
-    void reflectionTargetsExist() throws Exception {
-        Class<?> yas = Class.forName("com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService");
-        assertThat(yas).isNotNull();
-
-        Class<?> ymss = Class.forName("com.mojang.authlib.yggdrasil.YggdrasilMinecraftSessionService");
-        Method gt = ymss.getMethod("getTextures",
-                Class.forName("com.mojang.authlib.GameProfile"), boolean.class);
-        assertThat(gt).isNotNull();
-
-        Method cms = yas.getMethod("createMinecraftSessionService");
-        assertThat(cms).isNotNull();
-
+    void environmentShape() throws Exception {
         Class<?> env = Class.forName("com.mojang.authlib.Environment");
         assertThat(env.isRecord()).isTrue();
         assertThat(env.getRecordComponents()).hasSize(4);

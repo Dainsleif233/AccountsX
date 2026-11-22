@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * P1.4 安全网：验证头像落盘缓存（决策 D4）的内容哈希命名与读写往返。
+ * 安全网：验证头像落盘缓存的内容哈希命名与读写往返。
  *
  * <p>用 {@code accountsx.cache.dir} 系统属性把缓存根指到临时目录，避免触碰真实
  * {@code ~/.cache/accountsx/avatars}。{@link AvatarCache} 本身不引用 AWT / ImageIO，

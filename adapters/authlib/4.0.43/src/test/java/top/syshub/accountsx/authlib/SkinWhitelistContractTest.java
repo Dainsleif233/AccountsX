@@ -13,7 +13,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 行为契约：服务器根文档声明的 skinDomains 之外的贴图必须被丢弃（P5.4）。
+ * 行为契约：服务器根文档声明的 skinDomains 之外的贴图必须被丢弃。
  *
  * <p>只断言外部可观察的结果（贴图有没有被丢），不依赖 authlib 内部实现细节。</p>
  */

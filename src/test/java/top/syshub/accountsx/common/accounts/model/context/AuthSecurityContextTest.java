@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 针对 {@link AuthSecurityContext#shouldBlockSkinUrl(String)} 的测试（1.12 重命名修复）。
- * 作为 P1–P3 重构的安全网：方法名与语义一致——返回 true 表示应拦截。
+ * 安全网：方法名与语义一致——返回 true 表示应拦截。
  */
 class AuthSecurityContextTest {
 

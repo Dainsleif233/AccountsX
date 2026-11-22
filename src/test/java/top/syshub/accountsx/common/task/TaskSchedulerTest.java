@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * P1.2 任务调度重写的安全网：阻塞队列串行通道、有界并行池、正确中断语义、ThreadLocal 线程标记、
+ * 任务调度的安全网：阻塞队列串行通道、有界并行池、正确中断语义、ThreadLocal 线程标记、
  * 以及 {@link CompletableFuture} 返回。所有用例只走成功路径或受控中断，避免触发适配器 toast（测试无适配器）。
  */
 class TaskSchedulerTest {

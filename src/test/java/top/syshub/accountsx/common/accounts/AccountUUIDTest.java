@@ -11,7 +11,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 现状快照测试：{@link AccountUUID} 的解析与序列化行为。
- * 作为 P1–P3 重构的安全网。
  */
 class AccountUUIDTest {
 

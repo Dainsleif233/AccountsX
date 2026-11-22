@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * P2.3 迁移链测试（08 文档测试清单：每跳一个用例 + v0→4 端到端 + 方案 C 场景矩阵）。
+ * 迁移链测试：每跳一个用例 + v0→4 端到端 + 历史载荷场景矩阵。
  * 全程 jimfs；所有凭据值 fake- 前缀。
  */
 class StandardMigrationsTest {

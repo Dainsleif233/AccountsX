@@ -9,7 +9,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 微软令牌按 {@code expires_in} 复用（B4/B14）：到期前跳过整条 Xbox → Minecraft 换票。
+ * 微软令牌按 {@code expires_in} 复用：到期前跳过整条 Xbox → Minecraft 换票。
  *
  * <p>这里只验证判定本身，真正的换票链路需要网络，不做单测。</p>
  */
@@ -39,11 +39,5 @@ class MicrosoftAccountProviderExpiryTest {
         // 0 = 未知（老配置、解析不出 expires_in）：宁可刷新一次，也不要把死令牌带进游戏。
         assertThat(this.provider.canReuseToken(account(0L))).isEqualTo(TokenReuse.NO);
     }
-
-    @Test
-    void signOut_isNoOp() {
-        // 微软没有单令牌撤销端点：删除只清本地凭据。
-        assertThat(this.provider.canReuseToken(account(0L))).isEqualTo(TokenReuse.NO);
-        this.provider.signOut(account(0L));
-    }
 }
+

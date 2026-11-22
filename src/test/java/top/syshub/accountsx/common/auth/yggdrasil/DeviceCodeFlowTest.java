@@ -35,7 +35,7 @@ import top.syshub.accountsx.common.auth.oauth.AccountOAuth;
 import top.syshub.accountsx.common.auth.oauth.OAuthEndpoints;
 
 /**
- * 两步式 device-code（P5 外置登录界面所用 API）：取码与轮询分离，取消可打断。
+ * 两步式 device-code（外置登录界面所用 API）：取码与轮询分离，取消可打断。
  * fixture 一律 fake- 前缀，无任何真实凭据；id_token 用本地生成的 RSA 密钥对真实签名，
  * 公钥经 stub 的 jwks 端点发布。
  */

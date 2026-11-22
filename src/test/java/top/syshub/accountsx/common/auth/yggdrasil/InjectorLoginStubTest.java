@@ -34,8 +34,8 @@ import top.syshub.accountsx.common.auth.oauth.AccountOAuth;
 import top.syshub.accountsx.common.auth.YggdrasilFixtures;
 
 /**
- * P3.1 端到端（05 文档 1.4b 最简 Yggdrasil stub）：密码登录 / device-code 登录 / OAuth 刷新
- * 全部打真 HTTP stub，断言请求次数——"同服务器多账号只探测一次"（03 路线图 P3.1 验收）。
+ * 端到端（最简 Yggdrasil stub）：密码登录 / device-code 登录 / OAuth 刷新
+ * 全部打真 HTTP stub，断言请求次数——"同服务器多账号只探测一次"。
  * fixture 一律 fake- 前缀，无任何真实凭据。
  */
 class InjectorLoginStubTest {
@@ -221,7 +221,7 @@ class InjectorLoginStubTest {
         assertThat(account.getLoginToken()).startsWith(AccountOAuth.PREFIX);
         assertThat(account.getLoginToken()).contains("fake-refresh2");
         assertThat(account.getAccountStorage().getPlayerName()).isEqualTo("Alex");
-        // P1：token 响应的 expires_in=3600 要变成启动复用判据（60 秒安全余量内为正）
+        // token 响应的 expires_in=3600 要变成启动复用判据（60 秒安全余量内为正）
         assertThat(account.getAccountStorage().getExpiresAt())
                 .isPositive()
                 .isLessThan(System.currentTimeMillis() + 3_600_000L);
@@ -247,7 +247,7 @@ class InjectorLoginStubTest {
         assertThat(account.getLoginToken()).startsWith(AccountOAuth.PREFIX);
         assertThat(account.getLoginToken()).contains("fake-refresh2");
         assertThat(count("POST /api/yggdrasil/oauth/token")).isEqualTo(1);
-        // P1：刷新轮换后的新令牌同样要带上 expires_at，否则下次启动仍会全量轮换
+        // 刷新轮换后的新令牌同样要带上 expires_at，否则下次启动仍会全量轮换
         assertThat(account.getAccountStorage().getExpiresAt())
                 .isPositive()
                 .isLessThan(System.currentTimeMillis() + 3_600_000L);
