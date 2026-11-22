@@ -1,0 +1,45 @@
+name: Game tests (full sweep)
+
+# Nightly sweep across all 7 adapters that have a client-gametest API. PRs only
+# run three representatives (see ci.yml); this catches regressions in the four
+# versions not exercised on every PR. Also runnable on demand.
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: gametest-nightly
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gametest:
+    name: Game tests (${{ matrix.mc }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mc: ['1.21.4', '1.21.6', '1.21.9', '1.21.11', '26.1', '26.2', '26.3']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+      - name: Run client game tests
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          :adapters:mc:${{ matrix.mc }}:runClientGameTest
+          :adapters:mc:${{ matrix.mc }}:runClientAuthlibInjectorGameTest
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gametest-${{ matrix.mc }}
+          path: |
+            adapters/mc/${{ matrix.mc }}/build/run/clientGameTest/screenshots
+            adapters/mc/${{ matrix.mc }}/build/run/clientGameTest/logs/latest.log
+            adapters/mc/${{ matrix.mc }}/build/run/clientAuthlibInjectorGameTest/screenshots
+            adapters/mc/${{ matrix.mc }}/build/run/clientAuthlibInjectorGameTest/logs/latest.log
+          if-no-files-found: ignore

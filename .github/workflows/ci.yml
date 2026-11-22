@@ -56,3 +56,39 @@ jobs:
           name: AccountsX-universal
           path: build/libs/AccountsX-${{ steps.build-version.outputs.version }}.jar
           archive: false
+
+  # Client game tests launch a real Minecraft client per adapter (Fabric
+  # client-gametest). Only the 7 adapters with a client-gametest API can run
+  # these; on PRs we exercise three representatives spanning both mapping paths
+  # (1.21.4 obfuscated, 26.1 first non-obfuscated, 26.3 latest). The full
+  # 7-version sweep runs nightly (gametest-nightly.yml). Loom wraps the client
+  # in xvfb automatically when CI=true on Linux; assertions are widget-level,
+  # not pixel-level, so software rendering (llvmpipe) does not flake them.
+  gametest:
+    name: Game tests (${{ matrix.mc }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mc: ['1.21.4', '26.1', '26.3']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-build
+      - name: Run client game tests
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          :adapters:mc:${{ matrix.mc }}:runClientGameTest
+          :adapters:mc:${{ matrix.mc }}:runClientAuthlibInjectorGameTest
+      - name: Upload screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gametest-${{ matrix.mc }}
+          path: |
+            adapters/mc/${{ matrix.mc }}/build/run/clientGameTest/screenshots
+            adapters/mc/${{ matrix.mc }}/build/run/clientGameTest/logs/latest.log
+            adapters/mc/${{ matrix.mc }}/build/run/clientAuthlibInjectorGameTest/screenshots
+            adapters/mc/${{ matrix.mc }}/build/run/clientAuthlibInjectorGameTest/logs/latest.log
+          if-no-files-found: ignore
+
