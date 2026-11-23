@@ -87,6 +87,9 @@ if (adapter.clientGametest) {
     val downloadInjector = project.tasks.register("downloadAuthlibInjector") {
         group = "fabric"
         outputs.file(injectorJar)
+        // jar 已在就判 UP-TO-DATE：否则无输入的任务永远 out-of-date，Gradle 会先清掉声明的输出
+        // （把已缓存/手工放置的 jar 删了）再进 doLast，「存在即跳过」失效，离线环境必撞下载。
+        outputs.upToDateWhen { injectorJar.exists() }
         doLast {
             if (!injectorJar.exists()) {
                 injectorJar.parentFile.mkdirs()
