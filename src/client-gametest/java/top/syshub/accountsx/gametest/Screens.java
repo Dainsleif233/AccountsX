@@ -59,4 +59,43 @@ public final class Screens {
             throw new AssertionError("No EditBox at index " + index);
         });
     }
+
+    public static net.minecraft.client.gui.components.ObjectSelectionList<?> accountList(Minecraft client) {
+        for (var child : current(client).children()) {
+            if (child instanceof net.minecraft.client.gui.components.ObjectSelectionList<?> list) {
+                return list;
+            }
+        }
+        throw new AssertionError("Account screen has no account list widget");
+    }
+
+    public static int listSize(ClientGameTestContext context) {
+        return context.computeOnClient(client -> accountList(client).children().size());
+    }
+
+    /** Click the body of row {@code index} (left of the action buttons) to select/switch that account. */
+    public static void clickRow(ClientGameTestContext context, int index) {
+        clickAt(context, client -> {
+            var list = accountList(client);
+            return new double[] { list.getRowLeft() + 40, list.getRowTop(index) + 15 };
+        });
+    }
+
+    /** Click the 'x' delete action of row {@code index}. */
+    public static void deleteRow(ClientGameTestContext context, int index) {
+        clickAt(context, client -> {
+            var list = accountList(client);
+            return new double[] { list.getRowRight() - client.font.width("x"), list.getRowTop(index) + 1 + 15 };
+        });
+    }
+
+    private static void clickAt(ClientGameTestContext context, java.util.function.Function<Minecraft, double[]> guiPoint) {
+        double[] point = context.computeOnClient(guiPoint::apply);
+        double scale = context.computeOnClient(client -> client.getWindow().getGuiScale());
+        // setCursorPos takes window pixels; GUI coordinates must be scaled. MOUSE_BUTTON_LEFT
+        // differs between GLFW (0) and SDL (1) generations, so never hardcode the button number.
+        context.getInput().setCursorPos(point[0] * scale, point[1] * scale);
+        context.getInput().pressMouse(com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+        context.getInput().releaseMouse(com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT);
+    }
 }

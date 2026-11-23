@@ -1,9 +1,7 @@
 package top.syshub.accountsx.gametest;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
-import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.TitleScreen;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import top.syshub.accountsx.adapters.mc.ui.OfflineLoginScreen;
@@ -11,77 +9,86 @@ import top.syshub.accountsx.common.accounts.BaseAccount;
 import top.syshub.accountsx.common.accounts.model.AccountType;
 import top.syshub.accountsx.common.manager.AccountManager;
 
+import java.util.UUID;
+
 /**
- * Acceptance points 4/5 (offline branch): add an offline account through the real
- * login UI, verify the switch writes the Minecraft session variables, then remove
- * it through the list's delete action. Microsoft login needs a human and stays manual.
+ * Acceptance points 4/5 (offline branch): add offline accounts through the real login
+ * UI, switch between them by clicking the list (not just the login auto-switch), verify
+ * the switch writes both the name and the UUID into Minecraft's session, then delete the
+ * CURRENT account and verify the game falls back to the launcher session. Microsoft login
+ * needs a human and stays manual.
  */
 public class OfflineAccountLifecycleGameTest implements FabricClientGameTest {
-    private static final String PLAYER = "GtOffline";
+    private static final String PLAYER_A = "GtOffline";
+    private static final String PLAYER_B = "GtOfflineB";
 
     @Override
     public void runTest(ClientGameTestContext context) {
         context.waitForScreen(TitleScreen.class);
+        // The launcher session we must fall back to after deleting the current account.
+        String launcherName = context.computeOnClient(client -> client.getUser().getName());
         context.setScreen(() -> new AccountScreen(new TitleScreen()));
 
-        context.clickScreenButton("accountsx.account.filter.offline");
-        context.clickScreenButton("accountsx.account.general.add_account");
-        context.waitForScreen(OfflineLoginScreen.class);
-
-        // Focus the player-name box (first EditBox) and type through the real input path.
-        Screens.focusEditBox(context, 0);
-        context.getInput().typeChars(PLAYER);
-        String typed = Screens.editBoxValue(context, 0);
-        if (!PLAYER.equals(typed)) {
-            throw new AssertionError("Name input did not take the typed text: '" + typed + "'");
+        UUID uuidA = addOffline(context, PLAYER_A);
+        addOffline(context, PLAYER_B);
+        // Offline filter view now lists [A, B]; B was auto-selected by its login.
+        if (Screens.listSize(context) != 2) {
+            throw new AssertionError("Offline view should list two accounts after adding both");
         }
 
-        context.clickScreenButton("accountsx.account.general.login");
-        context.waitForScreen(AccountScreen.class);
-
-        // Acceptance 5: the switch must land in Minecraft's own session variables.
-        context.waitFor(client -> client.getUser().getName().equals(PLAYER));
+        // Acceptance 5: switch back to A by CLICKING its row, and verify both session
+        // variables (name AND profile UUID) — a broken list-switch or wrong credential
+        // would leave the name or the UUID stale and must fail here.
+        Screens.clickRow(context, 0);
+        context.waitFor(client -> client.getUser().getName().equals(PLAYER_A));
+        UUID switchedUuid = context.computeOnClient(client -> client.getUser().getProfileId());
+        if (!uuidA.equals(switchedUuid)) {
+            throw new AssertionError("Clicking row A wrote the wrong profile UUID: " + switchedUuid + " != " + uuidA);
+        }
         BaseAccount current = AccountManager.getCurrentAccount();
-        if (current == null || current.getAccountType() != AccountType.OFFLINE
-                || !PLAYER.equals(current.getAccountStorage().getPlayerName())) {
-            throw new AssertionError("Current account is not the freshly added offline account: " + current);
-        }
-        if (listEntries(context) != 1) {
-            throw new AssertionError("Account list should show exactly one entry after login");
+        if (current == null || !PLAYER_A.equals(current.getAccountStorage().getPlayerName())) {
+            throw new AssertionError("Current account is not A after clicking its row: " + current);
         }
 
-        // Delete through the list's 'x' action: right edge of row 0, middle text line.
-        double[] deleteAt = context.computeOnClient(client -> {
-            ObjectSelectionList<?> list = findList(client);
-            int x = list.getRowRight() - client.font.width("x");
-            int y = list.getRowTop(0) + 1 + 15;
-            return new double[] { x, y };
+        // Delete the CURRENT account (A): the pointer must fall back to the launcher
+        // session and Minecraft's user must revert to the launcher name. B survives.
+        Screens.deleteRow(context, 0);
+        context.waitFor(client -> {
+            BaseAccount c = AccountManager.getCurrentAccount();
+            return c != null && c.getAccountType() == AccountType.ENV_DEFAULT;
         });
-        double scale = context.computeOnClient(client -> client.getWindow().getGuiScale());
-        context.getInput().setCursorPos(deleteAt[0] * scale, deleteAt[1] * scale);
-        context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
-        context.getInput().releaseMouse(InputConstants.MOUSE_BUTTON_LEFT);
-
-        context.waitFor(client -> AccountManager.getAccountsView().stream()
-            .noneMatch(account -> account.getAccountType() == AccountType.OFFLINE));
-        if (listEntries(context) != 0) {
-            throw new AssertionError("Account list should be empty after deleting the only account");
+        context.waitFor(client -> client.getUser().getName().equals(launcherName));
+        if (Screens.listSize(context) != 1) {
+            throw new AssertionError("Offline view should still list B after deleting A");
         }
 
         context.takeScreenshot("offline-account-lifecycle");
         context.setScreen(TitleScreen::new);
     }
 
-    private static int listEntries(ClientGameTestContext context) {
-        return context.computeOnClient(client -> findList(client).children().size());
-    }
-
-    private static ObjectSelectionList<?> findList(net.minecraft.client.Minecraft client) {
-        for (var child : Screens.current(client).children()) {
-            if (child instanceof ObjectSelectionList<?> list) {
-                return list;
-            }
+    /** Adds an offline account through the login UI and returns its profile UUID. */
+    private static UUID addOffline(ClientGameTestContext context, String name) {
+        context.clickScreenButton("accountsx.account.filter.offline");
+        context.clickScreenButton("accountsx.account.general.add_account");
+        context.waitForScreen(OfflineLoginScreen.class);
+        Screens.focusEditBox(context, 0);
+        context.getInput().typeChars(name);
+        if (!name.equals(Screens.editBoxValue(context, 0))) {
+            throw new AssertionError("Name input did not take the typed text for " + name);
         }
-        throw new AssertionError("Account screen has no account list widget");
+        context.clickScreenButton("accountsx.account.general.login");
+        context.waitForScreen(AccountScreen.class);
+        context.waitFor(client -> client.getUser().getName().equals(name));
+        BaseAccount current = AccountManager.getCurrentAccount();
+        if (current == null || current.getAccountType() != AccountType.OFFLINE
+                || !name.equals(current.getAccountStorage().getPlayerName())) {
+            throw new AssertionError("Current account is not the freshly added " + name + ": " + current);
+        }
+        UUID uuid = current.getAccountStorage().getPlayerUUID();
+        UUID sessionUuid = context.computeOnClient(client -> client.getUser().getProfileId());
+        if (!uuid.equals(sessionUuid)) {
+            throw new AssertionError("Login auto-switch wrote the wrong UUID for " + name);
+        }
+        return uuid;
     }
 }

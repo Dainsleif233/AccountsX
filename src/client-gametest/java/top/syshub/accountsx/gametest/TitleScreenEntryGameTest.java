@@ -8,6 +8,10 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
 import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
+import top.syshub.accountsx.common.accounts.BaseAccount;
+import top.syshub.accountsx.common.manager.AccountManager;
+
+import java.util.List;
 
 /**
  * Acceptance point 2: the title-screen entry icon opens the account list with
@@ -35,6 +39,23 @@ public class TitleScreenEntryGameTest implements FabricClientGameTest {
             if (entry == null) {
                 throw new AssertionError("AccountsX entry icon missing from the title screen");
             }
+            // The icon must carry a sprite, not render as a blank button. SpriteIconButton
+            // stores it in a 'sprite' field; assert it was assigned (a missing texture file
+            // still shows in the captured screenshot, which is reviewed as an artifact).
+            for (Class<?> c = entry.getClass(); c != null; c = c.getSuperclass()) {
+                try {
+                    java.lang.reflect.Field sprite = c.getDeclaredField("sprite");
+                    sprite.setAccessible(true);
+                    if (sprite.get(entry) == null) {
+                        throw new AssertionError("Entry icon has no sprite assigned");
+                    }
+                    break;
+                } catch (NoSuchFieldException ignored) {
+                    // walk up to SpriteIconButton
+                } catch (IllegalAccessException ex) {
+                    throw new AssertionError("Cannot read entry icon sprite", ex);
+                }
+            }
             return new double[] {
                 entry.getX() + entry.getWidth() / 2.0,
                 entry.getY() + entry.getHeight() / 2.0
@@ -61,6 +82,21 @@ public class TitleScreenEntryGameTest implements FabricClientGameTest {
                     .equals(Component.translatable("accountsx.account.filter.all").getString())));
         if (!hasAllFilter) {
             throw new AssertionError("Account list is missing the 'all accounts' filter button");
+        }
+
+        // Opening the screen is not enough: the list must render real rows, not open blank.
+        // The launcher (environment) account is always in the all-accounts view, so the widget
+        // must have built one entry per account and every row must carry a non-empty name.
+        int renderedRows = context.computeOnClient(client -> Screens.accountList(client).children().size());
+        List<BaseAccount> view = AccountManager.getAccountsView();
+        if (renderedRows < 1 || renderedRows != view.size()) {
+            throw new AssertionError("Account list rendered " + renderedRows + " rows for " + view.size() + " accounts");
+        }
+        for (BaseAccount account : view) {
+            String name = account.getAccountStorage().getPlayerName();
+            if (name == null || name.isEmpty()) {
+                throw new AssertionError("Account list row has an empty player name: " + account);
+            }
         }
 
         context.takeScreenshot("title-screen-entry-opens-account-list");
