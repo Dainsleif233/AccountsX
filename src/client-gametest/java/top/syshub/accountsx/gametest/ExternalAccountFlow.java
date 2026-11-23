@@ -36,7 +36,7 @@ final class ExternalAccountFlow {
         Screens.deleteRow(context, 0);
         context.waitFor(client -> AccountManager.getAccountsView().stream()
             .noneMatch(account -> account.getAccountType() == AccountType.AUTHLIB_INJECTOR));
-        context.waitFor(client -> fake.hits("POST /authserver/invalidate") >= 1);
+        context.waitFor(client -> fake.validInvalidates() >= 1);
         if (AccountManager.authServers().byApiRoot(fake.base) == null) {
             throw new AssertionError("Deleting one account must not remove its server");
         }
@@ -55,7 +55,7 @@ final class ExternalAccountFlow {
         if (context.tryClickScreenButton("GtYggdrasil")) {
             throw new AssertionError("Server filter button survived removal");
         }
-        context.waitFor(client -> fake.hits("POST /authserver/invalidate") >= 2);
+        context.waitFor(client -> fake.validInvalidates() >= 2);
     }
 
     private static void addServer(ClientGameTestContext context, FakeYggdrasilServer fake) {
@@ -75,11 +75,11 @@ final class ExternalAccountFlow {
         context.clickScreenButton("accountsx.account.general.add_account");
         context.waitForScreen(ExternalLoginScreen.class);
         Screens.focusEditBox(context, 0);
-        context.getInput().typeChars("fake-user");
+        context.getInput().typeChars(FakeYggdrasilServer.USERNAME);
         Screens.focusEditBox(context, 1);
-        context.getInput().typeChars("fake-pass");
-        if (!"fake-user".equals(Screens.editBoxValue(context, 0))
-                || !"fake-pass".equals(Screens.editBoxValue(context, 1))) {
+        context.getInput().typeChars(FakeYggdrasilServer.PASSWORD);
+        if (!FakeYggdrasilServer.USERNAME.equals(Screens.editBoxValue(context, 0))
+                || !FakeYggdrasilServer.PASSWORD.equals(Screens.editBoxValue(context, 1))) {
             throw new AssertionError("Login inputs did not take the typed text");
         }
         context.clickScreenButton("accountsx.account.general.login");
@@ -100,6 +100,13 @@ final class ExternalAccountFlow {
         }
         if (!"fake-access".equals(current.getAccountStorage().getAccessToken())) {
             throw new AssertionError("External account did not persist the issued access token");
+        }
+        // The token must reach Minecraft's installed session, not just the account model:
+        // a switch that writes the model but installs a stale User would still play with the
+        // old (invalidated) token.
+        String sessionToken = context.computeOnClient(client -> client.getUser().getAccessToken());
+        if (!"fake-access".equals(sessionToken)) {
+            throw new AssertionError("Minecraft session did not get the issued access token: " + sessionToken);
         }
         if (Screens.listSize(context) != 1) {
             throw new AssertionError("Server view should show exactly one account after login");

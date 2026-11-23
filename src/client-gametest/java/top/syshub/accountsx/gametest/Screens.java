@@ -73,6 +73,21 @@ public final class Screens {
         return context.computeOnClient(client -> accountList(client).children().size());
     }
 
+    /**
+     * Non-empty button labels of the current screen, top to bottom. The account-list rows live
+     * inside one ObjectSelectionList child, so this reads the sidebar filter buttons (and the
+     * add/remove/reorder buttons) — enough to assert the sidebar reflects the server order.
+     */
+    public static java.util.List<String> buttonLabelsByY(Minecraft client) {
+        return current(client).children().stream()
+                .filter(w -> w instanceof net.minecraft.client.gui.components.AbstractWidget)
+                .map(w -> (net.minecraft.client.gui.components.AbstractWidget) w)
+                .sorted(java.util.Comparator.comparingInt(net.minecraft.client.gui.components.AbstractWidget::getY))
+                .map(w -> w.getMessage().getString())
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
+
     /** Click the body of row {@code index} (left of the action buttons) to select/switch that account. */
     public static void clickRow(ClientGameTestContext context, int index) {
         clickAt(context, client -> {

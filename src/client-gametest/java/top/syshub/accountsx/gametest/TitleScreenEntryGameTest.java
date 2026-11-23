@@ -11,21 +11,23 @@ import top.syshub.accountsx.adapters.mc.ui.AccountScreen;
 import top.syshub.accountsx.common.accounts.BaseAccount;
 import top.syshub.accountsx.common.manager.AccountManager;
 
+import java.lang.reflect.Field;
 import java.util.List;
 
 /**
- * Acceptance point 2: the title-screen entry icon opens the account list with
- * the expected content. The entry button has an empty message (tooltip only),
- * so {@code clickScreenButton} cannot find it; locate it structurally and click
- * with real mouse input instead.
+ * Acceptance point 2: the title-screen entry icon renders and opens the account list with
+ * real content. The entry button has an empty message (tooltip only), so
+ * {@code clickScreenButton} cannot find it; locate it structurally and click with real
+ * mouse input. The title screen is captured BEFORE the click so the icon itself is reviewed.
  */
 public class TitleScreenEntryGameTest implements FabricClientGameTest {
     @Override
     public void runTest(ClientGameTestContext context) {
         context.waitForScreen(TitleScreen.class);
+        // Capture the title screen first: a screenshot taken after opening the account list
+        // would not show whether the entry icon actually rendered.
+        context.takeScreenshot("title-screen-entry-icon");
 
-        // The only empty-message widget on the title screen is our entry icon:
-        // vanilla language/accessibility/friends buttons all carry text.
         double[] center = context.computeOnClient(client -> {
             AbstractWidget entry = null;
             for (var child : Screens.current(client).children()) {
@@ -39,30 +41,13 @@ public class TitleScreenEntryGameTest implements FabricClientGameTest {
             if (entry == null) {
                 throw new AssertionError("AccountsX entry icon missing from the title screen");
             }
-            // The icon must carry a sprite, not render as a blank button. SpriteIconButton
-            // stores it in a 'sprite' field; assert it was assigned (a missing texture file
-            // still shows in the captured screenshot, which is reviewed as an artifact).
-            for (Class<?> c = entry.getClass(); c != null; c = c.getSuperclass()) {
-                try {
-                    java.lang.reflect.Field sprite = c.getDeclaredField("sprite");
-                    sprite.setAccessible(true);
-                    if (sprite.get(entry) == null) {
-                        throw new AssertionError("Entry icon has no sprite assigned");
-                    }
-                    break;
-                } catch (NoSuchFieldException ignored) {
-                    // walk up to SpriteIconButton
-                } catch (IllegalAccessException ex) {
-                    throw new AssertionError("Cannot read entry icon sprite", ex);
-                }
-            }
+            assertSpritePresent(client, entry);
             return new double[] {
                 entry.getX() + entry.getWidth() / 2.0,
                 entry.getY() + entry.getHeight() / 2.0
             };
         });
 
-        // setCursorPos takes window pixels; GUI coordinates must be scaled.
         double scale = context.computeOnClient(client -> client.getWindow().getGuiScale());
         context.getInput().setCursorPos(center[0] * scale, center[1] * scale);
         // MOUSE_BUTTON_LEFT is 0 on GLFW versions (<=1.21.11) but 1 on SDL versions (26.x);
@@ -84,23 +69,119 @@ public class TitleScreenEntryGameTest implements FabricClientGameTest {
             throw new AssertionError("Account list is missing the 'all accounts' filter button");
         }
 
-        // Opening the screen is not enough: the list must render real rows, not open blank.
-        // The launcher (environment) account is always in the all-accounts view, so the widget
-        // must have built one entry per account and every row must carry a non-empty name.
-        int renderedRows = context.computeOnClient(client -> Screens.accountList(client).children().size());
+        // The list must render real rows, not open blank. Read the account each rendered row
+        // actually holds (the widget's own row data, not the global model) and require a name.
+        int renderedRows = context.computeOnClient(client -> {
+            var rows = Screens.accountList(client).children();
+            for (var row : rows) {
+                BaseAccount account = rowAccount(row);
+                String name = account.getAccountStorage().getPlayerName();
+                if (name == null || name.isEmpty()) {
+                    throw new AssertionError("Rendered account row has an empty player name: " + row);
+                }
+            }
+            return rows.size();
+        });
         List<BaseAccount> view = AccountManager.getAccountsView();
         if (renderedRows < 1 || renderedRows != view.size()) {
             throw new AssertionError("Account list rendered " + renderedRows + " rows for " + view.size() + " accounts");
         }
-        for (BaseAccount account : view) {
-            String name = account.getAccountStorage().getPlayerName();
-            if (name == null || name.isEmpty()) {
-                throw new AssertionError("Account list row has an empty player name: " + account);
-            }
-        }
 
         context.takeScreenshot("title-screen-entry-opens-account-list");
-        // The framework asserts every test finishes back on the title screen.
         context.setScreen(TitleScreen::new);
+    }
+
+    /** The icon must carry a sprite AND its texture resource must exist; a blank button fails. */
+    private static void assertSpritePresent(net.minecraft.client.Minecraft client, AbstractWidget entry) {
+        Object sprite = null;
+        boolean found = false;
+        for (Class<?> c = entry.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                Field field = c.getDeclaredField("sprite");
+                field.setAccessible(true);
+                sprite = field.get(entry);
+                found = true;
+                break;
+            } catch (NoSuchFieldException ignored) {
+                // walk up to SpriteIconButton
+            } catch (IllegalAccessException ex) {
+                throw new AssertionError("Cannot read entry icon sprite", ex);
+            }
+        }
+        if (!found) {
+            throw new AssertionError("Entry icon class hierarchy has no sprite field: " + entry.getClass());
+        }
+        if (sprite == null) {
+            throw new AssertionError("Entry icon has no sprite assigned");
+        }
+        // 26.x stores a WidgetSprites (get(false,false) -> enabled Identifier); 1.21.x stores the
+        // ResourceLocation directly. Either way, resolve the texture and require the resource exists.
+        Object identifier;
+        try {
+            identifier = sprite.getClass().getMethod("get", boolean.class, boolean.class).invoke(sprite, false, false);
+        } catch (NoSuchMethodException notWidgetSprites) {
+            identifier = sprite;
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError("Cannot resolve entry icon sprite identifier", ex);
+        }
+        if (!resourceExists(client, identifier)) {
+            throw new AssertionError("Entry icon sprite texture is missing: " + identifier);
+        }
+    }
+
+    /** Resolve a sprite identifier to its textures/gui/sprites PNG and require the resource stack is non-empty. */
+    private static boolean resourceExists(net.minecraft.client.Minecraft client, Object identifier) {
+        try {
+            String namespace = (String) identifier.getClass().getMethod("getNamespace").invoke(identifier);
+            String path = (String) identifier.getClass().getMethod("getPath").invoke(identifier);
+            String texturePath = "textures/gui/sprites/" + path + ".png";
+            Object location = newResourceLocation(client, namespace, texturePath);
+            Object manager = client.getResourceManager();
+            for (var method : manager.getClass().getMethods()) {
+                if (method.getName().equals("getResourceStack") && method.getParameterCount() == 1) {
+                    Object stack = method.invoke(manager, location);
+                    return stack instanceof List<?> list && !list.isEmpty();
+                }
+            }
+            throw new AssertionError("ResourceManager has no getResourceStack method");
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError("Cannot check entry icon texture resource", ex);
+        }
+    }
+
+    /** Build a ResourceLocation (1.21.x) or Identifier (26.x) via the version's fromNamespaceAndPath factory. */
+    private static Object newResourceLocation(net.minecraft.client.Minecraft client, String namespace, String path)
+            throws ReflectiveOperationException {
+        Object manager = client.getResourceManager();
+        Class<?> type = null;
+        for (var method : manager.getClass().getMethods()) {
+            if (method.getName().equals("getResourceStack") && method.getParameterCount() == 1) {
+                type = method.getParameterTypes()[0];
+                break;
+            }
+        }
+        if (type == null) {
+            throw new AssertionError("Cannot determine the resource location type");
+        }
+        return type.getMethod("fromNamespaceAndPath", String.class, String.class).invoke(null, namespace, path);
+    }
+
+    /** Read the BaseAccount a rendered list row holds (AccountEntry.account), proving rows carry real data. */
+    private static BaseAccount rowAccount(Object row) {
+        for (Class<?> c = row.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                Field field = c.getDeclaredField("account");
+                field.setAccessible(true);
+                Object value = field.get(row);
+                if (value instanceof BaseAccount account) {
+                    return account;
+                }
+            } catch (NoSuchFieldException ignored) {
+                // walk up
+            } catch (IllegalAccessException ex) {
+                throw new AssertionError("Cannot read account row data", ex);
+            }
+        }
+        throw new AssertionError("Account list row has no account field: " + row.getClass());
     }
 }

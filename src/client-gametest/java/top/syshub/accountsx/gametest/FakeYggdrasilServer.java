@@ -2,6 +2,7 @@ package top.syshub.accountsx.gametest;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -19,14 +21,24 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Minimal password-only Yggdrasil server for client gametests: root metadata,
  * authenticate/refresh/validate/invalidate and the session profile endpoint.
  * No OAuth discovery, so the login UI stays in password mode.
- * All credential values use the fake- prefix (AGENTS.md).
+ *
+ * <p>It validates the protocol, not just the path: authenticate must carry the right
+ * credentials and a clientToken, and refresh/validate/invalidate must echo that same
+ * clientToken with a token this server actually issued (drasl enforces this; a client
+ * that drops or rotates the clientToken wrongly gets 403). A wrong request therefore
+ * fails the flow instead of silently returning success. All values use the fake- prefix.
  */
 final class FakeYggdrasilServer implements AutoCloseable {
     static final String PLAYER = "GtExternal";
     static final String UUID32 = "11111111222233334444555566667777";
+    static final String USERNAME = "fake-user";
+    static final String PASSWORD = "fake-pass";
 
     private final HttpServer server;
     private final Map<String, AtomicInteger> hits = new ConcurrentHashMap<>();
+    private final Set<String> issuedTokens = ConcurrentHashMap.newKeySet();
+    private final AtomicInteger validInvalidates = new AtomicInteger();
+    private volatile String clientToken;
     final String base;
     final String name;
 
@@ -53,13 +65,52 @@ final class FakeYggdrasilServer implements AutoCloseable {
         server.createContext("/", exchange -> {
             String key = exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath();
             hits.computeIfAbsent(key, k -> new AtomicInteger()).incrementAndGet();
+            String raw = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            JsonObject req = raw.isEmpty() ? new JsonObject() : JsonParser.parseString(raw).getAsJsonObject();
             JsonObject body = null;
             int code = 200;
             switch (key) {
                 case "GET /" -> body = rootMeta(pem, name);
-                case "POST /authserver/authenticate" -> body = authResponse("fake-access");
-                case "POST /authserver/refresh" -> body = authResponse("fake-access-refreshed");
-                case "POST /authserver/validate", "POST /authserver/invalidate" -> code = 204;
+                case "POST /authserver/authenticate" -> {
+                    if (!USERNAME.equals(str(req, "username")) || !PASSWORD.equals(str(req, "password"))) {
+                        code = 403;
+                        body = error("ForbiddenOperationException", "Invalid credentials");
+                    } else {
+                        String token = str(req, "clientToken");
+                        if (token == null || token.isEmpty()) {
+                            code = 400;
+                            body = error("IllegalArgumentException", "Missing clientToken");
+                        } else {
+                            clientToken = token;
+                            body = authResponse("fake-access", token);
+                        }
+                    }
+                }
+                case "POST /authserver/refresh" -> {
+                    if (!tokenValid(req)) {
+                        code = 403;
+                        body = error("ForbiddenOperationException", "Invalid token");
+                    } else {
+                        body = authResponse("fake-access-refreshed", clientToken);
+                    }
+                }
+                case "POST /authserver/validate" -> {
+                    if (!tokenValid(req)) {
+                        code = 403;
+                        body = error("ForbiddenOperationException", "Invalid token");
+                    } else {
+                        code = 204;
+                    }
+                }
+                case "POST /authserver/invalidate" -> {
+                    if (!tokenValid(req)) {
+                        code = 403;
+                        body = error("ForbiddenOperationException", "Invalid token");
+                    } else {
+                        validInvalidates.incrementAndGet();
+                        code = 204;
+                    }
+                }
                 case "GET /sessionserver/session/minecraft/profile/" + UUID32 -> {
                     body = new JsonObject();
                     body.addProperty("id", UUID32);
@@ -80,12 +131,35 @@ final class FakeYggdrasilServer implements AutoCloseable {
         server.start();
     }
 
+    /** refresh/validate/invalidate must echo the clientToken from authenticate and a token we issued. */
+    private boolean tokenValid(JsonObject req) {
+        String token = str(req, "clientToken");
+        String access = str(req, "accessToken");
+        return clientToken != null && clientToken.equals(token) && access != null && issuedTokens.contains(access);
+    }
+
+    private static String str(JsonObject obj, String field) {
+        return obj.has(field) && !obj.get(field).isJsonNull() ? obj.get(field).getAsString() : null;
+    }
+
+    private static JsonObject error(String type, String message) {
+        JsonObject json = new JsonObject();
+        json.addProperty("error", type);
+        json.addProperty("errorMessage", message);
+        return json;
+    }
+
     int hits(String methodAndPath) {
         AtomicInteger count = hits.get(methodAndPath);
         return count == null ? 0 : count.get();
     }
 
-    private static JsonObject rootMeta(String pem, String name) {
+    /** Invalidates that passed protocol validation (a 403 still counts as a hit, not as a valid invalidate). */
+    int validInvalidates() {
+        return validInvalidates.get();
+    }
+
+    private JsonObject rootMeta(String pem, String name) {
         JsonObject meta = new JsonObject();
         meta.addProperty("serverName", name);
         JsonObject root = new JsonObject();
@@ -97,7 +171,8 @@ final class FakeYggdrasilServer implements AutoCloseable {
         return root;
     }
 
-    private static JsonObject authResponse(String accessToken) {
+    private JsonObject authResponse(String accessToken, String token) {
+        issuedTokens.add(accessToken);
         JsonObject profile = new JsonObject();
         profile.addProperty("name", PLAYER);
         profile.addProperty("id", UUID32);
@@ -105,7 +180,7 @@ final class FakeYggdrasilServer implements AutoCloseable {
         available.add(profile);
         JsonObject json = new JsonObject();
         json.addProperty("accessToken", accessToken);
-        json.addProperty("clientToken", "fake-client-token");
+        json.addProperty("clientToken", token);
         json.add("availableProfiles", available);
         // Server already bound the single profile: the UI must skip role selection.
         json.add("selectedProfile", profile);

@@ -2,7 +2,10 @@ package top.syshub.accountsx.gametest;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.TitleScreen;
+
+import java.util.UUID;
 
 /**
  * Acceptance point 6: the mod must keep working when a launcher loads
@@ -57,11 +60,51 @@ public class AuthlibInjectorCompatibilityGameTest implements FabricClientGameTes
         }
 
         try (FakeYggdrasilServer fake = new FakeYggdrasilServer(PORT)) {
+            // The external flow talks to the fake server through the mod's own HTTP gateway,
+            // and signOut uses that gateway too — neither proves the agent redirected authlib.
+            // Drive a profile fetch through Minecraft's INSTALLED session service (an authlib
+            // object the agent transformed): if redirection took effect it lands on the fake
+            // server's sessionserver endpoint, otherwise it goes to Mojang and never hits here.
+            assertAuthlibRedirected(context, fake);
             ExternalAccountFlow.run(context, fake);
             context.takeScreenshot("authlib-injector-compatibility");
         } catch (java.io.IOException e) {
             throw new AssertionError("Fake Yggdrasil server failed on port " + PORT, e);
         }
         context.setScreen(TitleScreen::new);
+    }
+
+    private static void assertAuthlibRedirected(ClientGameTestContext context, FakeYggdrasilServer fake) {
+        String profilePath = "GET /sessionserver/session/minecraft/profile/" + FakeYggdrasilServer.UUID32;
+        int before = fake.hits(profilePath);
+        UUID uuid = UUID.fromString(FakeYggdrasilServer.UUID32.replaceFirst(
+                "(\\w{8})(\\w{4})(\\w{4})(\\w{4})(\\w{12})", "$1-$2-$3-$4-$5"));
+        context.computeOnClient(client -> {
+            Object service = sessionService(client);
+            try {
+                service.getClass().getMethod("fetchProfile", UUID.class, boolean.class).invoke(service, uuid, false);
+            } catch (NoSuchMethodException e) {
+                throw new AssertionError("Installed session service has no fetchProfile(UUID, boolean)", e);
+            } catch (ReflectiveOperationException e) {
+                // A parse/auth failure AFTER the request reached the fake server still proves the
+                // redirect; only a missing method (above) breaks the assumption.
+            }
+            return null;
+        });
+        context.waitFor(client -> fake.hits(profilePath) > before);
+    }
+
+    /** 1.21.x exposes the service directly; 26.x moved it into Minecraft.services().sessionService(). */
+    private static Object sessionService(Minecraft client) {
+        try {
+            return Minecraft.class.getMethod("getMinecraftSessionService").invoke(client);
+        } catch (ReflectiveOperationException noDirectGetter) {
+            try {
+                Object services = Minecraft.class.getMethod("services").invoke(client);
+                return services.getClass().getMethod("sessionService").invoke(services);
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError("Cannot obtain the installed Minecraft session service", e);
+            }
+        }
     }
 }
