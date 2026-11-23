@@ -74,18 +74,18 @@ MC 适配器源码按版本回落：每个版本目录只放与近邻**不同**�
 
 | 层 | 跑什么 | 命令 | 覆盖 |
 |----|--------|------|------|
-| 单元测试 | common + authlib 的纯 JUnit（假 HttpGateway / 临时目录，不起游戏） | `./gradlew --no-daemon --stacktrace :test` | 仓储对账、迁移、令牌复用三态、认证流程、只读降级 |
+| 单元测试 | common + authlib 的纯 JUnit（假 HttpGateway / 临时目录，不起游戏） | `./gradlew --no-daemon --stacktrace test` | 仓储对账、迁移、令牌复用三态、认证流程、只读降级 |
 | 客户端游戏测试 | 真起一个 Minecraft 客户端，点界面、断言控件与 `getUser()` | `./gradlew --no-daemon --stacktrace :adapters:mc:<版本>:runClientGameTest` | 7 个版本：1.21.4 / 1.21.6 / 1.21.9 / 1.21.11 / 26.1 / 26.2 / 26.3 |
 | 人工 | 自动化够不到的出口 | 见下方清单 | 微软登录、真实外置服务器、浏览器、多实例、老 6 版本、视觉 |
 
 客户端游戏测试的源码共享在 `src/client-gametest/`，由 `gradle/adapters.toml` 的 `clientGametest = true` 决定哪些版本接入。每个版本跑两组：
 
-- `runClientGameTest` — 标题屏入口、离线账号全生命周期、外置服务器与账号全生命周期（内置假 Yggdrasil 服务器）。
+- `runClientGameTest` — 标题屏入口、离线账号全生命周期、外置服务器与账号全生命周期、服务器移位（内置假 Yggdrasil 服务器，校验协议与落盘）。
 - `runClientAuthlibInjectorGameTest` — 挂 authlib-injector agent 再跑一遍外置全流程，验证兼容（首次运行会从 GitHub 下载 agent jar）。
 
 截图与日志落在 `adapters/mc/<版本>/build/run/<run 名>/` 下。**1.20–1.21.2 这 6 个版本没有客户端游戏测试 API**（Fabric 只给它们服务端 gametest，而本模组是纯客户端），只能人工测。
 
-CI：PR 跑 3 个代表版本（1.21.4 混淆 / 26.1 首个非混淆 / 26.3 最新）， nightly 扫全 7 个（`.github/workflows/gametest-nightly.yml`）。Linux runner 上 Loom 自动套 xvfb；断言是控件级而非像素级，软件渲染不会抖。
+CI：PR 跑 3 个代表版本（1.21.4 混淆 / 26.1 首个非混淆 / 26.3 最新），nightly 扫全 7 个（`.github/workflows/gametest-nightly.yml`）。Linux runner 上由 CI 显式用 `xvfb-run -a -s "-screen 0 1280x720x24"` 包 Gradle（装 `xvfb libgl1-mesa-dri libegl1 libegl-mesa0`，env `SDL_VIDEO_FORCE_EGL=1` + `LIBGL_ALWAYS_SOFTWARE=1`），buildSrc 已关掉 Loom 自动 xvfb 以免双层嵌套；断言是控件级而非像素级，软件渲染不会抖。
 
 ### 人工测试清单（按改动范围）
 

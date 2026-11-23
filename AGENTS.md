@@ -279,7 +279,7 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 
 三层，各守一段，别把单元测试当验收标准：
 
-- **单元测试**（`:test`，common + authlib）：纯 JUnit，假 `HttpGateway` + 临时目录，不起游戏。守仓储对账、迁移幂等、令牌复用三态、认证流程、只读降级。是**重构安全网**，不是功能验收。
+- **单元测试**（`test`，common + authlib；不带冒号才会连 authlib 子项目一起跑，`:test` 只跑根项目）：纯 JUnit，假 `HttpGateway` + 临时目录，不起游戏。守仓储对账、迁移幂等、令牌复用三态、认证流程、只读降级。是**重构安全网**，不是功能验收。
 - **客户端游戏测试**（Fabric client-gametest）：真起一个 Minecraft 客户端，点界面、断言控件与 `Minecraft.getUser()`。这是功能验收的主力。
 - **人工**：自动化够不到的出口（微软设备码登录、真实外置服务器、打开浏览器、多实例并发、视觉排版）。清单见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
@@ -290,7 +290,7 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 - 测试源码**共享**在根 `src/client-gametest/`（java + resources），由插件挂进各版本的 `gametest` 源集，一份源码编译 7 次。因此只能用跨版本 API 交集（见下）。
 - 接线全在 buildSrc：`Loom.configureClientGameTests`（`fabricApi.configureTests` 建 `gametest` 源集 + `clientGameTest` run 配置）与 `Loom.configureAuthlibInjectorGameTest`（继承前者、挂 agent）。混淆版本依赖配置名 `modGametestImplementation`，非混淆 `gametestImplementation`。
 - 配置隔离：run 配置注入 `ACCOUNTSX_CONFIG` 环境变量 + `user.home` 系统属性，都指向 `build/run/<run 名>/`，不污染 `~/.config`。
-- 命令：`:adapters:mc:<版本>:runClientGameTest`（入口 / 离线 / 外置三用例）与 `:adapters:mc:<版本>:runClientAuthlibInjectorGameTest`（挂 authlib-injector 再跑外置全流程）。截图与日志在 `adapters/mc/<版本>/build/run/<run 名>/`。
+- 命令：`:adapters:mc:<版本>:runClientGameTest`（入口 / 离线 / 外置 / 服务器移位四用例）与 `:adapters:mc:<版本>:runClientAuthlibInjectorGameTest`（挂 authlib-injector，先用 MC 会话服务证明重定向再跑外置全流程）。截图与日志在 `adapters/mc/<版本>/build/run/<run 名>/`。
 - CI：PR 跑 3 个代表版本（1.21.4 混淆 / 26.1 首个非混淆 / 26.3 最新），nightly 扫全 7 个（`gametest-nightly.yml`）。渲染后端抄上游：装 `xvfb libgl1-mesa-dri libegl1 libegl-mesa0`，用 `xvfb-run -a -s "-screen 0 1280x720x24"` 包 Gradle（24-bit 给 GLFW 可用的 GLX visual），env `SDL_VIDEO_FORCE_EGL=1`（26.3 的 SDL 走 EGL，Xvfb 的 GLX 没有 sRGB framebuffer）+ `LIBGL_ALWAYS_SOFTWARE=1`（强制 llvmpipe）。**buildSrc 已关掉 Loom 自动 xvfb**（`Loom.disableAutoXvfb`），否则它会在外层 24-bit 里再套一层默认深度服务器把它盖掉。断言是控件级而非像素级，llvmpipe 软件渲染不会抖。
 
 ### 写跨版本测试的硬约束（踩过的坑）
