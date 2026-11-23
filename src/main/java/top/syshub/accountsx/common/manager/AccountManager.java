@@ -479,6 +479,9 @@ public final class AccountManager {
         Platforms.getMinecraftPlatform().switchAccount(session);
         // 其他实例按这个记录决定删除前是否提示。
         announceCurrent(account);
+        // 当前账号变了，界面选中框要跟着走：添加账号后的自动切换也走这里，
+        // 而入库时列表还停在旧当前账号上，不通知就会留在旧选中框。
+        notifyChangeListeners();
     }
 
     @Threading.Thread(Threading.ThreadRole.WORKER)

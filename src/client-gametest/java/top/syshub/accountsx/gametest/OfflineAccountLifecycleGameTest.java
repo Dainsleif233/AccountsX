@@ -96,6 +96,10 @@ public class OfflineAccountLifecycleGameTest implements FabricClientGameTest {
         if (!uuid.equals(sessionUuid)) {
             throw new AssertionError("Login auto-switch wrote the wrong UUID for " + name);
         }
+        // 选中框必须跟着自动切换走：入库时列表还停在旧当前账号，切换后不通知就会留在旧框。
+        if (Screens.selectedAccount(context) != current) {
+            throw new AssertionError("Selection box did not follow the auto-switch to " + name);
+        }
         return uuid;
     }
 }

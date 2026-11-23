@@ -73,6 +73,28 @@ public final class Screens {
         return context.computeOnClient(client -> accountList(client).children().size());
     }
 
+    /** The account whose row carries the selection box, or null if nothing is selected. */
+    public static top.syshub.accountsx.common.accounts.BaseAccount selectedAccount(ClientGameTestContext context) {
+        return context.computeOnClient(client -> {
+            var entry = accountList(client).getSelected();
+            if (entry == null) {
+                return null;
+            }
+            for (Class<?> c = entry.getClass(); c != null; c = c.getSuperclass()) {
+                try {
+                    java.lang.reflect.Field field = c.getDeclaredField("account");
+                    field.setAccessible(true);
+                    return (top.syshub.accountsx.common.accounts.BaseAccount) field.get(entry);
+                } catch (NoSuchFieldException e) {
+                    // 选中项是 AccountListWidget.AccountEntry，account 字段在它身上，向上找。
+                } catch (IllegalAccessException e) {
+                    throw new AssertionError("Cannot read the selected row's account", e);
+                }
+            }
+            throw new AssertionError("Selected row has no account field");
+        });
+    }
+
     /**
      * Non-empty button labels of the current screen, top to bottom. The account-list rows live
      * inside one ObjectSelectionList child, so this reads the sidebar filter buttons (and the
