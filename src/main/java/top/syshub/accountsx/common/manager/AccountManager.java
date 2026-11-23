@@ -283,6 +283,15 @@ public final class AccountManager {
         CHANGE_LISTENERS.remove(listener);
     }
 
+    /**
+     * 主动通知界面集合已变，marshals 到客户端线程（监听器要改控件）。
+     * 给不经过界面关闭流程的后台变更用：手动加服靠 ServerScreen 关闭时 syncAccounts 刷新，
+     * 拖拽加服没有那个时机，加完得自己通知，否则开着的账户界面左栏不会立刻出现新服务器。
+     */
+    public static void notifyAccountsChanged() {
+        Platforms.getMinecraftPlatform().execute(AccountManager::notifyChangeListeners);
+    }
+
     private static void notifyChangeListeners() {
         for (Runnable listener : CHANGE_LISTENERS) {
             try {

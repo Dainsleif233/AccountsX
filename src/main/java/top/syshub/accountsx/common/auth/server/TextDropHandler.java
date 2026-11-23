@@ -27,6 +27,8 @@ public final class TextDropHandler {
         TaskScheduler.submit(() -> {
             try {
                 AuthServer server = AccountManager.authServers().add(AuthServerKind.YGGDRASIL, apiRoot);
+                // 加服走的是后台通道，没有「关闭添加界面」那个刷新时机；开着的账户界面要靠这次通知重建左栏。
+                AccountManager.notifyAccountsChanged();
                 String name = server.displayName() != null ? server.displayName() : apiRoot;
                 Platforms.getMinecraftPlatform().showToast(
                         "accountsx.account.server.drag_title",

@@ -38,6 +38,10 @@ public class TextDropAddServerGameTest implements FabricClientGameTest {
                 throw new AssertionError("Dropped server probed wrong displayName: " + added.displayName());
             }
 
+            // 开着的账户界面必须立刻重建左栏显示新服务器。bug 是后台加服从不通知界面，
+            // 筛选按钮要重开界面才出现；没有通知修复时这条 waitFor 会超时。
+            context.waitFor(client -> Screens.buttonLabelsByY(client).contains("GtYggdrasil"));
+
             // Unrelated text must be ignored, not turned into a server or crash the worker.
             TextDropHandler.handle("just some random text");
             context.waitTicks(10);
