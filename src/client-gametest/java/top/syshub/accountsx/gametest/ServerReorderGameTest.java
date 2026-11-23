@@ -26,6 +26,13 @@ import java.util.List;
 public class ServerReorderGameTest implements FabricClientGameTest {
     @Override
     public void runTest(ClientGameTestContext context) {
+        // The injector run attaches authlib-injector pointed at a fixed port that only the
+        // compatibility test serves. Running this test there would make the mod's authlib
+        // fallback hit a dead port; it belongs to the plain run. Mirror of the compatibility
+        // test skipping the plain run.
+        if (Boolean.getBoolean("accountsx.gametest.injector")) {
+            return;
+        }
         context.waitForScreen(TitleScreen.class);
         context.setScreen(() -> new AccountScreen(new TitleScreen()));
 

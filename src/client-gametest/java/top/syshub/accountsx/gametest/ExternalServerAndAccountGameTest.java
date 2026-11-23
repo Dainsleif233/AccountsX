@@ -13,6 +13,11 @@ import net.minecraft.client.gui.screens.TitleScreen;
 public class ExternalServerAndAccountGameTest implements FabricClientGameTest {
     @Override
     public void runTest(ClientGameTestContext context) {
+        // Belongs to the plain run: the injector run only exercises the compatibility test,
+        // which serves the fixed authlib-injector port itself. See AuthlibInjectorCompatibilityGameTest.
+        if (Boolean.getBoolean("accountsx.gametest.injector")) {
+            return;
+        }
         try (FakeYggdrasilServer fake = new FakeYggdrasilServer()) {
             ExternalAccountFlow.run(context, fake);
             context.takeScreenshot("external-server-and-account");
