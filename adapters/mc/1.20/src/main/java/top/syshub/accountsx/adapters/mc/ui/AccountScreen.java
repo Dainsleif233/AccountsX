@@ -99,6 +99,12 @@ public class AccountScreen extends Screen {
     }
 
     private void rebuildFilters() {
+        // 记住当前选中的身份（服务器按 apiRoot，其余按类型），重建后按身份恢复下标：
+        // 对端把服务器重排后，旧下标会指向另一台服务器，↑/↓/移除的操作对象就错了。
+        Filter previous = this.selectedFilter >= 0 && this.selectedFilter < this.filters.size()
+                ? this.filters.get(this.selectedFilter) : null;
+        String previousApiRoot = previous != null && previous.server() != null ? previous.server().apiRoot() : null;
+        AccountType previousType = previous != null ? previous.addType() : null;
         this.filters.clear();
         this.filters.add(new Filter(Component.translatable("accountsx.account.filter.all"),
                 account -> true, null, null));
@@ -119,7 +125,23 @@ public class AccountScreen extends Screen {
         }
         this.filters.add(new Filter(Component.translatable("accountsx.account.filter.offline"),
                 account -> account.getAccountType() == AccountType.OFFLINE, AccountType.OFFLINE, null));
-        if (this.selectedFilter >= this.filters.size()) {
+        if (previous != null) {
+            int restored = -1;
+            for (int i = 0; i < this.filters.size(); i++) {
+                Filter f = this.filters.get(i);
+                if (previousApiRoot != null) {
+                    if (f.server() != null && previousApiRoot.equals(f.server().apiRoot())) {
+                        restored = i;
+                        break;
+                    }
+                } else if (f.server() == null && f.addType() == previousType) {
+                    restored = i;
+                    break;
+                }
+            }
+            // 选中的服务器被对端删了：回落「全部」，不要停在一个指向别人的下标上。
+            this.selectedFilter = restored >= 0 ? restored : 0;
+        } else if (this.selectedFilter >= this.filters.size()) {
             this.selectedFilter = 0;
         }
     }
@@ -137,8 +159,9 @@ public class AccountScreen extends Screen {
         int bottomY = this.height - PAD - BTN_H;
         AuthServer selectedServer = this.filters.get(this.selectedFilter).server();
 
-        // 筛选列表夹在返回按钮和左下角两个按钮之间：放不下就只建可见的那几行，剩下的靠滚动翻。
-        int filterBottom = bottomY - BTN_GAP - (selectedServer != null ? BTN_H + BTN_GAP : 0);
+        // 筛选列表夹在返回按钮和左下角按钮之间：选中服务器时多一行「上移/下移」+「移除」，
+        // 放不下就只建可见的那几行，剩下的靠滚动翻。
+        int filterBottom = bottomY - BTN_GAP - (selectedServer != null ? 2 * (BTN_H + BTN_GAP) : 0);
         int rowStep = BTN_H + BTN_GAP;
         this.visibleRows = Math.max(1, (filterBottom - FILTER_TOP + BTN_GAP) / rowStep);
         this.filterScroll = Math.max(0, Math.min(this.filterScroll, this.maxFilterScroll()));
@@ -156,6 +179,13 @@ public class AccountScreen extends Screen {
             }
         }
         if (selectedServer != null) {
+            // 服务器排序：上移/下移各占半宽，与账号列表的 ↑/↓ 同一交互。
+            int reorderY = bottomY - 2 * BTN_H - 2 * BTN_GAP;
+            int halfW = (buttonWidth - BTN_GAP) / 2;
+            this.addField(new ButtonWidget(x, reorderY, halfW, BTN_H,
+                    Component.literal("↑"), button -> this.moveServer(selectedServer, -1)));
+            this.addField(new ButtonWidget(x + halfW + BTN_GAP, reorderY, buttonWidth - halfW - BTN_GAP, BTN_H,
+                    Component.literal("↓"), button -> this.moveServer(selectedServer, 1)));
             this.addField(new ButtonWidget(x, bottomY - BTN_H - BTN_GAP, buttonWidth, BTN_H,
                     Component.translatable("accountsx.account.general.remove_auth_server"),
                     button -> this.removeServer(selectedServer)));
@@ -307,6 +337,20 @@ public class AccountScreen extends Screen {
      * 留着只会在列表里占位。当前账号在其中时由 Manager 回落到默认账号。删完回到「全部账户」，
      * 避免选中项指向已经消失的筛选。</p>
      */
+    private void moveServer(AuthServer server, int delta) {
+        String apiRoot = server.apiRoot();
+        AccountManager.moveServer(server, delta);
+        this.rebuildFilters();
+        for (int i = 0; i < this.filters.size(); i++) {
+            AuthServer s = this.filters.get(i).server();
+            if (s != null && apiRoot.equals(s.apiRoot())) {
+                this.selectedFilter = i;
+                break;
+            }
+        }
+        this.updateWidgets();
+    }
+
     private void removeServer(AuthServer server) {
         AccountManager.removeServer(server);
         this.selectedFilter = 0;

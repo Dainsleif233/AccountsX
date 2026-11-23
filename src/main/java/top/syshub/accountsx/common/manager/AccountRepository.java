@@ -616,7 +616,10 @@ public final class AccountRepository {
      * </ul>
      * 无法映射的历史条目（未知 type / 手工改坏）同样原样保留。</p>
      */
-    private Set<String> writeSnapshot(JsonObject diskRaw, String freshlyRotatedKey) {
+    private record Snapshot(Set<String> written, long serverOrderVersion) {
+    }
+
+    private Snapshot writeSnapshot(JsonObject diskRaw, String freshlyRotatedKey) {
         JsonArray diskAccounts = arrayOf(diskRaw, "accounts");
         Set<String> tombstoned = new LinkedHashSet<>(tombstoneKeys(diskRaw));
         tombstoned.addAll(pendingRemovals.keySet());
@@ -697,7 +700,7 @@ public final class AccountRepository {
             if (!tombstone && !hasServer(servers, jo))
                 unknownServers.add(jo);
         }
-        authServers.persist(servers);
+        long serverOrderVersion = authServers.persist(servers);
         for (JsonObject jo : unknownServers) {
             if (!hasServer(servers, jo))
                 servers.add(jo);
@@ -706,7 +709,7 @@ public final class AccountRepository {
         writeTombstones(diskRaw, tombstoned, written, authServers.localTombstones());
         // 不在这里清 pendingRemovals：落盘失败时墓碑必须留着，否则下一次写会忘了"这条已删除"，
         // 另一个实例的旧快照就能把它复活。清理交给落盘成功的调用方。
-        return written;
+        return new Snapshot(written, serverOrderVersion);
     }
 
     private static boolean hasServer(JsonArray servers, JsonObject candidate) {
@@ -866,13 +869,15 @@ public final class AccountRepository {
             // 全局锁覆盖读-改-写，仓储锁只保护内存变更和序列化，避免阻塞客户端线程。
             if (diskRaw != null)
                 reconciled = reconcileWith(diskRaw, null);
-            Set<String> written = writeSnapshot(diskRaw, freshlyRotatedKey);
+            Snapshot snapshot = writeSnapshot(diskRaw, freshlyRotatedKey);
+            Set<String> written = snapshot.written();
             removals = Map.copyOf(pendingRemovals);
             revivals = new HashMap<>(revivedAccounts);
             revivals.keySet().retainAll(written);
             snapshotText = top.syshub.accountsx.common.utils.NetworkUtils.GSON.toJson(root.raw());
             snapshotOrderVersion = orderVersion;
-            snapshotServerOrderVersion = authServers.orderVersion();
+            // 用序列化数组时原子捕获的版本，而非保存后再读：两者之间被移位插队也不会错戳。
+            snapshotServerOrderVersion = snapshot.serverOrderVersion();
         }
         store.saveSnapshot(snapshotText);
         synchronized (this) {
@@ -896,7 +901,10 @@ public final class AccountRepository {
             coordination.publishWrite();
         // 落盘成功后才把结论交出去：写失败时内存已经改成"删掉了"，但磁盘还没确认，
         // 此时若已经切走游戏会话，用户会看到账号突然消失。
-        if (reconciled != null && (reconciled.removedCurrent() != null || reconciled.recredentialedCurrent() != null)) {
+        // changed 含「采纳了对端的服务器/账号排序」这类纯顺序变化：也要通知界面重建左栏，
+        // 否则本地保存吸收对端排序后左栏不刷新。会话重装/回落仍由 handleReconcileResult 按
+        // removedCurrent/recredentialedCurrent 单独守卫，这里放宽到 changed 不会误切会话。
+        if (reconciled != null && reconciled.changed()) {
             java.util.function.Consumer<ReconcileResult> listener = this.reconcileListener;
             if (listener != null)
                 listener.accept(reconciled);

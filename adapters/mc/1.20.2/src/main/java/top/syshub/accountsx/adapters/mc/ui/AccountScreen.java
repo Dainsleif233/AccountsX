@@ -99,6 +99,12 @@ public class AccountScreen extends Screen {
     }
 
     private void rebuildFilters() {
+        // 记住当前选中的身份（服务器按 apiRoot，其余按类型），重建后按身份恢复下标：
+        // 对端把服务器重排后，旧下标会指向另一台服务器，↑/↓/移除的操作对象就错了。
+        Filter previous = this.selectedFilter >= 0 && this.selectedFilter < this.filters.size()
+                ? this.filters.get(this.selectedFilter) : null;
+        String previousApiRoot = previous != null && previous.server() != null ? previous.server().apiRoot() : null;
+        AccountType previousType = previous != null ? previous.addType() : null;
         this.filters.clear();
         this.filters.add(new Filter(Component.translatable("accountsx.account.filter.all"),
                 account -> true, null, null));
@@ -119,7 +125,23 @@ public class AccountScreen extends Screen {
         }
         this.filters.add(new Filter(Component.translatable("accountsx.account.filter.offline"),
                 account -> account.getAccountType() == AccountType.OFFLINE, AccountType.OFFLINE, null));
-        if (this.selectedFilter >= this.filters.size()) {
+        if (previous != null) {
+            int restored = -1;
+            for (int i = 0; i < this.filters.size(); i++) {
+                Filter f = this.filters.get(i);
+                if (previousApiRoot != null) {
+                    if (f.server() != null && previousApiRoot.equals(f.server().apiRoot())) {
+                        restored = i;
+                        break;
+                    }
+                } else if (f.server() == null && f.addType() == previousType) {
+                    restored = i;
+                    break;
+                }
+            }
+            // 选中的服务器被对端删了：回落「全部」，不要停在一个指向别人的下标上。
+            this.selectedFilter = restored >= 0 ? restored : 0;
+        } else if (this.selectedFilter >= this.filters.size()) {
             this.selectedFilter = 0;
         }
     }

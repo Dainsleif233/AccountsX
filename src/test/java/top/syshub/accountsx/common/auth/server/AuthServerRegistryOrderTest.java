@@ -172,4 +172,30 @@ class AuthServerRegistryOrderTest {
         assertThat(out.get(0).getAsJsonObject().get("apiRoot").getAsString()).isEqualTo("https://b.example");
         assertThat(out.get(1).getAsJsonObject().get("apiRoot").getAsString()).isEqualTo("https://a.example");
     }
+
+    @Test
+    void moveBetweenSerializeAndStamp_survivesNextReconcile() {
+        AuthServerRegistry registry = registry(array(
+                server("https://a.example", "A"),
+                server("https://b.example", "B")), new AtomicInteger());
+        registry.markOrderPersisted(registry.orderVersion());
+
+        // 保存路径第一步：序列化数组并原子捕获当时的版本（persist 在同一把锁内返回）。
+        JsonArray serialized = new JsonArray();
+        long serializedVersion = registry.persist(serialized);
+        assertThat(serialized.get(0).getAsJsonObject().get("apiRoot").getAsString()).isEqualTo("https://a.example");
+
+        // 客户端恰在序列化之后、落盘戳记之前移位：B 上移 → [B, A]，版本 +1。
+        assertThat(registry.move(AuthServerKind.YGGDRASIL, "https://b.example", -1)).isTrue();
+
+        // 落盘成功戳的是「序列化时的版本」而非当前版本：否则旧数组会被当成新序已落盘，
+        // 下一次对账就用磁盘旧序把这次移位盖回去（首轮复审抓到的竞态）。
+        registry.markOrderPersisted(serializedVersion);
+
+        registry.mergeFromDisk(array(
+                server("https://a.example", "A"),
+                server("https://b.example", "B")), Set.of());
+
+        assertThat(order(registry)).containsExactly("https://b.example", "https://a.example");
+    }
 }

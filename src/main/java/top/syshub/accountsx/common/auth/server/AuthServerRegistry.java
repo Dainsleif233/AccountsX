@@ -259,7 +259,7 @@ public final class AuthServerRegistry {
      * "未知字段原样回写"原则一致：新版本写入 → 旧版本保存不应丢数据）。已废弃的 {@code locator}
      * 字段不再回写，老配置里的残留会被这次保存顺手清掉。</p>
      */
-    public synchronized void persist(JsonArray array) {
+    public synchronized long persist(JsonArray array) {
         Map<String, JsonObject> previous = new LinkedHashMap<>();
         for (JsonElement element : array) {
             if (element instanceof JsonObject jo)
@@ -281,6 +281,9 @@ public final class AuthServerRegistry {
             array.remove(0);
         for (JsonObject jo : next)
             array.add(jo);
+        // 与数组序列化在同一把锁内返回版本：调用方据此戳「已落盘」，避免序列化与读版本之间
+        // 被客户端移位插队，把旧数组当成新版本落盘、下次对账又用旧序盖掉新移位。
+        return orderVersion;
     }
 
     private static String persistKey(JsonObject jo) {
