@@ -396,6 +396,17 @@ public final class AccountManager {
         repository().move(account, index);
     }
 
+    /** 左栏服务器排序：delta 为 -1（上移）/ +1（下移），边界处不动。 */
+    @Threading.Thread(Threading.ThreadRole.CLIENT)
+    public static void moveServer(AuthServer server, int delta) {
+        Threading.checkMinecraftClientThread();
+
+        if (server == null) {
+            return;
+        }
+        repository().authServers().move(server.kind(), server.apiRoot(), delta);
+    }
+
     @Threading.Thread(Threading.ThreadRole.WORKER)
     public static AccountSession loginAccount(BaseAccount account) throws IOException {
         Threading.checkAccountWorkerThread();

@@ -69,6 +69,10 @@ public final class AuthServerRegistry {
      */
     private final Map<String, Long> removedLocally = new LinkedHashMap<>();
 
+    /** 本地移位版本；与已落盘版本不等时，对账不采纳磁盘顺序，免得把还没写出去的移位盖回。 */
+    private long orderVersion;
+    private long persistedOrderVersion;
+
     public AuthServerRegistry(HttpGateway http) {
         this(http, null);
     }
@@ -148,6 +152,7 @@ public final class AuthServerRegistry {
     public synchronized Merge mergeFromDisk(JsonArray diskServers, java.util.Set<String> tombstoned) {
         boolean changed = false;
         boolean needsWarm = false;
+        List<Key> diskOrder = new ArrayList<>();
         for (AuthServer disk : AuthServer.readAll(diskServers)) {
             if (disk.kind().builtin())
                 continue;
@@ -155,6 +160,7 @@ public final class AuthServerRegistry {
             if (tombstoned.contains(tombstone) && !addedLocally.contains(tombstone))
                 continue;
             Key key = Key.of(disk);
+            diskOrder.add(key);
             AuthServer existing = servers.get(key);
             if (existing == null) {
                 servers.put(key, disk);
@@ -171,7 +177,31 @@ public final class AuthServerRegistry {
                 changed = true;
             }
         }
+        // 顺序也是共享状态：本地这次没有未落盘的移位时按磁盘顺序重排，
+        // 否则下一次普通保存会把对端移动过的服务器顺序写回旧顺序（与账号顺序同一机制）。
+        if (orderVersion == persistedOrderVersion) {
+            changed |= adoptDiskOrder(diskOrder);
+        }
         return new Merge(changed, needsWarm);
+    }
+
+    /** 把内存服务器顺序调整为磁盘顺序；本地刚加、磁盘还没有的条目保持相对顺序放末尾。 */
+    private boolean adoptDiskOrder(List<Key> diskOrder) {
+        Map<Key, AuthServer> reordered = new LinkedHashMap<>();
+        Map<Key, AuthServer> pending = new LinkedHashMap<>(servers);
+        for (Key key : diskOrder) {
+            AuthServer server = pending.remove(key);
+            if (server != null) {
+                reordered.put(key, server);
+            }
+        }
+        reordered.putAll(pending);
+        if (new ArrayList<>(reordered.keySet()).equals(new ArrayList<>(servers.keySet()))) {
+            return false;
+        }
+        servers.clear();
+        servers.putAll(reordered);
+        return true;
     }
 
     /** {@link #mergeFromDisk} 的结果：{@code needsWarm} 表示有条目需要重新探测元数据。 */
@@ -400,6 +430,55 @@ public final class AuthServerRegistry {
             metadata.put(apiRoot, probed.metadata());
         }
         return probed;
+    }
+
+    /** 当前移位版本，供仓储在落盘快照时记录、写成功后回填 {@link #markOrderPersisted}。 */
+    public synchronized long orderVersion() {
+        return orderVersion;
+    }
+
+    /** 落盘成功后由仓储调用：本次快照里的顺序已进文件，之后的对账可以采纳别处的顺序。 */
+    public synchronized void markOrderPersisted(long version) {
+        persistedOrderVersion = Math.max(persistedOrderVersion, version);
+    }
+
+    /**
+     * 调整服务器在左栏的顺序（UI 上/下移）；返回是否真的移动了，移动后触发持久化。
+     * 与账号 {@code AccountRepository.move} 同一套顺序版本机制，避免对端旧快照把顺序写回。
+     */
+    public boolean move(AuthServerKind kind, String apiRoot, int delta) {
+        if (kind == null || apiRoot == null || delta == 0) {
+            return false;
+        }
+        boolean moved;
+        // 与 remove 同一锁纪律：变更在锁内做，onChange（仓储 markDirty）必须在释放注册表锁之后调。
+        // 客户端线程持注册表锁再拿仓储锁，会与「工作线程持仓储锁再拿注册表锁」的保存路径反向死锁。
+        synchronized (this) {
+            Key key = new Key(kind, apiRoot);
+            List<Key> keys = new ArrayList<>(servers.keySet());
+            int index = keys.indexOf(key);
+            if (index < 0) {
+                return false;
+            }
+            int target = Math.max(0, Math.min(index + delta, keys.size() - 1));
+            if (target == index) {
+                return false;
+            }
+            keys.remove(index);
+            keys.add(target, key);
+            Map<Key, AuthServer> reordered = new LinkedHashMap<>();
+            for (Key k : keys) {
+                reordered.put(k, servers.get(k));
+            }
+            servers.clear();
+            servers.putAll(reordered);
+            orderVersion++;
+            moved = true;
+        }
+        if (moved && onChange != null) {
+            onChange.run();
+        }
+        return moved;
     }
 
     /** 移除条目（UI「移除认证服务器」）；返回是否真的删掉了，删掉后触发持久化。 */

@@ -137,8 +137,9 @@ public class AccountScreen extends Screen {
         int bottomY = this.height - PAD - BTN_H;
         AuthServer selectedServer = this.filters.get(this.selectedFilter).server();
 
-        // 筛选列表夹在返回按钮和左下角两个按钮之间：放不下就只建可见的那几行，剩下的靠滚动翻。
-        int filterBottom = bottomY - BTN_GAP - (selectedServer != null ? BTN_H + BTN_GAP : 0);
+        // 筛选列表夹在返回按钮和左下角按钮之间：选中服务器时多一行「上移/下移」+「移除」，
+        // 放不下就只建可见的那几行，剩下的靠滚动翻。
+        int filterBottom = bottomY - BTN_GAP - (selectedServer != null ? 2 * (BTN_H + BTN_GAP) : 0);
         int rowStep = BTN_H + BTN_GAP;
         this.visibleRows = Math.max(1, (filterBottom - FILTER_TOP + BTN_GAP) / rowStep);
         this.filterScroll = Math.max(0, Math.min(this.filterScroll, this.maxFilterScroll()));
@@ -156,6 +157,13 @@ public class AccountScreen extends Screen {
             }
         }
         if (selectedServer != null) {
+            // 服务器排序：上移/下移各占半宽，与账号列表的 ↑/↓ 同一交互。
+            int reorderY = bottomY - 2 * BTN_H - 2 * BTN_GAP;
+            int halfW = (buttonWidth - BTN_GAP) / 2;
+            this.addField(new ButtonWidget(x, reorderY, halfW, BTN_H,
+                    Component.literal("↑"), button -> this.moveServer(selectedServer, -1)));
+            this.addField(new ButtonWidget(x + halfW + BTN_GAP, reorderY, buttonWidth - halfW - BTN_GAP, BTN_H,
+                    Component.literal("↓"), button -> this.moveServer(selectedServer, 1)));
             this.addField(new ButtonWidget(x, bottomY - BTN_H - BTN_GAP, buttonWidth, BTN_H,
                     Component.translatable("accountsx.account.general.remove_auth_server"),
                     button -> this.removeServer(selectedServer)));
@@ -190,6 +198,21 @@ public class AccountScreen extends Screen {
         }
 
         this.selectedFilter = index;
+        this.updateWidgets();
+    }
+
+    /** 移动选中服务器后重建左栏，并按 apiRoot 找回它（排序后下标会变），保持选中不丢。 */
+    private void moveServer(AuthServer server, int delta) {
+        String apiRoot = server.apiRoot();
+        AccountManager.moveServer(server, delta);
+        this.rebuildFilters();
+        for (int i = 0; i < this.filters.size(); i++) {
+            AuthServer s = this.filters.get(i).server();
+            if (s != null && apiRoot.equals(s.apiRoot())) {
+                this.selectedFilter = i;
+                break;
+            }
+        }
         this.updateWidgets();
     }
 

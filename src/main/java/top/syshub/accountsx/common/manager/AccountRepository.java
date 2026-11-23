@@ -861,6 +861,7 @@ public final class AccountRepository {
         String snapshotText;
         ReconcileResult reconciled = null;
         long snapshotOrderVersion;
+        long snapshotServerOrderVersion;
         synchronized (this) {
             // 全局锁覆盖读-改-写，仓储锁只保护内存变更和序列化，避免阻塞客户端线程。
             if (diskRaw != null)
@@ -871,6 +872,7 @@ public final class AccountRepository {
             revivals.keySet().retainAll(written);
             snapshotText = top.syshub.accountsx.common.utils.NetworkUtils.GSON.toJson(root.raw());
             snapshotOrderVersion = orderVersion;
+            snapshotServerOrderVersion = authServers.orderVersion();
         }
         store.saveSnapshot(snapshotText);
         synchronized (this) {
@@ -888,6 +890,7 @@ public final class AccountRepository {
             // 落盘成功：本次快照里的顺序已经在文件里，之后的对账可以采纳别处的顺序。
             // 用「快照时的版本」而不是当前版本：保存期间又拖过一次时不能把新的意图也标成已落盘。
             persistedOrderVersion = Math.max(persistedOrderVersion, snapshotOrderVersion);
+            authServers.markOrderPersisted(snapshotServerOrderVersion);
         }
         if (coordination != null)
             coordination.publishWrite();

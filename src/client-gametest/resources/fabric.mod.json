@@ -9,6 +9,7 @@
       "top.syshub.accountsx.gametest.TitleScreenEntryGameTest",
       "top.syshub.accountsx.gametest.OfflineAccountLifecycleGameTest",
       "top.syshub.accountsx.gametest.ExternalServerAndAccountGameTest",
+      "top.syshub.accountsx.gametest.ServerReorderGameTest",
       "top.syshub.accountsx.gametest.AuthlibInjectorCompatibilityGameTest"
     ]
   },

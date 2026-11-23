@@ -28,6 +28,7 @@ final class FakeYggdrasilServer implements AutoCloseable {
     private final HttpServer server;
     private final Map<String, AtomicInteger> hits = new ConcurrentHashMap<>();
     final String base;
+    final String name;
 
     FakeYggdrasilServer() throws IOException {
         this(0);
@@ -39,6 +40,12 @@ final class FakeYggdrasilServer implements AutoCloseable {
      *             is baked into its run configuration before the test JVM starts.
      */
     FakeYggdrasilServer(int port) throws IOException {
+        this(port, "GtYggdrasil");
+    }
+
+    /** @param name display name published in root metadata; distinct names let a test tell two servers apart. */
+    FakeYggdrasilServer(int port, String name) throws IOException {
+        this.name = name;
         String pem = rsaPublicKeyPem();
         this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         this.base = "http://127.0.0.1:" + server.getAddress().getPort();
@@ -49,7 +56,7 @@ final class FakeYggdrasilServer implements AutoCloseable {
             JsonObject body = null;
             int code = 200;
             switch (key) {
-                case "GET /" -> body = rootMeta(pem);
+                case "GET /" -> body = rootMeta(pem, name);
                 case "POST /authserver/authenticate" -> body = authResponse("fake-access");
                 case "POST /authserver/refresh" -> body = authResponse("fake-access-refreshed");
                 case "POST /authserver/validate", "POST /authserver/invalidate" -> code = 204;
@@ -78,9 +85,9 @@ final class FakeYggdrasilServer implements AutoCloseable {
         return count == null ? 0 : count.get();
     }
 
-    private static JsonObject rootMeta(String pem) {
+    private static JsonObject rootMeta(String pem, String name) {
         JsonObject meta = new JsonObject();
-        meta.addProperty("serverName", "GtYggdrasil");
+        meta.addProperty("serverName", name);
         JsonObject root = new JsonObject();
         root.addProperty("signaturePublickey", pem);
         JsonArray domains = new JsonArray();
