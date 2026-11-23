@@ -51,6 +51,8 @@
   "accountsx.account.server.probing": "正在探测服务器 ...",
   "accountsx.account.server.fail": "添加失败：%s",
   "accountsx.account.server.fail.empty": "请填写认证服务器地址",
+  "accountsx.account.server.drag_title": "认证服务器",
+  "accountsx.account.server.drag_added": "已添加认证服务器：%s",
   "accountsx.account.login.fail": "登录失败：%s",
   "accountsx.account.server.insecure": "该服务器地址未使用 HTTPS，密码与令牌会以明文传输",
   "accountsx.account.external.mode.oauth": "OAuth",

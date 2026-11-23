@@ -51,6 +51,8 @@
   "accountsx.account.server.probing": "Probing server...",
   "accountsx.account.server.fail": "Failed to add: %s",
   "accountsx.account.server.fail.empty": "Enter the auth server address",
+  "accountsx.account.server.drag_title": "Auth Server",
+  "accountsx.account.server.drag_added": "Auth server added: %s",
   "accountsx.account.login.fail": "Login failed: %s",
   "accountsx.account.server.insecure": "This address does not use HTTPS. Your password and tokens are sent in plain text.",
   "accountsx.account.external.mode.oauth": "OAuth",

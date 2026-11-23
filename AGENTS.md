@@ -189,6 +189,8 @@ OAuth 令牌端点拒绝请求时，`invalid_grant` / `invalid_token` 抛带 `ac
 
 GUI 资源（切换图标 `account.png`、标题屏精灵 `icon/account`、默认头像 `alex_avatar.png`）统一放在 common 的 `assets/accountsx/textures/gui/` 下。`TitleScreenMixin` 的精灵 `ResourceLocation` 用 `MOD_ID`（`accountsx`）而非 `MC_ADAPTER_ID`，由 common 提供纹理；新增 MC 版本时无需复制这些资源。Mod Menu 集成（配置入口 + 图标）由 mc 适配器通过 `fabric.mod.json` 的 `custom.modmenu.parent` 提供，不再有独立的 `accountsx-adapter-modmenu` 适配器。
 
+26.3+（SDL 窗口层）支持**拖拽加服**：`SDLEventHandlerMixin` 截 `SDL_EVENT_DROP_TEXT`（原版 `pollEvents` 只处理 DROP_FILE，文本落 default 被丢），交 `TextDropHandler` 解析 authlib-injector 启动器规范 URI（`authlib-injector:yggdrasil-server:<encodeURIComponent 地址>`，解析在 common 的 `AuthlibInjectorUri`），后台探测加服、toast 报结果。任意界面可拖入；mixin 只读不改，DROP_FILE 仍走原版，资源包 / Iris 的文件拖拽不受影响。GLFW 版本（≤26.2）原生层只投递文件路径，够不到文本，无此能力。
+
 MC/loader/API/authlib/java 版本由 `gradle/adapters.toml` 的 `[[mc]]` 条目按目录名（= MC 版本）提供，适配器自己的 `build.gradle.kts` 只应用 Loom 插件 + `accountsx.mc.adapter`，没有 `adapter { }` 块。Mojang official mappings 由 `accountsx.mc.adapter` 集中添加（通过反射访问 Loom 的 `loom` 扩展，因为 Loom 类不在 buildSrc classpath 上）。
 
 ### MC 适配器源码回落

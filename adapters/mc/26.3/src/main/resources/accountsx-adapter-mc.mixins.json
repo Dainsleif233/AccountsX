@@ -6,6 +6,7 @@
   "client": [
     "MinecraftClientAccessor",
     "PlayerSkinProviderMixin",
+    "SDLEventHandlerMixin",
     "TitleScreenMixin"
   ],
   "injectors": {
