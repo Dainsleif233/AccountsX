@@ -4,8 +4,12 @@ import accountsx.build.Catalog
 import accountsx.build.Loom
 import accountsx.build.MixinDeps
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.KeyPairGenerator
 import java.util.Base64
+import java.util.zip.ZipFile
+import org.gradle.api.GradleException
 
 plugins {
     java
@@ -90,8 +94,21 @@ if (adapter.clientGametest) {
                     "https://github.com/yushijinhun/authlib-injector/releases/download/v" +
                         injectorVersion + "/authlib-injector-" + injectorVersion + ".jar"
                 ).toURL()
-                url.openStream().use { input ->
-                    injectorJar.outputStream().use { output -> input.copyTo(output) }
+                // 先写临时文件、校验是完整 zip 再原子替换：直写最终 jar 时下载中断会留下半包，
+                // 而「存在即跳过」会让后续运行一直把残缺 jar 当 -javaagent，启动即崩且不自愈。
+                val tmp = Files.createTempFile(injectorJar.parentFile.toPath(), "authlib-injector-", ".part")
+                try {
+                    url.openStream().use { input ->
+                        Files.copy(input, tmp, StandardCopyOption.REPLACE_EXISTING)
+                    }
+                    ZipFile(tmp.toFile()).use { zip ->
+                        if (zip.getEntry("moe/yushi/authlibinjector/AuthlibInjector.class") == null) {
+                            throw GradleException("下载的 authlib-injector jar 不完整（缺 agent 主类）: " + url)
+                        }
+                    }
+                    Files.move(tmp, injectorJar.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                } finally {
+                    Files.deleteIfExists(tmp)
                 }
             }
         }
