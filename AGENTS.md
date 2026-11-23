@@ -291,7 +291,7 @@ Lang key 在 `src/main/resources/assets/accountsx/lang/`（`en_us.json`、`zh_cn
 - 接线全在 buildSrc：`Loom.configureClientGameTests`（`fabricApi.configureTests` 建 `gametest` 源集 + `clientGameTest` run 配置）与 `Loom.configureAuthlibInjectorGameTest`（继承前者、挂 agent）。混淆版本依赖配置名 `modGametestImplementation`，非混淆 `gametestImplementation`。
 - 配置隔离：run 配置注入 `ACCOUNTSX_CONFIG` 环境变量 + `user.home` 系统属性，都指向 `build/run/<run 名>/`，不污染 `~/.config`。
 - 命令：`:adapters:mc:<版本>:runClientGameTest`（入口 / 离线 / 外置三用例）与 `:adapters:mc:<版本>:runClientAuthlibInjectorGameTest`（挂 authlib-injector 再跑外置全流程）。截图与日志在 `adapters/mc/<版本>/build/run/<run 名>/`。
-- CI：PR 跑 3 个代表版本（1.21.4 混淆 / 26.1 首个非混淆 / 26.3 最新），nightly 扫全 7 个（`gametest-nightly.yml`）。Linux runner 上 Loom 见 `CI=true` 自动套 xvfb；断言是控件级而非像素级，llvmpipe 软件渲染不会抖。
+- CI：PR 跑 3 个代表版本（1.21.4 混淆 / 26.1 首个非混淆 / 26.3 最新），nightly 扫全 7 个（`gametest-nightly.yml`）。渲染后端抄上游：装 `xvfb libgl1-mesa-dri libegl1 libegl-mesa0`，用 `xvfb-run -a -s "-screen 0 1280x720x24"` 包 Gradle（24-bit 给 GLFW 可用的 GLX visual），env `SDL_VIDEO_FORCE_EGL=1`（26.3 的 SDL 走 EGL，Xvfb 的 GLX 没有 sRGB framebuffer）+ `LIBGL_ALWAYS_SOFTWARE=1`（强制 llvmpipe）。**buildSrc 已关掉 Loom 自动 xvfb**（`Loom.disableAutoXvfb`），否则它会在外层 24-bit 里再套一层默认深度服务器把它盖掉。断言是控件级而非像素级，llvmpipe 软件渲染不会抖。
 
 ### 写跨版本测试的硬约束（踩过的坑）
 

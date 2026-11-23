@@ -203,6 +203,28 @@ object Loom {
         }
     }
 
+    /**
+     * Turns off Loom's automatic xvfb-run wrapping for the given run tasks.
+     *
+     * Loom wraps with bare `xvfb-run --auto-servernum` (default screen depth), which
+     * gives GLFW no usable GLX visual and SDL no sRGB framebuffer. CI wraps the Gradle
+     * invocation itself with `xvfb-run -s "-screen 0 1280x720x24"` plus the mesa/EGL
+     * environment; if Loom also wrapped, its inner default-depth server would shadow
+     * that outer 24-bit one. So the task must not wrap a second time.
+     */
+    fun disableAutoXvfb(project: Project, vararg taskNames: String) {
+        for (name in taskNames) {
+            project.tasks.named(name) {
+                val useXvfb = javaClass.methods.first { it.name == "getUseXvfb" && it.parameterCount == 0 }
+                    .invoke(this)
+                useXvfb.javaClass.methods.first {
+                    it.name == "set" && it.parameterCount == 1 &&
+                        it.parameterTypes[0].name != "org.gradle.api.provider.Provider"
+                }.invoke(useXvfb, false)
+            }
+        }
+    }
+
     private fun primitiveMatch(paramType: Class<*>, value: Any): Boolean =
         (paramType == java.lang.Boolean.TYPE && value is Boolean) ||
             (paramType == Integer.TYPE && value is Int)

@@ -114,6 +114,11 @@ if (adapter.clientGametest) {
     }
     Loom.configureAuthlibInjectorGameTest(project, injectorJar, injectorApiRoot, prefetchedMeta)
     project.tasks.named("runClientAuthlibInjectorGameTest") { dependsOn(downloadInjector) }
+
+    // CI wraps these runs in xvfb-run with an explicit 24-bit screen and the mesa/EGL
+    // environment (see ci.yml). Loom's own bare xvfb-run wrapping would nest a
+    // default-depth server inside that and shadow it, so turn it off here.
+    Loom.disableAutoXvfb(project, "runClientGameTest", "runClientAuthlibInjectorGameTest")
 }
 
 java.withSourcesJar()

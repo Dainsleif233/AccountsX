@@ -27,8 +27,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-build
+      - name: Install headless rendering
+        # GLFW needs a 24-bit GLX visual from mesa's llvmpipe; SDL (26.3) needs EGL
+        # because Xvfb's GLX offers no sRGB framebuffer. Recipes borrowed from upstream
+        # Fabric (xvfb) and LiquidBounce (libegl + SDL_VIDEO_FORCE_EGL).
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libegl1 libegl-mesa0
       - name: Run client game tests
+        env:
+          SDL_VIDEO_FORCE_EGL: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        # 24-bit screen gives GLFW a usable GLX visual; Loom's own xvfb wrapping is
+        # disabled in buildSrc so it cannot nest a default-depth server inside this one.
         run: >-
+          xvfb-run -a -s "-screen 0 1280x720x24"
           ./gradlew --no-daemon --stacktrace
           :adapters:mc:${{ matrix.mc }}:runClientGameTest
           :adapters:mc:${{ matrix.mc }}:runClientAuthlibInjectorGameTest
