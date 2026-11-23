@@ -131,7 +131,7 @@ universal 任务还会在嵌套的 common 元数据中添加 `fabric-api: *` 依
 
 ### 运行时流程
 
-1. `AccountsX.onInitializeClient` → `AccountManager.initialize` + `MicrosoftConstants.initialize`
+1. `AccountsX.onInitializeClient` → `AccountManager.initialize`
 2. Manager 用环境账号 + `AccountRepository` 加载账号列表，在 worker 上刷新非授权账号；同时投递服务器元数据预热（`warmAuthServers` → 串行通道逐 server 探测一次，失败保留旧条目不阻塞）
 3. UI（各 MC 版本的 `AccountScreen`）在**客户端线程**上修改账号
 4. 登录/刷新/保存在 **`TaskScheduler`**（`common/task/`：串行阻塞队列 + 上限 4 的有界并行池）上运行；并行刷新由 `TaskScheduler.runParallel` 调度

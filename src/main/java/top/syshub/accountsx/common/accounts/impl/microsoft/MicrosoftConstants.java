@@ -1,7 +1,6 @@
 package top.syshub.accountsx.common.accounts.impl.microsoft;
 
 import com.google.gson.annotations.SerializedName;
-import top.syshub.accountsx.common.AccountsX;
 import top.syshub.accountsx.common.accounts.model.context.AuthSecurityContext;
 import top.syshub.accountsx.common.accounts.model.context.AuthServerContext;
 import top.syshub.accountsx.common.net.HttpGateway;
@@ -41,12 +40,6 @@ public final class MicrosoftConstants {
 
     // https://api.minecraftservices.com/minecraft/profile
     public static final String MS_GAME_PROFILE = decode("aHR0cHM6Ly9hcGkubWluZWNyYWZ0c2VydmljZXMuY29tL21pbmVjcmFmdC9wcm9maWxl");
-
-    public static void initialize() {
-        if (!AUTH.equals("https://authserver.mojang.com")) {
-            AccountsX.LOGGER.warn("authlib-injector is detected! The compatibility between AccountsX and authlib-injector is an experimental feature.");
-        }
-    }
 
     private static String decode(String value) {
         return new String(Base64.getDecoder().decode(value), StandardCharsets.ISO_8859_1);

@@ -1,6 +1,5 @@
 package top.syshub.accountsx.common;
 
-import top.syshub.accountsx.common.accounts.impl.microsoft.MicrosoftConstants;
 import top.syshub.accountsx.common.manager.AccountManager;
 import net.fabricmc.api.ClientModInitializer;
 import org.slf4j.Logger;
@@ -16,6 +15,5 @@ public class AccountsX implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         AccountManager.initialize();
-        MicrosoftConstants.initialize();
     }
 }
